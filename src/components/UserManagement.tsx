@@ -1,13 +1,17 @@
 import React, { useState } from 'react';
-import { PlusCircle, Edit2, Trash2, ShieldCheck, Mail, MapPin, X, Key, Search } from 'lucide-react';
-import { Profile, UserRole } from '../types';
+import { PlusCircle, Edit2, Trash2, ShieldCheck, Mail, MapPin, X, Key, Search, Lock, CheckSquare, Square } from 'lucide-react';
+import { Profile, UserRole, BRANCH_LIST, isRegionalHeadRole } from '../types';
+
+const WEST_BRANCHES = ['Lampung', 'Medan', 'Padang', 'Palembang', 'Pekanbaru'];
+const CENTRAL_BRANCHES = ['Bandung', 'Jakarta', 'Pontianak'];
+const EAST_BRANCHES = ['Bali', 'Balikpapan', 'Banjarmasin', 'Makassar', 'Malang', 'Semarang', 'Solo', 'Surabaya'];
 
 interface UserManagementProps {
   profiles: Profile[];
   currentUser: Profile;
   onAddUser: (email: string, fullName: string, role: UserRole, branch: string, password?: string) => void;
-  onUpdateUser: (email: string, updates: Partial<Profile>) => void;
-  onDeleteUser: (email: string) => void;
+  onUpdateUser: (id: string, updates: Partial<Profile>) => void;
+  onDeleteUser: (id: string) => void;
 }
 
 export default function UserManagement({ 
@@ -37,6 +41,38 @@ export default function UserManagement({
            p.role.toLowerCase().includes(q);
   });
 
+  const selectedBranchList = branch === 'Nasional'
+    ? ['Nasional']
+    : branch.split(',').map(s => s.trim()).filter(Boolean);
+
+  const toggleBranchSelection = (bName: string) => {
+    let currentList = selectedBranchList.filter(x => x !== 'Nasional');
+    if (currentList.includes(bName)) {
+      currentList = currentList.filter(x => x !== bName);
+    } else {
+      currentList.push(bName);
+    }
+    currentList.sort();
+    setBranch(currentList.length > 0 ? currentList.join(', ') : 'Jakarta');
+  };
+
+  const handleRoleChange = (newRole: UserRole) => {
+    setRole(newRole);
+    if (isRegionalHeadRole(newRole)) {
+      if (newRole === 'Regional Head West') {
+        setBranch(WEST_BRANCHES.join(', '));
+      } else if (newRole === 'Regional Head Central') {
+        setBranch(CENTRAL_BRANCHES.join(', '));
+      } else if (newRole === 'Regional Head East') {
+        setBranch(EAST_BRANCHES.join(', '));
+      } else if (!branch.includes(',')) {
+        setBranch(WEST_BRANCHES.join(', '));
+      }
+    } else if (branch.includes(',')) {
+      setBranch('Jakarta');
+    }
+  };
+
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !fullName) {
@@ -59,6 +95,7 @@ export default function UserManagement({
     if (!selectedUser) return;
     
     const updates: Partial<Profile> = {
+      email: email.trim().toLowerCase(),
       full_name: fullName.trim(),
       role: role,
       branch: branch
@@ -68,9 +105,11 @@ export default function UserManagement({
       updates.password = password.trim();
     }
     
-    onUpdateUser(selectedUser.email, updates);
+    onUpdateUser(selectedUser.id, updates);
 
     setSelectedUser(null);
+    setEmail('');
+    setFullName('');
     setPassword('');
     setShowForm(null);
   };
@@ -86,6 +125,7 @@ export default function UserManagement({
 
   const openEditForm = (p: Profile) => {
     setSelectedUser(p);
+    setEmail(p.email);
     setFullName(p.full_name);
     setRole(p.role);
     setBranch(p.branch);
@@ -94,10 +134,11 @@ export default function UserManagement({
   };
 
   const [userToDelete, setUserToDelete] = useState<Profile | null>(null);
+  const [userToResetPassword, setUserToResetPassword] = useState<Profile | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleDelete = (p: Profile) => {
-    if (p.email.toLowerCase() === currentUser.email.toLowerCase()) {
+    if (p.id === currentUser.id || p.email.toLowerCase() === currentUser.email.toLowerCase()) {
       setErrorMessage("Anda tidak bisa menghapus diri Anda sendiri!");
       return;
     }
@@ -140,13 +181,13 @@ export default function UserManagement({
                 <th className="p-3">Nama Lengkap</th>
                 <th className="p-3">Email Akun</th>
                 <th className="p-3">Role Otoritas</th>
-                <th className="p-3">Cabang Regional</th>
+                <th className="p-3">Cabang</th>
                 <th className="p-3 text-center">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
               {filteredProfiles.map((p) => (
-                <tr key={p.email} className="hover:bg-slate-50/50 border-b border-slate-100">
+                <tr key={p.id} className="hover:bg-slate-50/50 border-b border-slate-100">
                   <td className="p-3 text-slate-900 font-extrabold flex items-center space-x-2">
                     <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-black">
                       {p.full_name ? p.full_name.charAt(0).toUpperCase() : 'U'}
@@ -159,7 +200,19 @@ export default function UserManagement({
                       {p.role}
                     </span>
                   </td>
-                  <td className="p-3 font-bold text-emerald-700">{p.branch}</td>
+                  <td className="p-3 font-bold text-emerald-700">
+                    {p.branch && p.branch.includes(',') ? (
+                      <div className="flex flex-wrap gap-1 max-w-[240px]">
+                        {p.branch.split(',').map(b => (
+                          <span key={b.trim()} className="px-1.5 py-0.5 text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">
+                            {b.trim()}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span>{p.branch}</span>
+                    )}
+                  </td>
                   <td className="p-3">
                     <div className="flex items-center justify-center space-x-1.5">
                       <button 
@@ -169,6 +222,15 @@ export default function UserManagement({
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
+                      {currentUser.role === 'Administrator' && (
+                        <button 
+                          onClick={() => setUserToResetPassword(p)}
+                          className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-100 rounded-lg transition-colors"
+                          title="Reset Password ke password123"
+                        >
+                          <Lock className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button 
                         onClick={() => handleDelete(p)}
                         className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 rounded-lg transition-colors"
@@ -208,24 +270,22 @@ export default function UserManagement({
             </div>
 
             <form onSubmit={showForm === 'add' ? handleAddSubmit : handleEditSubmit} className="space-y-4">
-              {showForm === 'add' && (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Email Perusahaan</label>
-                  <div className="relative">
-                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                      <Mail className="w-3.5 h-3.5" />
-                    </span>
-                    <input 
-                      type="email" 
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="staf@company.id"
-                      className="w-full text-xs border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 focus:outline-none"
-                    />
-                  </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Email Perusahaan</label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                    <Mail className="w-3.5 h-3.5" />
+                  </span>
+                  <input 
+                    type="email" 
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="staf@company.id"
+                    className="w-full text-xs border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
                 </div>
-              )}
+              </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nama Lengkap</label>
@@ -261,30 +321,107 @@ export default function UserManagement({
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Otoritas Peran / Role</label>
                 <select 
                   value={role}
-                  onChange={(e) => setRole(e.target.value as UserRole)}
+                  onChange={(e) => handleRoleChange(e.target.value as UserRole)}
                   className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="ASO / Staff">ASO / Staff</option>
-                  <option value="Sales / Sales Head">Sales / Sales Head</option>
+                  <option value="Sales Head">Sales Head</option>
                   <option value="BRO">BRO</option>
                   <option value="Admin">Admin</option>
                   <option value="Administrator">Administrator</option>
+                  <option value="Kepala Cabang">Kepala Cabang</option>
+                  <option value="Division Head">Division Head</option>
+                  <option value="Regional Head West">Regional Head West</option>
+                  <option value="Regional Head Central">Regional Head Central</option>
+                  <option value="Regional Head East">Regional Head East</option>
+                  <option value="Regional Head">Regional Head (General)</option>
                 </select>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Regional</label>
-                <select 
-                  value={branch}
-                  onChange={(e) => setBranch(e.target.value)}
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="Nasional">Nasional (HQ/Pusat)</option>
-                  {['Jakarta', 'Surabaya', 'Bandung', 'Medan', 'Makassar', 'Balikpapan', 'Bali', 'Solo', 'Semarang'].map(b => (
-                    <option key={b} value={b}>{b}</option>
-                  ))}
-                </select>
-              </div>
+              {isRegionalHeadRole(role) ? (
+                <div className="space-y-2 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
+                  <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+                    <label className="text-[10px] font-extrabold text-slate-700 uppercase flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Cabang Dikelola ({selectedBranchList.length} Terpilih)</span>
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setBranch(WEST_BRANCHES.join(', '))}
+                        className="text-[9px] font-bold px-2 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded transition-colors"
+                        title="Pilih Cabang Wilayah Barat"
+                      >
+                        West
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBranch(CENTRAL_BRANCHES.join(', '))}
+                        className="text-[9px] font-bold px-2 py-0.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-800 rounded transition-colors"
+                        title="Pilih Cabang Wilayah Tengah"
+                      >
+                        Central
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBranch(EAST_BRANCHES.join(', '))}
+                        className="text-[9px] font-bold px-2 py-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded transition-colors"
+                        title="Pilih Cabang Wilayah Timur"
+                      >
+                        East
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBranch(BRANCH_LIST.join(', '))}
+                        className="text-[9px] font-bold px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded transition-colors"
+                      >
+                        Semua
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-44 overflow-y-auto custom-scrollbar p-1">
+                    {BRANCH_LIST.map((bName) => {
+                      const isChecked = selectedBranchList.includes(bName);
+                      return (
+                        <label
+                          key={bName}
+                          onClick={() => toggleBranchSelection(bName)}
+                          className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold cursor-pointer transition-all select-none ${
+                            isChecked
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {isChecked ? (
+                            <CheckSquare className="w-3.5 h-3.5 text-white shrink-0" />
+                          ) : (
+                            <Square className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          )}
+                          <span className="truncate">{bName}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-slate-500 italic mt-1">
+                    * Regional Head dapat memilih banyak cabang sekaligus.
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang</label>
+                  <select 
+                    value={branch}
+                    onChange={(e) => setBranch(e.target.value)}
+                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="Nasional">Nasional (HQ/Pusat)</option>
+                    {BRANCH_LIST.map(b => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="flex justify-end space-x-2 mt-6 pt-3 border-t border-slate-100">
                 <button 
@@ -330,12 +467,48 @@ export default function UserManagement({
               </button>
               <button 
                 onClick={() => {
-                  onDeleteUser(userToDelete.email);
+                  onDeleteUser(userToDelete.id);
                   setUserToDelete(null);
                 }}
                 className="px-3.5 py-2 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-xl transition-all"
               >
                 Hapus Akses
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CUSTOM CONFIRM RESET PASSWORD MODAL */}
+      {userToResetPassword && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
+            <h3 className="text-sm font-bold text-slate-900 mb-2">Konfirmasi Reset Password</h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Apakah Anda yakin ingin mereset password untuk staf berikut ke password default <span className="font-bold text-slate-900">password123</span>?
+            </p>
+            <div className="mt-3 p-3 bg-amber-50 rounded-xl border border-amber-100 text-xs text-amber-900">
+              <p className="font-extrabold text-slate-800">{userToResetPassword.full_name}</p>
+              <p className="text-slate-500 font-mono mt-0.5">{userToResetPassword.email}</p>
+              <p className="text-[10px] text-amber-700 font-bold mt-1 bg-amber-100 px-2 py-0.5 rounded inline-block">
+                {userToResetPassword.role} - {userToResetPassword.branch}
+              </p>
+            </div>
+            <div className="flex justify-end space-x-2 mt-5">
+              <button 
+                onClick={() => setUserToResetPassword(null)}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100 rounded-xl transition-all"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={() => {
+                  onUpdateUser(userToResetPassword.id, { password: 'password123' });
+                  setUserToResetPassword(null);
+                }}
+                className="px-3.5 py-2 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition-all"
+              >
+                Reset Password
               </button>
             </div>
           </div>

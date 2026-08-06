@@ -1,58 +1,140 @@
 import React, { useState } from 'react';
 import { 
-  X, Check, AlertTriangle, Upload, Download, FileText, 
-  Image, Calendar, User, DollarSign, ArrowRight, Printer, Eye,
-  Trash2, Cloud, Loader2
+  X, Upload, Download, FileText, 
+  Image, Eye,
+  Cloud, Loader2, ExternalLink
 } from 'lucide-react';
-import { Backcharge, Profile, UserRole, BackchargeCategory } from '../types';
-import { checkGoogleToken, uploadFileToDrive } from '../lib/googleDrive';
+import { Backcharge, Profile } from '../types';
+import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
 
 interface DetailModalProps {
   transaction: Backcharge;
   currentUser: Profile;
   onClose: () => void;
   onUpdateStatus: (id: string, updates: Partial<Backcharge>, logMessage: string) => void;
-  onDeleteTransaction?: (id: string) => void;
 }
+
+const getDrivePreviewUrl = (url: string): string => {
+  if (!url) return '';
+  if (url.includes('drive.google.com')) {
+    const fileIdMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (fileIdMatch && fileIdMatch[1]) {
+      return `https://drive.google.com/file/d/${fileIdMatch[1]}/preview`;
+    }
+    const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (idMatch && idMatch[1]) {
+      return `https://drive.google.com/file/d/${idMatch[1]}/preview`;
+    }
+  }
+  return url;
+};
 
 export default function DetailModal({ 
   transaction, 
   currentUser, 
   onClose, 
-  onUpdateStatus,
-  onDeleteTransaction
+  onUpdateStatus
 }: DetailModalProps) {
   
   const [actionLoading, setActionLoading] = useState(false);
-  const [showActionForm, setShowActionForm] = useState<'confirm' | 'sap' | 'invoice' | 'sales_admin_handover' | null>(null);
+  const [showActionForm, setShowActionForm] = useState<'sap' | 'invoice' | 'sales_admin_handover' | 'handover_courier' | 'approval' | null>(null);
 
   // Form states for actions
-  const [modalConfirmStatus, setModalConfirmStatus] = useState('Telah Dikonfirmasi');
-  const [modalConfirmNotes, setModalConfirmNotes] = useState('');
   const [modalSAPStatus, setModalSAPStatus] = useState('Bill');
   const [modalInvoiceNo, setModalInvoiceNo] = useState('');
+  const [modalApprovalStatus, setModalApprovalStatus] = useState<string>('Disetujui');
+  const [modalApprovalNotes, setModalApprovalNotes] = useState<string>('');
 
   // Individual file attachment update states
-  const [localFileBak, setLocalFileBak] = useState<string | null>(null);
-  const [localHandoverAso, setLocalHandoverAso] = useState<string | null>(null);
-  const [localHandoverSalesAdmin, setLocalHandoverSalesAdmin] = useState<string | null>(null);
+  const [localFileBak, setLocalFileBak] = useState<string | null>(transaction.file_bak_url || null);
+  const [localFileBakName, setLocalFileBakName] = useState(transaction.file_bak_url ? 'File BAK' : '');
+  const [uploadingBak, setUploadingBak] = useState(false);
+
+  const [localUploadDokPendukung, setLocalUploadDokPendukung] = useState<string | null>(transaction.upload_dok_pendukung || null);
+  const [localUploadDokPendukungName, setLocalUploadDokPendukungName] = useState(transaction.upload_dok_pendukung ? 'Dokumen Pendukung' : '');
+  const [uploadingDokPendukung, setUploadingDokPendukung] = useState(false);
+
+  const [localDokPendukungAlasan, setLocalDokPendukungAlasan] = useState(transaction.dok_pendukung_alasan === '-' ? '' : (transaction.dok_pendukung_alasan || ''));
   
   // New States for Lightbox and Actions
-  const [lightboxFile, setLightboxFile] = useState<{ url: string; title: string } | null>(null);
+  const [lightboxFile, setLightboxFile] = useState<{ url: string; title: string; docName?: string } | null>(null);
   const [localHandoverSalesAdminFile, setLocalHandoverSalesAdminFile] = useState<string | null>(null);
   const [localHandoverSalesAdminFileName, setLocalHandoverSalesAdminFileName] = useState('');
 
+  // Helper to generate standard file name: [nama lampiran dokumen]_[id bc]_[nopol]_[customer]
+  const getFormattedFileName = (
+    docName: string,
+    tx: Backcharge,
+    fileUrl?: string | null
+  ): string => {
+    const sanitize = (str: string | null | undefined, fallback: string) => {
+      if (!str || str.trim() === '' || str.trim() === '-') return fallback;
+      return str
+        .trim()
+        .replace(/[/\\?%*:|"<>#]/g, '')
+        .replace(/\s+/g, '_');
+    };
+
+    const cleanDoc = sanitize(docName, 'Lampiran_Dokumen');
+    const cleanId = sanitize(tx.id, 'BC-000');
+    const cleanNopol = sanitize(tx.license_plate, 'NOPOL');
+    const cleanCustomer = sanitize(tx.customer_name, 'CUSTOMER');
+
+    let baseName = `${cleanDoc}_${cleanId}_${cleanNopol}_${cleanCustomer}`;
+
+    let ext = '.png';
+    if (fileUrl) {
+      if (fileUrl.startsWith('data:image/jpeg') || fileUrl.startsWith('data:image/jpg')) {
+        ext = '.jpg';
+      } else if (fileUrl.startsWith('data:image/png')) {
+        ext = '.png';
+      } else if (fileUrl.startsWith('data:image/webp')) {
+        ext = '.webp';
+      } else if (fileUrl.startsWith('data:application/pdf')) {
+        ext = '.pdf';
+      } else if (fileUrl.toLowerCase().includes('.pdf')) {
+        ext = '.pdf';
+      } else if (fileUrl.toLowerCase().includes('.jpg') || fileUrl.toLowerCase().includes('.jpeg')) {
+        ext = '.jpg';
+      }
+    }
+
+    return `${baseName}${ext}`;
+  };
+
   // Google Drive integration states
   const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [serviceAccountActive, setServiceAccountActive] = useState(false);
+  const [appsScriptActive, setAppsScriptActive] = useState(false);
   const [uploadingSalesAdmin, setUploadingSalesAdmin] = useState(false);
 
-  // Check token on mount
+  // Check token, service account, and apps script on mount
   React.useEffect(() => {
     const token = checkGoogleToken();
     if (token) {
       setGoogleToken(token);
     }
+
+    setAppsScriptActive(checkAppsScriptStatus());
+
+    checkServiceAccountStatus().then(active => {
+      setServiceAccountActive(active);
+    });
   }, []);
+
+  // Sync state when transaction prop changes
+  React.useEffect(() => {
+    if (transaction) {
+      setModalSAPStatus(transaction.status_sap === 'N/A' ? 'Bill' : (transaction.status_sap || 'Bill'));
+      setLocalFileBak(transaction.file_bak_url || null);
+      setLocalFileBakName(transaction.file_bak_url ? 'File BAK Tersimpan' : '');
+      setLocalUploadDokPendukung(transaction.upload_dok_pendukung || null);
+      setLocalUploadDokPendukungName(transaction.upload_dok_pendukung ? 'Dokumen Pendukung Tersimpan' : '');
+      setLocalDokPendukungAlasan(transaction.dok_pendukung_alasan === '-' ? '' : (transaction.dok_pendukung_alasan || ''));
+      setModalApprovalStatus(transaction.status_approval === 'Disetujui' ? 'Disetujui' : 'Disetujui');
+      setModalApprovalNotes(transaction.approval_note || '');
+    }
+  }, [transaction]);
 
   const formatRupiah = (num: number) => {
     return new Intl.NumberFormat('id-ID', {
@@ -60,6 +142,21 @@ export default function DetailModal({
       currency: 'IDR',
       minimumFractionDigits: 0
     }).format(num);
+  };
+
+  const formatDateOnly = (dateStr?: string | null) => {
+    if (!dateStr) return '-';
+    const justDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.split(' ')[0];
+    const parts = justDate.split('-');
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`; // DD/MM/YYYY
+      }
+      if (parts[2].length === 4) {
+        return `${parts[0]}/${parts[1]}/${parts[2]}`; // DD/MM/YYYY
+      }
+    }
+    return justDate;
   };
 
   const kekata = (n: number): string => {
@@ -82,86 +179,362 @@ export default function DetailModal({
     return kekata(num) + " Rupiah";
   };
 
+  const getFileLabels = (category: string) => {
+    if (category === 'Own Risk') {
+      return {
+        bak: "Berkas BAK & Input SAP",
+        asoSales: "Foto Serah Terima ASO ke Admin",
+        salesAdmin: "Foto Serah Terima BRO ke Admin"
+      };
+    }
+    if (category === 'Maintenance' || category === 'ETLE' || category === 'TPL') {
+      const initName = category === 'Maintenance' ? 'SA' : category === 'ETLE' ? 'VRO' : 'SA';
+      return {
+        bak: `Berkas Inisiasi (${initName})`,
+        asoSales: `Foto Serah Terima ${initName} ke Admin`,
+        salesAdmin: "Foto Serah Terima BRO ke Admin"
+      };
+    }
+    if (category === 'Ekspedisi') {
+      return {
+        bak: "Berkas Order Ekspedisi",
+        asoSales: "Foto Serah Terima ASO ke Admin",
+        salesAdmin: "Foto Serah Terima ASO ke Admin"
+      };
+    }
+    return {
+      bak: "Berkas BAK / Inisiasi",
+      asoSales: "Foto Serah Terima ASO ke Admin",
+      salesAdmin: "Foto Serah Terima BRO ke Admin"
+    };
+  };
+
   const getSteps = (t: Backcharge) => {
     const kat = t.category;
     
-    if (kat === 'Own Risk') {
-      const step1 = true;
-      const step2 = t.status_confirm === 'Telah Dikonfirmasi';
-      const step3 = step2 && t.status_sap !== 'N/A' && t.status_sap !== '';
-      const step4 = step3 && (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin');
-      const step5 = step4 && t.no_invoice && t.no_invoice !== '-';
-      const step6 = step5 && t.status_payment === 'Lunas';
+    const step1 = true;
+    const stepHandover = t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin';
+    const stepSap = t.status_sap !== 'N/A' && t.status_sap !== '' && t.status_sap !== undefined;
+    const stepApproval = t.status_approval === 'Disetujui';
+    const stepInvoice = t.no_invoice && t.no_invoice !== '-';
+    const stepPayment = t.status_payment === 'Lunas';
 
+    if (kat === 'Own Risk') {
       return [
-        { label: "Buat BAK & Input SAP", pic: "ASO / Staff", completed: step1, active: !step2 },
-        { label: "Konfirmasi Customer", pic: "Sales", completed: step2, active: step1 && !step2 },
-        { label: "Update SAP (Bill/No)", pic: "Sales Head", completed: step3, active: step2 && !step3 },
-        { label: "Serah Terima Berkas", pic: "BRO", completed: step4, active: step3 && !step4 },
-        { label: "Cetak & Kirim Invoice", pic: "Admin", completed: step5, active: step4 && !step5 },
-        { label: "Pelunasan Denda", pic: "Customer", completed: step6, active: step5 && !step6 }
+        { label: "Buat BAK & Input SAP", pic: "ASO / Staff", completed: step1, active: !stepHandover },
+        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO / Staff", completed: stepHandover, active: !stepHandover },
+        { label: "Update SAP (Bill/No)", pic: "Sales Head", completed: stepSap, active: stepHandover && !stepSap },
+        { label: "Approval Backcharge", pic: "Sales Head", completed: stepApproval, active: stepHandover && stepSap && !stepApproval },
+        { label: "Cetak & Kirim Invoice", pic: "Admin", completed: stepInvoice, active: stepHandover && stepSap && stepApproval && !stepInvoice },
+        { label: "Pelunasan Denda", pic: "Customer", completed: stepPayment, active: stepHandover && stepSap && stepApproval && stepInvoice && !stepPayment }
       ];
     }
     
-    if (kat === 'Maintenance' || kat === 'ETLE' || kat === 'TPL') {
-      const step1 = true;
-      const step2 = t.status_confirm === 'Telah Dikonfirmasi';
-      const step3 = step2 && (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin');
-      const step4 = step3 && t.no_invoice && t.no_invoice !== '-';
-      const step5 = step4 && t.status_payment === 'Lunas';
-
-      const pic1 = kat === 'Maintenance' ? 'SA' : kat === 'ETLE' ? 'VRO' : 'SA';
+    if (kat === 'Maintenance' || kat === 'TPL') {
       return [
-        { label: "Inisiasi Berkas", pic: pic1, completed: step1, active: !step2 },
-        { label: "Konfirmasi Denda/Biaya", pic: "Sales", completed: step2, active: step1 && !step2 },
-        { label: "Serah Terima Berkas", pic: "BRO", completed: step3, active: step2 && !step3 },
-        { label: "Cetak & Kirim Invoice", pic: "Admin", completed: step4, active: step3 && !step4 },
-        { label: "Pelunasan Denda", pic: "Customer", completed: step5, active: step4 && !step5 }
+        { label: "Inisiasi Berkas (SA)", pic: "SA", completed: step1, active: !stepHandover },
+        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO / Staff", completed: stepHandover, active: !stepHandover },
+        { label: "Verifikasi Berkas & Dokumen", pic: "BRO / Admin", completed: stepHandover, active: stepHandover && !stepApproval },
+        { label: "Approval Backcharge", pic: "Kepala Cabang", completed: stepApproval, active: stepHandover && !stepApproval },
+        { label: "Cetak & Kirim Invoice", pic: "Admin", completed: stepInvoice, active: stepHandover && stepApproval && !stepInvoice },
+        { label: "Pelunasan Denda", pic: "Customer", completed: stepPayment, active: stepHandover && stepApproval && stepInvoice && !stepPayment }
       ];
     }
 
     if (kat === 'Ekspedisi') {
-      const step1 = true;
-      const step2 = t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin';
-      const step3 = step2 && t.no_invoice && t.no_invoice !== '-';
-      const step4 = step3 && t.status_payment === 'Lunas';
-
       return [
-        { label: "Buat Order Ekspedisi", pic: "ASO / Staff", completed: step1, active: !step2 },
-        { label: "Serah Terima Bukti", pic: "ASO / Staff", completed: step2, active: step1 && !step2 },
-        { label: "Cetak & Kirim Invoice", pic: "Admin", completed: step3, active: step2 && !step3 },
-        { label: "Pelunasan Denda", pic: "Customer", completed: step4, active: step3 && !step4 }
+        { label: "Buat Order Ekspedisi", pic: "ASO / Staff", completed: step1, active: !stepHandover },
+        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO / Staff", completed: stepHandover, active: !stepHandover },
+        { label: "Verifikasi Berkas & Dokumen", pic: "BRO / Admin", completed: stepHandover, active: stepHandover && !stepApproval },
+        { label: "Approval Backcharge", pic: "Sales Head", completed: stepApproval, active: stepHandover && !stepApproval },
+        { label: "Cetak & Kirim Invoice", pic: "Admin", completed: stepInvoice, active: stepHandover && stepApproval && !stepInvoice },
+        { label: "Pelunasan Denda", pic: "Customer", completed: stepPayment, active: stepHandover && stepApproval && stepInvoice && !stepPayment }
       ];
     }
+
+    if (kat === 'ETLE') {
+      return [
+        { label: "Inisiasi Berkas (VRO)", pic: "VRO", completed: step1, active: !stepHandover },
+        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO / Staff", completed: stepHandover, active: !stepHandover },
+        { label: "Verifikasi Berkas & Dokumen", pic: "BRO / Admin", completed: stepHandover, active: stepHandover && !stepApproval },
+        { label: "Approval Backcharge", pic: "Sales Head", completed: stepApproval, active: stepHandover && !stepApproval },
+        { label: "Cetak & Kirim Invoice", pic: "Admin", completed: stepInvoice, active: stepHandover && stepApproval && !stepInvoice },
+        { label: "Pelunasan Denda", pic: "Customer", completed: stepPayment, active: stepHandover && stepApproval && stepInvoice && !stepPayment }
+      ];
+    }
+
     return [];
   };
 
   const steps = getSteps(transaction);
 
-  // File download helper (handles both Base64 and standard links)
-  const downloadFile = (fileData: string | null | undefined, defaultName: string) => {
+  // Overall workflow status mapper ('Pending', 'In Progress', 'Completed')
+  const getOverallStatus = () => {
+    if (transaction.status_payment === 'Lunas') {
+      return {
+        label: 'Completed',
+        badgeClass: 'bg-emerald-50 border border-emerald-200 text-emerald-700 shadow-sm',
+        dotClass: 'bg-emerald-500',
+        text: 'Lunas / Selesai'
+      };
+    }
+    if (transaction.status_handover === 'Pending') {
+      return {
+        label: 'Pending',
+        badgeClass: 'bg-amber-50 border border-amber-200 text-amber-700 shadow-sm',
+        dotClass: 'bg-amber-500',
+        text: 'Menunggu Berkas'
+      };
+    }
+    return {
+      label: 'In Progress',
+      badgeClass: 'bg-blue-50 border border-blue-200 text-blue-700 shadow-sm',
+      dotClass: 'bg-blue-500 animate-pulse',
+      text: 'Sedang Diproses'
+    };
+  };
+
+  const overallStatus = getOverallStatus();
+
+  // Helper to generate crisp, uncorrupted official document image for mock/placeholder URLs
+  const generateMockDocumentCanvas = (
+    docType: string,
+    docTitleCustom?: string
+  ): string => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1200;
+    canvas.height = 1600;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+
+    // Background - Crisp White Paper
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 1200, 1600);
+
+    // Border & Margin Frame
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(40, 40, 1120, 1520);
+
+    // Outer Header Bar (Navy Blue)
+    ctx.fillStyle = '#1e3a8a';
+    ctx.fillRect(40, 40, 1120, 140);
+
+    // Header Text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 36px "Segoe UI", Arial, sans-serif';
+    ctx.fillText('PT ADI SARANA ARMADA, Tbk', 80, 100);
+
+    ctx.font = '18px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#93c5fd';
+    ctx.fillText('PORTAL MANAJEMEN BACKCHARGE NASIONAL — DOKUMEN BUKTI RESMI', 80, 135);
+
+    // Document Title
+    const isBak = docType.includes('BAK') || docType === 'MOCK_BAK';
+    const docTitle = docTitleCustom || (isBak ? 'BERITA ACARA KERUSAKAN (BAK)' : 'BERITA ACARA SERAH TERIMA BERKAS');
+
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 30px "Segoe UI", Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(docTitle.toUpperCase(), 600, 240);
+
+    // Underline
+    ctx.beginPath();
+    ctx.moveTo(250, 255);
+    ctx.lineTo(950, 255);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#2563eb';
+    ctx.stroke();
+
+    // Ref & Date
+    ctx.font = '18px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(`ID Transaksi: ${transaction.id}  |  Tanggal: ${formatDateOnly(transaction.tanggal)}`, 600, 290);
+
+    ctx.textAlign = 'left';
+
+    // Info Box
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(80, 330, 1040, 520);
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(80, 330, 1040, 520);
+
+    const fields = [
+      { label: 'ID TRANSAKSI', val: transaction.id },
+      { label: 'KATEGORI DOKUMEN', val: transaction.category },
+      { label: 'NAMA CUSTOMER', val: transaction.customer_name },
+      { label: 'CABANG WILAYAH', val: transaction.branch },
+      { label: 'NOMOR POLISI (ARMADA)', val: transaction.license_plate || '-' },
+      { label: 'NOMOR BAK / SPK', val: `${transaction.no_bak || '-'} / ${transaction.no_spk || '-'}` },
+      { label: 'NILAI TUNTUTAN BACKCHARGE', val: formatRupiah(transaction.value) },
+      { label: 'STATUS SERAH TERIMA', val: transaction.status_handover || 'Pending' },
+      { label: 'STATUS PEMBAYARAN', val: transaction.status_payment || 'Belum Bayar' },
+      { label: 'NOMOR INVOICE', val: transaction.no_invoice || 'Belum Terbit' },
+    ];
+
+    let y = 380;
+    fields.forEach((f, idx) => {
+      const isRight = idx % 2 === 1;
+      const x = isRight ? 620 : 120;
+      
+      ctx.font = 'bold 14px "Segoe UI", Arial, sans-serif';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText(f.label, x, y);
+
+      ctx.font = 'bold 20px "Segoe UI", Arial, sans-serif';
+      ctx.fillStyle = f.label.includes('NILAI') ? '#1e3a8a' : '#0f172a';
+      ctx.fillText(f.val, x, y + 26);
+
+      if (isRight) y += 80;
+    });
+
+    // Description area
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(80, 880, 1040, 180);
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.strokeRect(80, 880, 1040, 180);
+
+    ctx.font = 'bold 16px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#334155';
+    ctx.fillText('CATATAN KETERANGAN & VERIFIKASI DOKUMEN:', 110, 920);
+
+    ctx.font = '16px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#475569';
+    const descText = isBak 
+      ? `Dokumen Kerusakan & Inisiasi fisik denda kendaraan ${transaction.license_plate} milik customer ${transaction.customer_name} telah diverifikasi secara sah di Cabang ${transaction.branch}.`
+      : `Dokumen fisik serah terima berkas penyerahan backcharge (${transaction.id}) telah diverifikasi secara digital dan fisik oleh tim operasional ASSA.`;
+    ctx.fillText(descText, 110, 960);
+
+    // Watermark Stamp
+    ctx.save();
+    ctx.translate(900, 1180);
+    ctx.rotate((-12 * Math.PI) / 180);
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#10b981';
+    ctx.strokeRect(-160, -45, 320, 90);
+    ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+    ctx.fillRect(-160, -45, 320, 90);
+
+    ctx.font = '900 28px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#059669';
+    ctx.textAlign = 'center';
+    ctx.fillText('VERIFIED & VALID', 0, 8);
+    ctx.font = 'bold 12px "Segoe UI", Arial, sans-serif';
+    ctx.fillText('PT ADI SARANA ARMADA TBK', 0, 30);
+    ctx.restore();
+
+    // Signatures Section
+    const sigY = 1200;
+    ctx.textAlign = 'center';
+
+    // Signature 1
+    ctx.font = 'bold 16px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.fillText('DIBUAT OLEH (ASO)', 250, sigY);
+    ctx.beginPath();
+    ctx.moveTo(150, sigY + 120);
+    ctx.lineTo(350, sigY + 120);
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.font = 'bold 16px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText(`Staff ASO ${transaction.branch}`, 250, sigY + 145);
+
+    // Signature 2
+    ctx.font = 'bold 16px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.fillText('DIVALIDASI OLEH (BRO)', 600, sigY);
+    ctx.beginPath();
+    ctx.moveTo(500, sigY + 120);
+    ctx.lineTo(700, sigY + 120);
+    ctx.stroke();
+    ctx.font = 'bold 16px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText(`BRO Cabang ${transaction.branch}`, 600, sigY + 145);
+
+    // Signature 3
+    ctx.font = 'bold 16px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.fillText('DISETUJUI (ADMIN)', 950, sigY);
+    ctx.beginPath();
+    ctx.moveTo(850, sigY + 120);
+    ctx.lineTo(1050, sigY + 120);
+    ctx.stroke();
+    ctx.font = 'bold 16px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText('Admin Piutang ASSA', 950, sigY + 145);
+
+    // Footer note
+    ctx.textAlign = 'center';
+    ctx.font = 'italic 14px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(`Dicetak otomatis dari Portal Denda Terpadu ASSA pada ${new Date().toLocaleString('id-ID')}`, 600, 1530);
+
+    return canvas.toDataURL('image/png');
+  };
+
+  // File download helper (handles Base64, Google Drive, and mock document rendering without corruption)
+  const downloadFile = (fileData: string | null | undefined, defaultName: string, title?: string) => {
     if (!fileData) {
       alert("Tidak ada file lampiran!");
       return;
     }
     
-    // Check if it's base64 data URL
+    let fileName = defaultName;
+
+    // 1. Check if it's base64 data URL
     if (fileData.startsWith('data:')) {
+      if (fileData.startsWith('data:image/jpeg') && !fileName.endsWith('.jpg') && !fileName.endsWith('.jpeg')) {
+        fileName = fileName.replace(/\.[^/.]+$/, "") + ".jpg";
+      } else if (fileData.startsWith('data:image/png') && !fileName.endsWith('.png')) {
+        fileName = fileName.replace(/\.[^/.]+$/, "") + ".png";
+      } else if (fileData.startsWith('data:application/pdf') && !fileName.endsWith('.pdf')) {
+        fileName = fileName.replace(/\.[^/.]+$/, "") + ".pdf";
+      }
+
       const link = document.createElement('a');
       link.href = fileData;
-      link.download = defaultName;
+      link.download = fileName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-    } else {
-      // Simulate dummy file download
-      const element = document.createElement("a");
-      const file = new Blob(["File simulation content"], {type: 'text/plain'});
-      element.href = URL.createObjectURL(file);
-      element.download = defaultName;
-      document.body.appendChild(element);
-      element.click();
-      document.body.removeChild(element);
+      return;
+    }
+
+    // 2. If it's a web link or Google Drive URL
+    if (fileData.startsWith('http://') || fileData.startsWith('https://')) {
+      let downloadUrl = fileData;
+      if (fileData.includes('drive.google.com')) {
+        const fileIdMatch = fileData.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || fileData.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+        if (fileIdMatch && fileIdMatch[1]) {
+          downloadUrl = `https://drive.google.com/uc?export=download&id=${fileIdMatch[1]}`;
+        }
+      }
+      
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.target = '_blank';
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+
+    // 3. For mock / placeholder identifiers, render a high-res 1200x1600 official document PNG
+    const canvasDataUrl = generateMockDocumentCanvas(fileData, title || defaultName);
+    if (canvasDataUrl) {
+      if (!fileName.endsWith('.png')) {
+        fileName = fileName.replace(/\.[^/.]+$/, "") + ".png";
+      }
+      const link = document.createElement('a');
+      link.href = canvasDataUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   };
 
@@ -176,10 +549,20 @@ export default function DetailModal({
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64 = reader.result as string;
+        const updates: Partial<Backcharge> = { [fieldName]: base64 };
+        let logMsg = `Mengupload file lampiran baru: ${description}`;
+
+        if (fieldName === 'file_handover_aso_sales_url') {
+          updates.status_handover = 'Diserahkan ke Admin';
+          updates.file_handover_sales_admin_url = base64;
+          updates.tanggal_handover = transaction.tanggal_handover || new Date().toLocaleString('id-ID');
+          logMsg = `ASO mengunggah Foto Bukti Serah Terima ASO ke Admin dan menyerahkan fisik berkas denda lengkap ke departemen Admin`;
+        }
+
         onUpdateStatus(
           transaction.id, 
-          { [fieldName]: base64 }, 
-          `Mengupload file lampiran baru: ${description}`
+          updates, 
+          logMsg
         );
       };
       reader.readAsDataURL(file);
@@ -187,22 +570,17 @@ export default function DetailModal({
   };
 
   // Actions trigger handlers
-  const handleSalesConfirm = () => {
-    setActionLoading(true);
-    onUpdateStatus(
-      transaction.id,
-      { status_confirm: modalConfirmStatus },
-      `Sales memverifikasi status konfirmasi customer: ${modalConfirmStatus}. Catatan: ${modalConfirmNotes || '-'}`
-    );
-    setActionLoading(false);
-    setShowActionForm(null);
-  };
-
   const handleSAPStatus = () => {
+    const confirmMessage = `Konfirmasi Status Billing SAP:\nApakah Anda yakin ingin memperbarui Status SAP menjadi "${modalSAPStatus}"?`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
     setActionLoading(true);
     onUpdateStatus(
       transaction.id,
-      { status_sap: modalSAPStatus },
+      { 
+        status_sap: modalSAPStatus
+      },
       `Sales Head menyetujui status SAP: ${modalSAPStatus}`
     );
     setActionLoading(false);
@@ -212,6 +590,10 @@ export default function DetailModal({
   const handleInvoiceInput = () => {
     if (!modalInvoiceNo.trim()) {
       alert('Nomor invoice wajib diisi!');
+      return;
+    }
+    const confirmMessage = `Konfirmasi Penerbitan Invoice:\nApakah Anda yakin ingin menerbitkan Invoice No: ${modalInvoiceNo.trim()}?`;
+    if (!window.confirm(confirmMessage)) {
       return;
     }
     setActionLoading(true);
@@ -229,6 +611,10 @@ export default function DetailModal({
       alert('Bukti serah terima wajib diunggah!');
       return;
     }
+    const confirmMessage = `Konfirmasi Serah Terima Berkas:\nApakah Anda yakin ingin mengunggah Foto Bukti Serah Terima Sales ke Admin?`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
     setActionLoading(true);
     onUpdateStatus(
       transaction.id,
@@ -241,16 +627,13 @@ export default function DetailModal({
     setLocalHandoverSalesAdminFileName('');
   };
 
-  const handleHandoverCourier = () => {
-    const pengirim = transaction.category === 'Ekspedisi' ? 'ASO' : 'BRO';
-    onUpdateStatus(
-      transaction.id,
-      { status_handover: 'Diserahkan ke Admin' },
-      `${pengirim} menyerahkan fisik berkas denda lengkap ke departemen Admin`
-    );
-  };
+
 
   const handleSetPaid = () => {
+    const confirmMessage = `Konfirmasi Status Lunas:\nApakah Anda yakin ingin mengubah status pembayaran transaksi ini menjadi "Lunas"? Tindakan ini akan menyelesaikan alur transaksi denda.`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
     onUpdateStatus(
       transaction.id,
       { status_payment: 'Lunas' },
@@ -258,16 +641,38 @@ export default function DetailModal({
     );
   };
 
+  const handleApprovalSubmit = () => {
+    const isKacabUser = currentUser.role === 'Kepala Cabang' || (currentUser.role as string) === 'kacab';
+    const isSHUser = currentUser.role === 'Sales Head' || (currentUser.role as string) === 'Sales / Sales Head';
+    const roleTitle = isKacabUser ? 'Kepala Cabang' : isSHUser ? 'Sales Head' : currentUser.role;
+
+    const confirmMessage = `PERINGATAN STATUS KRITIS!\n\nApakah Anda yakin ingin menyimpan keputusan Approval Backcharge ini dengan status: "${modalApprovalStatus.toUpperCase()}"?\n\nPerubahan ini akan dicatat secara resmi atas nama ${currentUser.full_name || currentUser.email} (${roleTitle}).`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setActionLoading(true);
+    onUpdateStatus(
+      transaction.id,
+      { 
+        status_approval: modalApprovalStatus,
+        approved_by: `${currentUser.full_name || currentUser.email} (${roleTitle})`,
+        approved_at: new Date().toLocaleString('id-ID'),
+        approval_note: modalApprovalNotes.trim() || null
+      },
+      `${roleTitle} memproses Approval Backcharge kategori ${transaction.category}: ${modalApprovalStatus}.${modalApprovalNotes.trim() ? ` Catatan: ${modalApprovalNotes.trim()}` : ''}`
+    );
+    setActionLoading(false);
+    setShowActionForm(null);
+  };
+
   // Check roles permission
-  const isSales = currentUser.role === 'Sales / Sales Head' || currentUser.role === 'Administrator';
-  const isBro = currentUser.role === 'BRO' || currentUser.role === 'Administrator';
+  const isKacabRole = currentUser.role === 'Kepala Cabang' || (currentUser.role as string) === 'kacab' || currentUser.role === 'Administrator';
+  const isSalesHeadRole = currentUser.role === 'Sales Head' || (currentUser.role as string) === 'Sales / Sales Head' || currentUser.role === 'Administrator';
+  const isSales = currentUser.role === 'Sales Head' || currentUser.role === 'Kepala Cabang' || (currentUser.role as string) === 'Sales / Sales Head' || (currentUser.role as string) === 'kacab' || currentUser.role === 'Administrator';
+  const isBro = currentUser.role === 'BRO';
   const isAdmin = currentUser.role === 'Admin' || currentUser.role === 'Administrator';
   const isAso = currentUser.role === 'ASO / Staff' || currentUser.role === 'Administrator';
-
-  // Print specific transaction details (Rekapitulasi Dokumen)
-  const handlePrint = () => {
-    window.print();
-  };
 
   return (
     <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white print:fixed print:inset-0">
@@ -284,17 +689,27 @@ export default function DetailModal({
 
         {/* Modal Header */}
         <div className="flex flex-col space-y-1.5 border-b border-slate-100 pb-4 pr-10">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
             <span className="text-[9px] font-extrabold px-2.5 py-0.5 rounded-full uppercase bg-blue-600 text-white tracking-wider">
               {transaction.category}
             </span>
             <span className="text-[9px] font-extrabold px-2.5 py-0.5 rounded-full uppercase bg-emerald-500 text-white tracking-wider">
               {transaction.branch}
             </span>
+            <span className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider ${overallStatus.badgeClass}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${overallStatus.dotClass}`}></span>
+              <span>{overallStatus.label}</span>
+              <span className="text-slate-400 font-semibold normal-case">({overallStatus.text})</span>
+            </span>
           </div>
-          <div className="flex items-center justify-between w-full">
-            <h3 className="text-lg font-black text-slate-900">
-              Detail & Alur Kerja: {transaction.id}
+          <div className="flex items-center justify-between w-full gap-3 flex-wrap">
+            <h3 className="text-lg font-black text-slate-900 flex items-center gap-2 flex-wrap">
+              <span>Detail & Alur Kerja: {transaction.id}</span>
+              {transaction.customer_name && transaction.customer_name !== '-' && (
+                <span className="text-xs font-extrabold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
+                  {transaction.customer_name}
+                </span>
+              )}
             </h3>
           </div>
           <p className="text-xs text-slate-400 font-medium print:hidden">
@@ -314,6 +729,36 @@ export default function DetailModal({
             
             <div className="space-y-3.5 text-xs">
               <div>
+                <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Status Alur Kerja</span>
+                <span className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-black mt-1 ${overallStatus.badgeClass}`}>
+                  <span className={`w-2 h-2 rounded-full ${overallStatus.dotClass}`}></span>
+                  <span className="uppercase tracking-wider">{overallStatus.label}</span>
+                  <span className="text-[10px] opacity-75 font-bold">({overallStatus.text})</span>
+                </span>
+              </div>
+
+              <div>
+                <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Status Approval Backcharge</span>
+                <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-extrabold mt-1 ${
+                  transaction.status_approval === 'Disetujui' 
+                    ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' 
+                    : transaction.status_approval === 'Ditolak'
+                    ? 'bg-red-50 border border-red-200 text-red-800'
+                    : 'bg-amber-50 border border-amber-200 text-amber-800'
+                }`}>
+                  <span>{transaction.status_approval === 'Disetujui' ? '✅ Disetujui' : transaction.status_approval === 'Ditolak' ? '❌ Tidak Disetujui (Not Approved)' : '⏳ Belum Approval'}</span>
+                  <span className="text-[9px] font-bold opacity-75">
+                    ({transaction.category === 'Maintenance' || transaction.category === 'TPL' ? 'Kacab' : 'Sales Head'})
+                  </span>
+                </span>
+                {transaction.approved_by && (
+                  <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                    Oleh: <strong className="text-slate-700">{transaction.approved_by}</strong> {transaction.approved_at ? `pada ${transaction.approved_at}` : ''}
+                  </p>
+                )}
+              </div>
+
+              <div>
                 <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Nama Customer</span>
                 <span className="font-extrabold text-slate-900 text-sm block mt-0.5">{transaction.customer_name}</span>
               </div>
@@ -321,6 +766,16 @@ export default function DetailModal({
               <div>
                 <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Nilai Backcharge</span>
                 <span className="font-black text-blue-600 text-lg font-mono block mt-0.5">{formatRupiah(transaction.value)}</span>
+              </div>
+
+              <div>
+                <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Tanggal BAK</span>
+                <span className="font-bold text-slate-800 text-sm block mt-0.5">{formatDateOnly(transaction.tanggal)}</span>
+              </div>
+
+              <div>
+                <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Tanggal & Waktu Penyerahan</span>
+                <span className="font-bold text-slate-800 text-sm block mt-0.5">{transaction.tanggal_handover || '-'}</span>
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-1">
@@ -338,20 +793,33 @@ export default function DetailModal({
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                {transaction.no_sap !== '-' && (
-                  <div>
-                    <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Nomor ERP/SAP</span>
-                    <span className="font-bold text-slate-700 block mt-0.5">{transaction.no_sap}</span>
-                  </div>
-                )}
-                {transaction.license_plate !== '-' && (
-                  <div>
-                    <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">No. Polisi</span>
-                    <span className="font-bold text-slate-700 block mt-0.5">{transaction.license_plate}</span>
-                  </div>
-                )}
-              </div>
+              {transaction.category === 'ETLE' && transaction.no_tilang && transaction.no_tilang !== '-' && (
+                <div className="pt-1">
+                  <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Nomor Surat Tilang</span>
+                  <span className="font-bold text-slate-700 block mt-0.5">{transaction.no_tilang}</span>
+                </div>
+              )}
+
+              {transaction.license_plate !== '-' && (
+                <div>
+                  <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">No. Polisi</span>
+                  <span className="font-bold text-slate-700 block mt-0.5">{transaction.license_plate}</span>
+                </div>
+              )}
+
+              {transaction.bro_name && transaction.bro_name !== '-' && (
+                <div>
+                  <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Nama BRO</span>
+                  <span className="font-bold text-slate-700 block mt-0.5">{transaction.bro_name}</span>
+                </div>
+              )}
+
+              {transaction.dok_pendukung_alasan && transaction.dok_pendukung_alasan !== '-' && (
+                <div>
+                  <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Dokumen Pendukung & Alasan</span>
+                  <p className="text-slate-700 font-medium block mt-0.5 p-2.5 bg-slate-100/50 rounded-xl whitespace-pre-wrap leading-relaxed">{transaction.dok_pendukung_alasan}</p>
+                </div>
+              )}
 
               <div className="pt-3 border-t border-slate-200/60 space-y-2.5">
                 <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Lampiran Dokumen</span>
@@ -362,24 +830,26 @@ export default function DetailModal({
                     <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
                     <span 
                       onClick={() => {
+                        const labels = getFileLabels(transaction.category);
                         if (transaction.file_bak_url) {
-                          setLightboxFile({ url: transaction.file_bak_url, title: `Berkas BAK: ${transaction.id}` });
+                          setLightboxFile({ url: transaction.file_bak_url, title: `${labels.bak}: ${transaction.id}`, docName: labels.bak });
                         } else {
-                          setLightboxFile({ url: 'MOCK_BAK', title: `Simulasi Dokumen BAK: ${transaction.id}` });
+                          alert("file atau foto belum di upload");
                         }
                       }}
                       className="text-[10px] font-bold text-slate-700 truncate cursor-pointer hover:text-blue-600 hover:underline"
                     >
-                      {transaction.file_bak_url ? 'File_BAK.pdf/img' : 'Belum Ada BAK (Klik untuk Simulasi)'}
+                      {transaction.file_bak_url ? `${getFileLabels(transaction.category).bak}.pdf/img` : `Belum Ada ${getFileLabels(transaction.category).bak} (Klik untuk cek)`}
                     </span>
                   </div>
                   <div className="flex items-center space-x-1">
                     <button 
                       onClick={() => {
+                        const labels = getFileLabels(transaction.category);
                         if (transaction.file_bak_url) {
-                          setLightboxFile({ url: transaction.file_bak_url, title: `Berkas BAK: ${transaction.id}` });
+                          setLightboxFile({ url: transaction.file_bak_url, title: `${labels.bak}: ${transaction.id}`, docName: labels.bak });
                         } else {
-                          setLightboxFile({ url: 'MOCK_BAK', title: `Simulasi Dokumen BAK: ${transaction.id}` });
+                          alert("file atau foto belum di upload");
                         }
                       }}
                       className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
@@ -389,9 +859,13 @@ export default function DetailModal({
                     </button>
                     {transaction.file_bak_url ? (
                       <button 
-                        onClick={() => downloadFile(transaction.file_bak_url, `BAK_${transaction.id}.png`)}
+                        onClick={() => downloadFile(
+                          transaction.file_bak_url, 
+                          getFormattedFileName(getFileLabels(transaction.category).bak, transaction, transaction.file_bak_url),
+                          getFileLabels(transaction.category).bak
+                        )}
                         className="p-1.5 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
-                        title="Unduh File BAK"
+                        title="Unduh File"
                       >
                         <Download className="w-3.5 h-3.5" />
                       </button>
@@ -402,7 +876,7 @@ export default function DetailModal({
                           <input 
                             type="file" 
                             accept="application/pdf,image/*"
-                            onChange={(e) => uploadNewFile(e, 'file_bak_url', 'Lampiran File BAK')}
+                            onChange={(e) => uploadNewFile(e, 'file_bak_url', getFileLabels(transaction.category).bak)}
                             className="hidden" 
                           />
                         </label>
@@ -411,30 +885,32 @@ export default function DetailModal({
                   </div>
                 </div>
 
-                {/* 2. Handover ASO - Sales */}
+                {/* 2. Handover ASO - Admin */}
                 <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200">
                   <div className="flex items-center space-x-2 min-w-0">
                     <Image className="w-4 h-4 text-purple-600 flex-shrink-0" />
                     <span 
                       onClick={() => {
+                        const labels = getFileLabels(transaction.category);
                         if (transaction.file_handover_aso_sales_url) {
-                          setLightboxFile({ url: transaction.file_handover_aso_sales_url, title: `Foto Serah Terima ASO ke Sales: ${transaction.id}` });
+                          setLightboxFile({ url: transaction.file_handover_aso_sales_url, title: `${labels.asoSales}: ${transaction.id}`, docName: labels.asoSales });
                         } else {
-                          setLightboxFile({ url: 'MOCK_HANDOVER_ASO_SALES', title: `Simulasi Serah Terima ASO ke Sales: ${transaction.id}` });
+                          alert("file atau foto belum di upload");
                         }
                       }}
                       className="text-[10px] font-bold text-slate-700 truncate cursor-pointer hover:text-purple-600 hover:underline"
                     >
-                      {transaction.file_handover_aso_sales_url ? 'Foto_ASO_Sales.img' : 'Belum Ada Foto ASO-Sales (Klik Simulasi)'}
+                      {transaction.file_handover_aso_sales_url ? `${getFileLabels(transaction.category).asoSales}.img` : `Belum Ada ${getFileLabels(transaction.category).asoSales} (Klik untuk cek)`}
                     </span>
                   </div>
                   <div className="flex items-center space-x-1">
                     <button 
                       onClick={() => {
+                        const labels = getFileLabels(transaction.category);
                         if (transaction.file_handover_aso_sales_url) {
-                          setLightboxFile({ url: transaction.file_handover_aso_sales_url, title: `Foto Serah Terima ASO ke Sales: ${transaction.id}` });
+                          setLightboxFile({ url: transaction.file_handover_aso_sales_url, title: `${labels.asoSales}: ${transaction.id}`, docName: labels.asoSales });
                         } else {
-                          setLightboxFile({ url: 'MOCK_HANDOVER_ASO_SALES', title: `Simulasi Serah Terima ASO ke Sales: ${transaction.id}` });
+                          alert("file atau foto belum di upload");
                         }
                       }}
                       className="p-1.5 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 transition-colors"
@@ -442,72 +918,118 @@ export default function DetailModal({
                     >
                       <Eye className="w-3.5 h-3.5" />
                     </button>
-                    {transaction.file_handover_aso_sales_url ? (
+                    {transaction.file_handover_aso_sales_url && (
                       <button 
-                        onClick={() => downloadFile(transaction.file_handover_aso_sales_url, `Foto_Handover_ASO_Sales_${transaction.id}.png`)}
+                        onClick={() => downloadFile(
+                          transaction.file_handover_aso_sales_url, 
+                          getFormattedFileName(getFileLabels(transaction.category).asoSales, transaction, transaction.file_handover_aso_sales_url),
+                          getFileLabels(transaction.category).asoSales
+                        )}
                         className="p-1.5 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
-                        title="Unduh Foto ASO-Sales"
+                        title="Unduh Foto"
                       >
                         <Download className="w-3.5 h-3.5" />
                       </button>
-                    ) : (
-                      isSales && (
-                        <label className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg cursor-pointer border border-slate-200 transition-colors">
-                          <Upload className="w-3.5 h-3.5" />
-                          <input 
-                            type="file" 
-                            accept="image/*"
-                            onChange={(e) => uploadNewFile(e, 'file_handover_aso_sales_url', 'Foto Serah Terima ASO ke Sales')}
-                            className="hidden" 
-                          />
-                        </label>
-                      )
                     )}
                   </div>
                 </div>
 
-                {/* 3. Handover Sales - Admin */}
+                {/* 3. Handover Sales - Admin (Only show for historical transactions if file exists) */}
+                {transaction.file_handover_sales_admin_url && (
+                  <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200">
+                    <div className="flex items-center space-x-2 min-w-0">
+                      <Image className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                      <span 
+                        onClick={() => {
+                          const labels = getFileLabels(transaction.category);
+                          if (transaction.file_handover_sales_admin_url) {
+                            setLightboxFile({ url: transaction.file_handover_sales_admin_url, title: `${labels.salesAdmin}: ${transaction.id}`, docName: labels.salesAdmin });
+                          } else {
+                            alert("file atau foto belum di upload");
+                          }
+                        }}
+                        className="text-[10px] font-bold text-slate-700 truncate cursor-pointer hover:text-emerald-600 hover:underline"
+                      >
+                        {`${getFileLabels(transaction.category).salesAdmin}.img`}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <button 
+                        onClick={() => {
+                          const labels = getFileLabels(transaction.category);
+                          if (transaction.file_handover_sales_admin_url) {
+                            setLightboxFile({ url: transaction.file_handover_sales_admin_url, title: `${labels.salesAdmin}: ${transaction.id}`, docName: labels.salesAdmin });
+                          } else {
+                            alert("file atau foto belum di upload");
+                          }
+                        }}
+                        className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors"
+                        title="Lihat Langsung"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        onClick={() => downloadFile(
+                          transaction.file_handover_sales_admin_url, 
+                          getFormattedFileName(getFileLabels(transaction.category).salesAdmin, transaction, transaction.file_handover_sales_admin_url),
+                          getFileLabels(transaction.category).salesAdmin
+                        )}
+                        className="p-1.5 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                        title="Unduh Foto"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. Dokumen Pendukung */}
                 <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200">
                   <div className="flex items-center space-x-2 min-w-0">
-                    <Image className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <FileText className="w-4 h-4 text-amber-600 flex-shrink-0" />
                     <span 
                       onClick={() => {
-                        if (transaction.file_handover_sales_admin_url) {
-                          setLightboxFile({ url: transaction.file_handover_sales_admin_url, title: `Foto Serah Terima Sales ke Admin: ${transaction.id}` });
+                        if (transaction.upload_dok_pendukung) {
+                          setLightboxFile({ url: transaction.upload_dok_pendukung, title: `Dokumen Pendukung: ${transaction.id}`, docName: "Dokumen_Pendukung" });
                         } else {
-                          setLightboxFile({ url: 'MOCK_HANDOVER_SALES_ADMIN', title: `Simulasi Serah Terima Sales ke Admin: ${transaction.id}` });
+                          alert("file atau foto belum di upload");
                         }
                       }}
-                      className="text-[10px] font-bold text-slate-700 truncate cursor-pointer hover:text-emerald-600 hover:underline"
+                      className="text-[10px] font-bold text-slate-700 truncate cursor-pointer hover:text-amber-600 hover:underline"
                     >
-                      {transaction.file_handover_sales_admin_url ? 'Foto_Sales_Admin.img' : 'Belum Ada Foto Sales-Admin (Klik Simulasi)'}
+                      {transaction.upload_dok_pendukung ? "Dokumen Pendukung (File / Foto)" : "Belum Ada Dokumen Pendukung (Klik untuk cek)"}
                     </span>
                   </div>
                   <div className="flex items-center space-x-1">
                     <button 
                       onClick={() => {
-                        if (transaction.file_handover_sales_admin_url) {
-                          setLightboxFile({ url: transaction.file_handover_sales_admin_url, title: `Foto Serah Terima Sales ke Admin: ${transaction.id}` });
+                        if (transaction.upload_dok_pendukung) {
+                          setLightboxFile({ url: transaction.upload_dok_pendukung, title: `Dokumen Pendukung: ${transaction.id}`, docName: "Dokumen_Pendukung" });
                         } else {
-                          setLightboxFile({ url: 'MOCK_HANDOVER_SALES_ADMIN', title: `Simulasi Serah Terima Sales ke Admin: ${transaction.id}` });
+                          alert("file atau foto belum di upload");
                         }
                       }}
-                      className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors"
+                      className="p-1.5 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100 transition-colors"
                       title="Lihat Langsung"
                     >
                       <Eye className="w-3.5 h-3.5" />
                     </button>
-                    {transaction.file_handover_sales_admin_url && (
+                    {transaction.upload_dok_pendukung && (
                       <button 
-                        onClick={() => downloadFile(transaction.file_handover_sales_admin_url, `Foto_Handover_Sales_Admin_${transaction.id}.png`)}
+                        onClick={() => downloadFile(
+                          transaction.upload_dok_pendukung, 
+                          getFormattedFileName("Dokumen_Pendukung", transaction, transaction.upload_dok_pendukung),
+                          "Dokumen Pendukung"
+                        )}
                         className="p-1.5 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
-                        title="Unduh Foto Sales-Admin"
+                        title="Unduh File"
                       >
                         <Download className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
                 </div>
+
               </div>
             </div>
           </div>
@@ -551,8 +1073,19 @@ export default function DetailModal({
                             {step.pic}
                           </span>
                         </div>
-                        <p className="text-[9px] text-slate-500 mt-0.5">
-                          {step.completed ? 'Tahap sukses diselesaikan' : step.active ? 'Menunggu penyelesaian Anda' : 'Menunggu tahap sebelumnya'}
+                        <p className="text-[9px] text-slate-500 mt-0.5 font-medium">
+                          {step.label.includes("Serah Terima Berkas") 
+                            ? (step.completed 
+                                ? `Dokumen baru telah di-input oleh ASO & berkas fisik denda diserahkan langsung ke Admin${transaction.tanggal_handover ? ` pada ${transaction.tanggal_handover}` : ''}` 
+                                : step.active 
+                                  ? "Menunggu unggahan Foto Serah Terima ASO ke Admin untuk memproses penyerahan berkas" 
+                                  : "Menunggu tahap sebelumnya")
+                            : (step.completed 
+                                ? 'Tahap sukses diselesaikan' 
+                                : step.active 
+                                  ? 'Menunggu penyelesaian Anda' 
+                                  : 'Menunggu tahap sebelumnya')
+                          }
                         </p>
                       </div>
                     </div>
@@ -562,193 +1095,323 @@ export default function DetailModal({
             </div>
 
             {/* ACTION PANEL (print:hidden) */}
-            <div className="bg-blue-50/70 rounded-2xl border border-blue-100 p-5 flex flex-col space-y-4 print:hidden">
-              <div className="flex items-center space-x-2">
-                <div className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-pulse"></div>
-                <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">Tindakan Otoritas</span>
+            <div className="bg-slate-50/90 rounded-2xl border border-slate-200 p-5 flex flex-col space-y-4 print:hidden">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-pulse"></div>
+                  <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Tindakan Otoritas Alur Denda</span>
+                </div>
+                <span className="text-[10px] bg-slate-200/80 text-slate-700 px-2 py-0.5 rounded-full font-bold">
+                  Peran Anda: {currentUser.role}
+                </span>
               </div>
 
-              {/* Action options buttons */}
-              {showActionForm === null && (
-                <div className="flex flex-wrap gap-2 pt-1">
-                  
-                  {/* 1. Sales Confirm trigger */}
-                  {transaction.category !== 'Ekspedisi' && transaction.status_confirm === 'Belum Konfirmasi' && isSales && (
-                    <button 
-                      onClick={() => setShowActionForm('confirm')}
-                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center space-x-1.5 transition-all transform hover:-translate-y-0.5"
-                    >
-                      <span>✔️ Konfirmasi Customer</span>
-                    </button>
-                  )}
-
-                  {/* 2. Sales Head SAP Status trigger (Own Risk category only) */}
-                  {transaction.category === 'Own Risk' && transaction.status_confirm === 'Telah Dikonfirmasi' && transaction.status_sap === 'N/A' && isSales && (
-                    <button 
-                      onClick={() => setShowActionForm('sap')}
-                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center space-x-1.5 transition-all transform hover:-translate-y-0.5"
-                    >
-                      <span>⚙️ Set Status SAP (Bill/Not)</span>
-                    </button>
-                  )}
-
-                  {/* 3. BRO/ASO Handover paperwork dispatch */}
-                  {((transaction.category === 'Own Risk' && transaction.status_confirm === 'Telah Dikonfirmasi' && transaction.status_sap !== 'N/A') ||
-                    (transaction.category !== 'Own Risk' && transaction.category !== 'Ekspedisi' && transaction.status_confirm === 'Telah Dikonfirmasi') ||
-                    (transaction.category === 'Ekspedisi')) && transaction.status_handover === 'Pending' && (isBro || (transaction.category === 'Ekspedisi' && isAso)) && (
-                    <button 
-                      onClick={handleHandoverCourier}
-                      className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center space-x-1.5 transition-all transform hover:-translate-y-0.5"
-                    >
-                      <span>📦 Serahkan Fisik Berkas</span>
-                    </button>
-                  )}
-
-                  {/* 4. Admin Invoice issuing */}
-                  {transaction.status_handover === 'Diserahkan ke Admin' && (transaction.no_invoice === '-' || !transaction.no_invoice) && isAdmin && (
-                    <button 
-                      onClick={() => {
-                        setModalInvoiceNo('');
-                        setShowActionForm('invoice');
-                      }}
-                      className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center space-x-1.5 transition-all transform hover:-translate-y-0.5"
-                    >
-                      <span>📝 Input Nomor Invoice</span>
-                    </button>
-                  )}
-
-                  {/* 4.5 Upload Foto Serah Terima Sales ke Admin */}
-                  {transaction.status_confirm === 'Telah Dikonfirmasi' && !transaction.file_handover_sales_admin_url && (isSales || isAdmin) && (
-                    <button 
-                      onClick={() => setShowActionForm('sales_admin_handover')}
-                      className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center space-x-1.5 transition-all transform hover:-translate-y-0.5"
-                    >
-                      <span>📸 Upload Foto Serah Terima Sales-Admin</span>
-                    </button>
-                  )}
-
-                  {/* 5. Admin Set Paid */}
-                  {transaction.no_invoice && transaction.no_invoice !== '-' && transaction.status_payment === 'Belum Bayar' && isAdmin && (
-                    <button 
-                      onClick={handleSetPaid}
-                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center space-x-1.5 transition-all transform hover:-translate-y-0.5"
-                    >
-                      <span>💰 Set Status Lunas</span>
-                    </button>
-                  )}
-
-                  {/* No active actions message */}
-                  {transaction.status_payment === 'Lunas' && (
-                    <div className="w-full p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl font-bold">
-                      🎉 Transaksi denda lunas & tuntas. Siklus dokumen selesai divalidasi.
-                    </div>
-                  )}
-
-                  {transaction.status_payment !== 'Lunas' && (
-                    <div className="text-[10px] text-slate-500 font-semibold w-full mt-2">
-                      💡 Selesaikan tahap demi tahap berdasarkan otorisasi peran ({currentUser.role}) Anda.
-                    </div>
-                  )}
+              {/* Serah Terima Berkas Banner (If Pending) */}
+              {isAso && transaction.status_handover === 'Pending' && showActionForm === null && (
+                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex items-center justify-between">
+                  <div>
+                    <h5 className="text-xs font-extrabold text-indigo-900">📦 Serah Terima Berkas (ASO ke Admin)</h5>
+                    <p className="text-[10px] text-indigo-700 font-medium">Serahkan berkas fisik denda ke Admin untuk melanjutkan alur invoice.</p>
+                  </div>
+                  <button 
+                    onClick={() => setShowActionForm('handover_courier')}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold rounded-lg shadow cursor-pointer transition-all shrink-0"
+                  >
+                    Proses Serah Terima
+                  </button>
                 </div>
               )}
 
-              {/* ACTION FORM: Sales Confirm */}
-              {showActionForm === 'confirm' && (
-                <div className="space-y-3 border-t border-blue-100 pt-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-700">Form Konfirmasi Sales</span>
-                    <button onClick={() => setShowActionForm(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold">Batal</button>
-                  </div>
-                  <div className="space-y-3 text-xs">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Status Persetujuan</label>
-                      <select 
-                        value={modalConfirmStatus}
-                        onChange={(e) => setModalConfirmStatus(e.target.value)}
-                        className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white"
-                      >
-                        <option value="Telah Dikonfirmasi">Telah Dikonfirmasi (Setuju)</option>
-                        <option value="Ditolak / Negosiasi Ulang">Ditolak / Negosiasi Ulang</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Catatan Negosiasi</label>
-                      <textarea 
-                        value={modalConfirmNotes}
-                        onChange={(e) => setModalConfirmNotes(e.target.value)}
-                        placeholder="Tulis detail kesepakatan dengan customer..."
-                        className="w-full border border-slate-200 rounded-xl px-3 py-2 h-16 focus:outline-none"
-                      />
-                    </div>
-                    <button 
-                      onClick={handleSalesConfirm}
-                      disabled={actionLoading}
-                      className="w-full bg-emerald-600 text-white py-2 rounded-xl text-xs font-bold"
-                    >
-                      Simpan Status Konfirmasi
-                    </button>
-                  </div>
+              {/* Top status notification if Lunas */}
+              {transaction.status_payment === 'Lunas' && (
+                <div className="w-full p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl font-bold flex items-center space-x-2">
+                  <span>🎉</span>
+                  <span>Transaksi denda lunas &amp; tuntas. Seluruh siklus dokumen telah selesai divalidasi.</span>
                 </div>
               )}
 
-              {/* ACTION FORM: SAP Status */}
-              {showActionForm === 'sap' && (
-                <div className="space-y-3 border-t border-blue-100 pt-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-700">Form Otorisasi SAP ERP</span>
-                    <button onClick={() => setShowActionForm(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold">Batal</button>
-                  </div>
-                  <div className="space-y-3 text-xs">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Status Billing SAP</label>
-                      <select 
-                        value={modalSAPStatus}
-                        onChange={(e) => setModalSAPStatus(e.target.value)}
-                        className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white"
-                      >
-                        <option value="Bill">Bill (Ditagihkan ke Customer)</option>
-                        <option value="Not Bill">Not Bill (Ditanggung Internal)</option>
-                      </select>
-                    </div>
-                    <button 
-                      onClick={handleSAPStatus}
-                      disabled={actionLoading}
-                      className="w-full bg-blue-600 text-white py-2 rounded-xl text-xs font-bold"
-                    >
-                      Simpan Status SAP
-                    </button>
-                  </div>
-                </div>
-              )}
+              {/* 3 SEPARATED AUTHORITY BLOCKS (FILTERED BY ROLE PERMISSION) */}
+              <div className="grid grid-cols-1 gap-3">
 
-              {/* ACTION FORM: Invoice Input */}
-              {showActionForm === 'invoice' && (
-                <div className="space-y-3 border-t border-blue-100 pt-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-700">Form Penerbitan Invoice</span>
-                    <button onClick={() => setShowActionForm(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold">Batal</button>
-                  </div>
-                  <div className="space-y-3 text-xs">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nomor Invoice Resmi</label>
-                      <input 
-                        type="text" 
-                        value={modalInvoiceNo}
-                        onChange={(e) => setModalInvoiceNo(e.target.value)}
-                        placeholder="INV/2026/06/982"
-                        className="w-full border border-slate-200 rounded-xl px-3 py-2 focus:outline-none"
-                      />
+                {/* BLOCK 1: UPDATE SAP (BILL / NOT BILL) - Visible for Sales Head */}
+                {isSalesHeadRole && (
+                  <div className={`p-4 rounded-xl border transition-all ${
+                    showActionForm === 'sap' 
+                      ? 'bg-blue-50/90 border-blue-300 ring-2 ring-blue-500/20 shadow-sm' 
+                      : 'bg-white border-slate-200 hover:border-blue-200'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-base">⚙️</span>
+                        <div>
+                          <h5 className="text-xs font-extrabold text-slate-800">1. Update SAP (Bill/No)</h5>
+                          <span className="text-[9px] text-slate-500 font-bold">Wewenang: Sales Head</span>
+                        </div>
+                      </div>
+                      <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold ${
+                        transaction.status_sap === 'Bill'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : transaction.status_sap === 'Not Bill'
+                          ? 'bg-red-100 text-red-800 border border-red-200'
+                          : 'bg-slate-100 text-slate-600 border border-slate-200'
+                      }`}>
+                        {transaction.status_sap ? `Status: ${transaction.status_sap}` : 'Belum Set (N/A)'}
+                      </span>
                     </div>
-                    <button 
-                      onClick={handleInvoiceInput}
-                      disabled={actionLoading}
-                      className="w-full bg-purple-600 text-white py-2 rounded-xl text-xs font-bold"
-                    >
-                      Terbitkan Invoice
-                    </button>
+
+                    {showActionForm === 'sap' ? (
+                      <div className="space-y-3 border-t border-blue-200/80 pt-3 mt-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-slate-800">Form Otorisasi SAP ERP</span>
+                          <button onClick={() => setShowActionForm(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold">Batal</button>
+                        </div>
+                        <div className="space-y-3 text-xs">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Status Billing SAP</label>
+                            <select 
+                              value={modalSAPStatus}
+                              onChange={(e) => setModalSAPStatus(e.target.value)}
+                              className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white mb-2 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                            >
+                              <option value="Bill">Bill (Ditagihkan ke Customer)</option>
+                              <option value="Not Bill">Not Bill (Ditanggung Internal)</option>
+                            </select>
+                          </div>
+                          <button 
+                            onClick={handleSAPStatus}
+                            disabled={actionLoading}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl text-xs font-bold cursor-pointer transition-all shadow"
+                          >
+                            Simpan Status SAP
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between pt-1">
+                        <p className="text-[10px] text-slate-500">
+                          {transaction.category === 'Own Risk' 
+                            ? 'Atur pembebanan billing denda di SAP ERP (Bill vs Not Bill).' 
+                            : 'Kategori Non-Own Risk terproses otomatis di SAP.'}
+                        </p>
+                        {transaction.category === 'Own Risk' && isSalesHeadRole && (
+                          <button 
+                            onClick={() => setShowActionForm('sap')}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-lg shadow transition-all cursor-pointer shrink-0"
+                          >
+                            Update Status SAP
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                )}
+
+                {/* BLOCK 2: APPROVAL BACKCHARGE - Visible for Kacab (Maintenance/TPL) or Sales Head (OR/Ekspedisi/ETLE) */}
+                {((isKacabRole && (transaction.category === 'Maintenance' || transaction.category === 'TPL')) ||
+                  (isSalesHeadRole && (transaction.category === 'Own Risk' || transaction.category === 'Ekspedisi' || transaction.category === 'ETLE')) ||
+                  currentUser.role === 'Administrator') && (
+                  <div className={`p-4 rounded-xl border transition-all ${
+                    showActionForm === 'approval' 
+                      ? 'bg-amber-50/90 border-amber-300 ring-2 ring-amber-500/20 shadow-sm' 
+                      : 'bg-white border-slate-200 hover:border-amber-200'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-base">⚡</span>
+                        <div>
+                          <h5 className="text-xs font-extrabold text-slate-800">2. Approval Backcharge</h5>
+                          <span className="text-[9px] text-slate-500 font-bold">
+                            Wewenang: {transaction.category === 'Maintenance' || transaction.category === 'TPL' ? 'Kepala Cabang (Kacab)' : 'Sales Head (SH)'}
+                          </span>
+                        </div>
+                      </div>
+                      <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold ${
+                        transaction.status_approval === 'Disetujui'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : transaction.status_approval === 'Ditolak'
+                          ? 'bg-red-100 text-red-800 border border-red-200'
+                          : 'bg-amber-100 text-amber-800 border border-amber-200'
+                      }`}>
+                        {transaction.status_approval === 'Disetujui' ? '✅ Disetujui' : transaction.status_approval === 'Ditolak' ? '❌ Tidak Disetujui (Not Approved)' : '⏳ Belum Approval'}
+                      </span>
+                    </div>
+
+                    {showActionForm === 'approval' ? (
+                      <div className="space-y-3 border-t border-amber-200/80 pt-3 mt-2">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs font-bold text-slate-800">Form Persetujuan Approval Backcharge</span>
+                            <span className="text-[9px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-extrabold uppercase">
+                              {transaction.category === 'Maintenance' || transaction.category === 'TPL' ? 'Wewenang Kacab' : 'Wewenang Sales Head'}
+                            </span>
+                          </div>
+                          <button onClick={() => setShowActionForm(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold">Batal</button>
+                        </div>
+                        
+                        <div className="space-y-3 text-xs">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Keputusan Approval</label>
+                            <select 
+                              value={modalApprovalStatus}
+                              onChange={(e) => setModalApprovalStatus(e.target.value)}
+                              className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                            >
+                              <option value="Disetujui">✅ Disetujui (Approved)</option>
+                              <option value="Ditolak">❌ Tidak Disetujui (Not Approved)</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Catatan / Keterangan Persetujuan</label>
+                            <textarea 
+                              value={modalApprovalNotes}
+                              onChange={(e) => setModalApprovalNotes(e.target.value)}
+                              placeholder="Tuliskan catatan persetujuan atau instruksi khusus..."
+                              className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                              rows={2}
+                            />
+                          </div>
+
+                          <button 
+                            onClick={handleApprovalSubmit}
+                            disabled={actionLoading}
+                            className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2.5 rounded-xl text-xs font-extrabold transition-all shadow cursor-pointer"
+                          >
+                            Simpan Keputusan Approval
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between pt-1">
+                        <div className="text-[10px] text-slate-500">
+                          {transaction.approved_by ? (
+                            <span>Disetujui oleh: <strong className="text-slate-700">{transaction.approved_by}</strong></span>
+                          ) : (
+                            <span>Membutuhkan persetujuan pejabat berwenang sebelum penerbitan invoice.</span>
+                          )}
+                        </div>
+                        {((isKacabRole && (transaction.category === 'Maintenance' || transaction.category === 'TPL')) ||
+                          (isSalesHeadRole && (transaction.category === 'Own Risk' || transaction.category === 'Ekspedisi' || transaction.category === 'ETLE'))) && (
+                          <button 
+                            onClick={() => {
+                              setModalApprovalStatus(transaction.status_approval === 'Disetujui' ? 'Disetujui' : 'Disetujui');
+                              setModalApprovalNotes(transaction.approval_note || '');
+                              setShowActionForm('approval');
+                            }}
+                            className={`px-3 py-1.5 text-white text-xs font-extrabold rounded-lg shadow transition-all cursor-pointer shrink-0 ${
+                              transaction.status_approval === 'Disetujui' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700 animate-pulse'
+                            }`}
+                          >
+                            {transaction.status_approval === 'Disetujui' ? 'Ubah Approval' : 'Proses Approval'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* BLOCK 3: CETAK & KIRIM INVOICE - Visible for Admin / Administrator */}
+                {isAdmin && (
+                  <div className={`p-4 rounded-xl border transition-all ${
+                    showActionForm === 'invoice' 
+                      ? 'bg-purple-50/90 border-purple-300 ring-2 ring-purple-500/20 shadow-sm' 
+                      : 'bg-white border-slate-200 hover:border-purple-200'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-base">📝</span>
+                        <div>
+                          <h5 className="text-xs font-extrabold text-slate-800">3. Cetak &amp; Kirim Invoice</h5>
+                          <span className="text-[9px] text-slate-500 font-bold">Wewenang: Admin</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-1.5">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
+                          transaction.no_invoice && transaction.no_invoice !== '-' ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-slate-100 text-slate-600 border border-slate-200'
+                        }`}>
+                          {transaction.no_invoice && transaction.no_invoice !== '-' ? `No: ${transaction.no_invoice}` : 'Belum Terbit'}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
+                          transaction.status_payment === 'Lunas' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
+                        }`}>
+                          {transaction.status_payment === 'Lunas' ? 'Lunas' : 'Belum Bayar'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {showActionForm === 'invoice' ? (
+                      <div className="space-y-3 border-t border-purple-200/80 pt-3 mt-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-slate-800">Form Penerbitan Invoice</span>
+                          <button onClick={() => setShowActionForm(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold">Batal</button>
+                        </div>
+                        <div className="space-y-3 text-xs">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nomor Invoice Resmi</label>
+                            <input 
+                              type="text" 
+                              value={modalInvoiceNo}
+                              onChange={(e) => setModalInvoiceNo(e.target.value)}
+                              placeholder="INV/2026/06/982"
+                              className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                          </div>
+                          <button 
+                            onClick={handleInvoiceInput}
+                            disabled={actionLoading}
+                            className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-xl text-xs font-bold cursor-pointer transition-all shadow"
+                          >
+                            Terbitkan Invoice
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between pt-1">
+                        <p className="text-[10px] text-slate-500">
+                          {transaction.no_invoice && transaction.no_invoice !== '-' 
+                            ? `Invoice ${transaction.no_invoice} telah diterbitkan.` 
+                            : 'Terbitkan nomor invoice setelah persetujuan denda diselesaikan.'}
+                        </p>
+                        <div className="flex items-center space-x-2 shrink-0">
+                          {(!transaction.no_invoice || transaction.no_invoice === '-') && isAdmin && (
+                            <button 
+                              onClick={() => {
+                                setModalInvoiceNo('');
+                                setShowActionForm('invoice');
+                              }}
+                              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-extrabold rounded-lg shadow transition-all cursor-pointer"
+                            >
+                              Input No Invoice
+                            </button>
+                          )}
+                          {transaction.no_invoice && transaction.no_invoice !== '-' && transaction.status_payment === 'Belum Bayar' && isAdmin && (
+                            <button 
+                              onClick={handleSetPaid}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-lg shadow transition-all cursor-pointer"
+                            >
+                              💰 Set Status Lunas
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* NO ACTIONABLE AUTHORITY MESSAGE */}
+                {!(isSales || isBro || isAdmin) &&
+                 !((isKacabRole && (transaction.category === 'Maintenance' || transaction.category === 'TPL')) ||
+                   (isSalesHeadRole && (transaction.category === 'Own Risk' || transaction.category === 'Ekspedisi' || transaction.category === 'ETLE')) ||
+                   currentUser.role === 'Administrator') &&
+                 !isAdmin && (
+                  <div className="p-4 bg-slate-100 border border-slate-200 rounded-xl text-center">
+                    <p className="text-xs font-bold text-slate-600">
+                      ℹ️ Peran Anda (<strong>{currentUser.role}</strong>) tidak memiliki tindakan otoritas langsung pada alur kategori {transaction.category} ini.
+                    </p>
+                  </div>
+                )}
+
+              </div>
 
               {/* ACTION FORM: Upload Foto Serah Terima Sales ke Admin */}
               {showActionForm === 'sales_admin_handover' && (
@@ -768,7 +1431,11 @@ export default function DetailModal({
                   </div>
                   <div className="space-y-3 text-xs">
                     <p className="text-[10px] text-slate-500 font-medium leading-relaxed font-sans">
-                      {googleToken 
+                      {appsScriptActive
+                        ? "Pilih foto bukti serah terima. Berkas akan otomatis diunggah ke Google Drive Anda via Google Apps Script secara instan."
+                        : serviceAccountActive
+                        ? "Pilih foto bukti serah terima. Berkas akan otomatis diunggah ke Google Drive Perusahaan via Service Account secara instan."
+                        : googleToken 
                         ? "Pilih foto bukti serah terima. Berkas akan otomatis diunggah ke Google Drive Anda secara instan." 
                         : "Unggah foto bukti serah terima berkas penyerahan denda dari Sales kepada Admin Piutang."
                       }
@@ -789,7 +1456,9 @@ export default function DetailModal({
                               if (!file) return;
                               setLocalHandoverSalesAdminFileName(file.name);
                               
-                              if (googleToken) {
+                              const isDriveActive = googleToken || serviceAccountActive || appsScriptActive;
+                              
+                              if (isDriveActive) {
                                 setUploadingSalesAdmin(true);
                                 try {
                                   const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
@@ -847,7 +1516,7 @@ export default function DetailModal({
                     {localHandoverSalesAdminFile && (
                       <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 p-2 flex flex-col items-center justify-center max-h-32">
                         {localHandoverSalesAdminFile.startsWith('data:') ? (
-                          <img src={localHandoverSalesAdminFile} alt="Preview serah terima" className="object-contain max-h-28" />
+                          <img src={localHandoverSalesAdminFile} alt="Preview serah terima" loading="lazy" decoding="async" className="object-contain max-h-28" />
                         ) : (
                           <div className="text-center py-2 text-[10px] text-emerald-600 font-bold flex flex-col items-center">
                             <Cloud className="w-6 h-6 mb-1 text-emerald-500" />
@@ -868,6 +1537,303 @@ export default function DetailModal({
                 </div>
               )}
 
+              {/* ACTION FORM: Serahkan Fisik Berkas & Upload Foto Serah Terima */}
+              {showActionForm === 'handover_courier' && (
+                <div className="space-y-3 border-t border-blue-100 pt-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-700 font-sans">
+                      Form Serah Terima Fisik Berkas &amp; Dokumen Lampiran
+                    </span>
+                    <button 
+                      onClick={() => {
+                        setShowActionForm(null);
+                        setLocalHandoverSalesAdminFile(null);
+                        setLocalHandoverSalesAdminFileName('');
+                      }} 
+                      className="text-slate-400 hover:text-slate-600 text-xs font-bold font-sans"
+                    >
+                      Batal
+                    </button>
+                  </div>
+                  <div className="space-y-3 text-xs">
+                    <p className="text-[10px] text-slate-500 font-medium leading-relaxed font-sans">
+                      Lengkapi unggahan dokumen lampiran dan foto bukti penyerahan berkas denda dari ASO kepada Admin.
+                    </p>
+
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase font-sans mb-1">Tanggal &amp; Waktu Penyerahan (Otomatis)</label>
+                        <input 
+                          type="text" 
+                          value={transaction.tanggal_handover || new Date().toLocaleString('id-ID')} 
+                          readOnly 
+                          disabled
+                          className="w-full bg-slate-100 border border-slate-200 text-slate-500 rounded-xl px-3 py-2 font-mono text-[11px] select-none cursor-not-allowed focus:outline-none"
+                        />
+                      </div>
+
+                      {/* 1. File BAK */}
+                      <div className="space-y-1">
+                        <label className="block text-[9px] font-bold text-slate-500 uppercase font-sans">1. File BAK (PDF / Gambar)</label>
+                        <div className="flex items-center space-x-2">
+                          <label className="flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-3 py-1.5 rounded-xl cursor-pointer font-bold border border-slate-200 transition-all flex-grow font-sans">
+                            <Upload className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+                            <span>{localFileBakName ? 'Ubah File BAK' : 'Pilih File BAK'}</span>
+                            <input 
+                              type="file" 
+                              accept="application/pdf,image/*" 
+                              disabled={uploadingBak}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                setLocalFileBakName(file.name);
+                                const isDriveActive = googleToken || serviceAccountActive || appsScriptActive;
+                                if (isDriveActive) {
+                                  setUploadingBak(true);
+                                  try {
+                                    const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
+                                    setLocalFileBak(driveUrl);
+                                  } catch (err) {
+                                    console.error("Gagal mengunggah ke Drive:", err);
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => setLocalFileBak(reader.result as string);
+                                    reader.readAsDataURL(file);
+                                  } finally {
+                                    setUploadingBak(false);
+                                  }
+                                } else {
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => setLocalFileBak(reader.result as string);
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                              className="hidden" 
+                            />
+                          </label>
+                          {localFileBak && (
+                            <button 
+                              type="button" 
+                              onClick={() => { setLocalFileBak(null); setLocalFileBakName(''); }}
+                              className="p-1.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-100"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        {uploadingBak && (
+                          <div className="flex items-center space-x-1.5 text-[9px] font-bold text-blue-600 font-sans">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>Mengunggah file ke Google Drive...</span>
+                          </div>
+                        )}
+                        {localFileBakName && (
+                          <div className="flex items-center space-x-1 text-[8px] text-slate-500 font-sans">
+                            <span className="font-mono truncate flex-grow max-w-[200px]">{localFileBakName}</span>
+                            {localFileBak?.startsWith('https://drive.google.com') && (
+                              <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black">Google Drive</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 2. Dokumen Pendukung File/Foto */}
+                      <div className="space-y-1">
+                        <label className="block text-[9px] font-bold text-slate-500 uppercase font-sans">2. Dokumen Pendukung (File / Foto)</label>
+                        <div className="flex items-center space-x-2">
+                          <label className="flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-3 py-1.5 rounded-xl cursor-pointer font-bold border border-slate-200 transition-all flex-grow font-sans">
+                            <Upload className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+                            <span>{localUploadDokPendukungName ? 'Ubah Dokumen Pendukung' : 'Pilih Dokumen Pendukung'}</span>
+                            <input 
+                              type="file" 
+                              accept="application/pdf,image/*" 
+                              disabled={uploadingDokPendukung}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                setLocalUploadDokPendukungName(file.name);
+                                const isDriveActive = googleToken || serviceAccountActive || appsScriptActive;
+                                if (isDriveActive) {
+                                  setUploadingDokPendukung(true);
+                                  try {
+                                    const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
+                                    setLocalUploadDokPendukung(driveUrl);
+                                  } catch (err) {
+                                    console.error("Gagal mengunggah ke Drive:", err);
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => setLocalUploadDokPendukung(reader.result as string);
+                                    reader.readAsDataURL(file);
+                                  } finally {
+                                    setUploadingDokPendukung(false);
+                                  }
+                                } else {
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => setLocalUploadDokPendukung(reader.result as string);
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                              className="hidden" 
+                            />
+                          </label>
+                          {localUploadDokPendukung && (
+                            <button 
+                              type="button" 
+                              onClick={() => { setLocalUploadDokPendukung(null); setLocalUploadDokPendukungName(''); }}
+                              className="p-1.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-100"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        {uploadingDokPendukung && (
+                          <div className="flex items-center space-x-1.5 text-[9px] font-bold text-blue-600 font-sans">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>Mengunggah file ke Google Drive...</span>
+                          </div>
+                        )}
+                        {localUploadDokPendukungName && (
+                          <div className="flex items-center space-x-1 text-[8px] text-slate-500 font-sans">
+                            <span className="font-mono truncate flex-grow max-w-[200px]">{localUploadDokPendukungName}</span>
+                            {localUploadDokPendukung?.startsWith('https://drive.google.com') && (
+                              <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black">Google Drive</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 3. Dokumen Pendukung & Alasan Konfirmasi Dokumen Sah */}
+                      <div className="space-y-1">
+                        <label className="block text-[9px] font-bold text-slate-500 uppercase font-sans">Dokumen Pendukung &amp; Alasan Konfirmasi Dokumen Sah</label>
+                        <textarea 
+                          value={localDokPendukungAlasan}
+                          onChange={(e) => setLocalDokPendukungAlasan(e.target.value)}
+                          placeholder="Tuliskan detail dokumen pendukung (misal: STNK, Surat Jalan, dll.) beserta penjelasan mengapa dokumen dianggap sah sebagai bukti backcharge..." 
+                          className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-sans"
+                          rows={3}
+                        />
+                      </div>
+
+                      {/* 4. Foto Bukti Serah Terima (Wajib) */}
+                      <div className="space-y-1 pt-2 border-t border-slate-100">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase font-sans">Pilih File Foto Bukti Serah Terima (Wajib)</label>
+                        <div className="flex items-center space-x-2">
+                          <label className="flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-3 py-2 rounded-xl cursor-pointer font-bold border border-slate-200 transition-all flex-grow font-sans">
+                            <Upload className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+                            <span>{localHandoverSalesAdminFileName ? 'Ubah Foto' : 'Pilih Foto Serah Terima'}</span>
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              disabled={uploadingSalesAdmin}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                setLocalHandoverSalesAdminFileName(file.name);
+                                
+                                const isDriveActive = googleToken || serviceAccountActive || appsScriptActive;
+                                
+                                if (isDriveActive) {
+                                  setUploadingSalesAdmin(true);
+                                  try {
+                                    const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
+                                    setLocalHandoverSalesAdminFile(driveUrl);
+                                  } catch (err: any) {
+                                    console.error("Gagal mengunggah ke Google Drive:", err);
+                                    alert("Gagal mengunggah otomatis ke Google Drive. Disimpan secara lokal.");
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => {
+                                      setLocalHandoverSalesAdminFile(reader.result as string);
+                                    };
+                                    reader.readAsDataURL(file);
+                                  } finally {
+                                    setUploadingSalesAdmin(false);
+                                  }
+                                } else {
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    setLocalHandoverSalesAdminFile(reader.result as string);
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                              className="hidden" 
+                            />
+                          </label>
+                          {localHandoverSalesAdminFile && (
+                            <button 
+                              type="button" 
+                              onClick={() => { setLocalHandoverSalesAdminFile(null); setLocalHandoverSalesAdminFileName(''); }}
+                              className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        {uploadingSalesAdmin && (
+                          <div className="flex items-center space-x-1.5 text-[9px] font-bold text-blue-600 font-sans">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>Mengunggah foto bukti ke Google Drive...</span>
+                          </div>
+                        )}
+
+                        {localHandoverSalesAdminFileName && (
+                          <div className="flex items-center space-x-1.5 text-[8px] text-slate-500 font-sans">
+                            <span className="font-mono truncate flex-grow max-w-[200px]">{localHandoverSalesAdminFileName}</span>
+                            {localHandoverSalesAdminFile?.startsWith('https://drive.google.com') && (
+                              <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black uppercase">Google Drive</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {localHandoverSalesAdminFile && (
+                        <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 p-2 flex flex-col items-center justify-center max-h-32">
+                          {localHandoverSalesAdminFile.startsWith('data:') ? (
+                            <img src={localHandoverSalesAdminFile} alt="Preview serah terima" loading="lazy" decoding="async" className="object-contain max-h-28" />
+                          ) : (
+                            <div className="text-center py-2 text-[10px] text-emerald-600 font-bold flex flex-col items-center">
+                              <Cloud className="w-6 h-6 mb-1 text-emerald-500" />
+                              <span>Berkas Aman Terunggah ke Google Drive</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <button 
+                      onClick={() => {
+                        if (!localHandoverSalesAdminFile) {
+                          alert('Foto bukti serah terima wajib diunggah!');
+                          return;
+                        }
+                        setActionLoading(true);
+                        onUpdateStatus(
+                          transaction.id,
+                          { 
+                            file_handover_aso_sales_url: localHandoverSalesAdminFile,
+                            file_handover_sales_admin_url: localHandoverSalesAdminFile,
+                            status_handover: 'Diserahkan ke Admin',
+                            tanggal_handover: transaction.tanggal_handover || new Date().toLocaleString('id-ID'),
+                            file_bak_url: localFileBak || transaction.file_bak_url,
+                            upload_dok_pendukung: localUploadDokPendukung || transaction.upload_dok_pendukung,
+                            dok_pendukung_alasan: localDokPendukungAlasan.trim() || transaction.dok_pendukung_alasan || '-',
+                            alasan: localDokPendukungAlasan.trim() || transaction.alasan || '-'
+                          },
+                          `ASO melengkapi dokumen lampiran dan mengunggah Foto Bukti Serah Terima ASO ke Admin`
+                        );
+                        setActionLoading(false);
+                        setShowActionForm(null);
+                        setLocalHandoverSalesAdminFile(null);
+                        setLocalHandoverSalesAdminFileName('');
+                      }}
+                      disabled={actionLoading || uploadingSalesAdmin || uploadingBak || uploadingDokPendukung || !localHandoverSalesAdminFile}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-2 rounded-xl text-xs font-bold transition-all shadow font-sans cursor-pointer flex items-center justify-center space-x-1.5"
+                    >
+                      <span>📦 Kirim &amp; Serahkan Fisik Berkas</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
             </div>
           </div>
 
@@ -876,13 +1842,13 @@ export default function DetailModal({
         </div>
 
         {/* PRINT ONLY SECTION (HIDDEN ON SCREEN, VISIBLE ON PRINT) */}
-        <div className="hidden print:block text-slate-900 space-y-6 p-4 font-sans text-xs">
+        <div className={`hidden ${lightboxFile ? 'print:hidden' : 'print:block'} text-slate-900 space-y-6 p-4 font-sans text-xs`}>
           {/* Header */}
           <div className="flex justify-between items-center border-b-2 border-slate-950 pb-3">
             <div>
               <h1 className="text-lg font-black tracking-tight text-blue-900">PT ADI SARANA ARMADA, Tbk</h1>
-              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">National Rental Fleet &amp; Backcharge Management</p>
-              <p className="text-[8px] text-slate-400 mt-0.5">Gedung ASA, Jl. Raya Serpong, Banten | Cabang: {transaction.branch}</p>
+              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Backcharge Management</p>
+              <p className="text-[8px] text-slate-400 mt-0.5">Gedung Samudera Kirana, Jl. Yos Sudarso No.88, Sunter Kec. Tj. Priok, Jkt Utara, DKI Jakarta | Cabang: {transaction.branch}</p>
             </div>
             <div className="text-right">
               <span className="text-[9px] font-mono text-slate-400 block">DOKUMEN INTEGRASI</span>
@@ -892,8 +1858,8 @@ export default function DetailModal({
 
           {/* Title */}
           <div className="text-center space-y-1 py-1">
-            <h2 className="text-sm font-black uppercase tracking-wide">BERITA ACARA KLARIFIKASI DENDA OPERASIONAL (BACKCHARGE)</h2>
-            <p className="text-[9px] text-slate-500">Ref ID: {transaction.id} | Kategori Kasus: {transaction.category}</p>
+            <h2 className="text-sm font-black uppercase tracking-wide">BERITA ACARA SERAH TERIMA (BACKCHARGE)</h2>
+            <p className="text-[9px] text-slate-500">Ref ID: {transaction.id} | Kategori Transaksi: {transaction.category}</p>
           </div>
 
           {/* Table Details */}
@@ -912,13 +1878,15 @@ export default function DetailModal({
                   <td className="p-2 font-extrabold bg-slate-50">Nomor BAK (Berita Acara Kerusakan)</td>
                   <td className="p-2 font-mono">{transaction.no_bak || '-'}</td>
                 </tr>
+                {transaction.category === 'ETLE' && transaction.no_tilang && transaction.no_tilang !== '-' && (
+                  <tr className="border-b border-slate-200">
+                    <td className="p-2 font-extrabold bg-slate-50">Nomor Surat Tilang</td>
+                    <td className="p-2 font-mono">{transaction.no_tilang}</td>
+                  </tr>
+                )}
                 <tr className="border-b border-slate-200">
                   <td className="p-2 font-extrabold bg-slate-50">Nomor SPK Perbaikan</td>
                   <td className="p-2 font-mono">{transaction.no_spk || '-'}</td>
-                </tr>
-                <tr className="border-b border-slate-200">
-                  <td className="p-2 font-extrabold bg-slate-50">Nomor SAP (Klaim ERP)</td>
-                  <td className="p-2 font-mono">{transaction.no_sap || '-'}</td>
                 </tr>
                 <tr className="border-b border-slate-200">
                   <td className="p-2 font-extrabold bg-slate-50">Nomor Invoice Resmi</td>
@@ -943,21 +1911,17 @@ export default function DetailModal({
           {/* Status Tracker */}
           <div className="space-y-1.5">
             <h3 className="text-[10px] font-bold text-slate-800 uppercase tracking-wider">Status &amp; Verifikasi Alur Kerja</h3>
-            <div className="grid grid-cols-4 gap-2 text-[9px]">
+            <div className="grid grid-cols-3 gap-2 text-[9px]">
               <div className="border border-slate-200 p-2 rounded bg-slate-50">
-                <span className="block text-slate-400 font-extrabold uppercase">1. Konfirmasi</span>
-                <span className="font-bold text-slate-900">{transaction.status_confirm}</span>
+                <span className="block text-slate-400 font-extrabold uppercase">1. Serah Terima</span>
+                <span className="font-bold text-slate-900">{transaction.status_handover}</span>
               </div>
               <div className="border border-slate-200 p-2 rounded bg-slate-50">
                 <span className="block text-slate-400 font-extrabold uppercase">2. Status SAP</span>
                 <span className="font-bold text-slate-900">{transaction.status_sap || '-'}</span>
               </div>
               <div className="border border-slate-200 p-2 rounded bg-slate-50">
-                <span className="block text-slate-400 font-extrabold uppercase">3. Serah Terima</span>
-                <span className="font-bold text-slate-900">{transaction.status_handover}</span>
-              </div>
-              <div className="border border-slate-200 p-2 rounded bg-slate-50">
-                <span className="block text-slate-400 font-extrabold uppercase">4. Pelunasan</span>
+                <span className="block text-slate-400 font-extrabold uppercase">3. Pelunasan</span>
                 <span className="font-bold text-slate-900">{transaction.status_payment}</span>
               </div>
             </div>
@@ -975,17 +1939,17 @@ export default function DetailModal({
                 </div>
               </div>
               <div className="space-y-10">
-                <p className="font-extrabold text-slate-400 uppercase">DIVALIDASI OLEH (SALES)</p>
+                <p className="font-extrabold text-slate-400 uppercase">DIVALIDASI OLEH (BRO)</p>
                 <div className="border-t border-slate-300 pt-1.5 font-bold">
-                  <p className="text-slate-900">SALES HEAD / BRO</p>
-                  <p className="text-slate-400">Wilayah {transaction.branch}</p>
+                  <p className="text-slate-900">BRO</p>
+                  <p className="text-slate-400">Cabang {transaction.branch}</p>
                 </div>
               </div>
               <div className="space-y-10">
                 <p className="font-extrabold text-slate-400 uppercase">DISETUJUI OLEH (ADMIN)</p>
                 <div className="border-t border-slate-300 pt-1.5 font-bold">
-                  <p className="text-slate-900">ADMINISTRATOR PUSAT</p>
-                  <p className="text-slate-400">Keuangan ASA HQ</p>
+                  <p className="text-slate-900">ADMIN</p>
+                  <p className="text-slate-400">Admin ASSA</p>
                 </div>
               </div>
             </div>
@@ -996,23 +1960,45 @@ export default function DetailModal({
 
       {/* LIGHTBOX / IN-APP FILE PREVIEW MODAL */}
       {lightboxFile && (
-        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-md z-50 flex flex-col justify-between p-4 md:p-6 print:hidden">
+        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-md z-50 flex flex-col justify-between p-4 md:p-6 print:absolute print:inset-0 print:bg-white print:text-slate-950 print:p-0 print:flex">
           
           {/* Lightbox Header */}
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3 print:hidden">
             <div className="flex items-center space-x-2">
               <FileText className="w-5 h-5 text-blue-400" />
               <h4 className="text-sm font-extrabold text-white font-sans">{lightboxFile.title}</h4>
             </div>
             <div className="flex items-center space-x-2">
-              {lightboxFile.url && !lightboxFile.url.startsWith('MOCK_') && (
+              {lightboxFile.url && (
                 <button 
-                  onClick={() => downloadFile(lightboxFile.url, `Berkas_${transaction.id}.png`)}
-                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-all"
-                  title="Unduh Berkas"
+                  onClick={() => downloadFile(
+                    lightboxFile.url, 
+                    getFormattedFileName(
+                      lightboxFile.docName || lightboxFile.title.split(':')[0] || 'Lampiran_Dokumen',
+                      transaction,
+                      lightboxFile.url
+                    ),
+                    lightboxFile.title
+                  )}
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold rounded-xl shadow-lg flex items-center space-x-1.5 transition-all cursor-pointer"
+                  title="Unduh Berkas Langsung"
                 >
                   <Download className="w-4 h-4" />
+                  <span>Unduh Berkas</span>
                 </button>
+              )}
+
+              {lightboxFile.url && lightboxFile.url.startsWith('http') && (
+                <a 
+                  href={lightboxFile.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center space-x-1 transition-all cursor-pointer"
+                  title="Buka Dokumen di Tab Baru"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Buka di Tab Baru</span>
+                </a>
               )}
               <button 
                 onClick={() => setLightboxFile(null)} 
@@ -1025,11 +2011,13 @@ export default function DetailModal({
           </div>
 
           {/* Lightbox Content Body */}
-          <div className="flex-grow flex items-center justify-center overflow-auto py-6">
+          <div className="flex-grow flex items-center justify-center overflow-auto py-6 print:py-0 print:block print:overflow-visible">
             {lightboxFile.url.startsWith('data:image/') ? (
               <img 
                 src={lightboxFile.url} 
                 alt={lightboxFile.title} 
+                loading="lazy"
+                decoding="async"
                 className="max-w-full max-h-[75vh] object-contain rounded-xl border border-slate-800 shadow-2xl animate-in zoom-in-95 duration-200" 
               />
             ) : lightboxFile.url.startsWith('data:application/pdf') ? (
@@ -1038,9 +2026,44 @@ export default function DetailModal({
                 className="w-full max-w-4xl h-[75vh] rounded-xl border border-slate-800 bg-white" 
                 title="PDF Viewer"
               />
+            ) : lightboxFile.url.startsWith('http') ? (
+              <div className="w-full max-w-4xl h-[75vh] flex flex-col bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
+                <div className="flex-grow bg-slate-950 relative">
+                  <iframe 
+                    src={getDrivePreviewUrl(lightboxFile.url)} 
+                    className="w-full h-full border-0 bg-white" 
+                    title="Google Drive Document Viewer"
+                    allow="autoplay"
+                  />
+                  {/* Floating helpful banner */}
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-900/95 text-slate-300 text-[10px] px-3 py-1.5 rounded-full border border-slate-800 shadow-xl backdrop-blur-sm pointer-events-none text-center font-sans max-w-xs sm:max-w-md font-medium leading-normal">
+                    💡 Berkas tersimpan di Google Drive. Jika pratinjau tidak muncul secara otomatis, silakan klik tombol <b>Buka di Tab Baru</b> atau <b>Unduh Berkas</b>.
+                  </div>
+                </div>
+              </div>
             ) : (
               /* Simulated Document Renderer (MOCK_BAK or MOCK_HANDOVER etc) */
               <div className="bg-white text-slate-800 rounded-2xl p-6 md:p-8 w-full max-w-2xl shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200 font-sans relative">
+                
+                {/* Download Action Bar on Preview Card */}
+                <div className="flex justify-end mb-3 print:hidden">
+                  <button
+                    onClick={() => downloadFile(
+                      lightboxFile.url,
+                      getFormattedFileName(
+                        lightboxFile.docName || lightboxFile.title.split(':')[0] || 'Lampiran_Dokumen',
+                        transaction,
+                        lightboxFile.url
+                      ),
+                      lightboxFile.title
+                    )}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center space-x-2 transition-all cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Unduh Berkas Resmi (Gambar PNG HD)</span>
+                  </button>
+                </div>
+
                 {/* Watermark Stamp */}
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-12 pointer-events-none select-none border-4 border-emerald-500/30 text-emerald-500/30 font-black text-4xl md:text-6xl px-6 py-2 uppercase rounded-xl tracking-widest flex items-center justify-center">
                   APPROVED
@@ -1049,7 +2072,7 @@ export default function DetailModal({
                 {/* Header */}
                 <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4">
                   <div>
-                    <h3 className="text-md font-black text-slate-900 tracking-tight uppercase">PT Sinar Sosro Indonesia Tbk</h3>
+                    <h3 className="text-md font-black text-slate-900 tracking-tight uppercase">PT Adi Sarana Armada Tbk</h3>
                     <p className="text-[9px] text-slate-500 mt-0.5">Departemen Operasional & Manajemen Logistik Nasional</p>
                   </div>
                   <div className="text-right font-mono">
@@ -1071,7 +2094,7 @@ export default function DetailModal({
                 {/* Metadata Table */}
                 <div className="space-y-3.5 text-xs">
                   <p className="text-[10px] leading-relaxed text-slate-600">
-                    Dengan ini dinyatakan secara sah dan sadar mengenai penyerahan berkas denda kecelakaan/pemeliharaan kendaraan operasional cabang:
+                    Dengan ini dinyatakan secara sah dan sadar mengenai penyerahan berkas denda kecelakaan/pemeliharaan kendaraan operasional cabang ASSA :
                   </p>
 
                   <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
@@ -1091,16 +2114,20 @@ export default function DetailModal({
                       <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-wider">Nomor Polisi Armada</span>
                       <span className="font-extrabold text-slate-800 mt-0.5 block">{transaction.license_plate}</span>
                     </div>
+                    <div>
+                      <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-wider">Tanggal Kejadian</span>
+                      <span className="font-extrabold text-slate-800 mt-0.5 block">{formatDateOnly(transaction.tanggal)}</span>
+                    </div>
                   </div>
 
                   <div className="pt-2">
                     <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Catatan Keterangan</span>
                     <p className="text-[10px] bg-slate-50/50 p-2.5 rounded-lg border border-dashed border-slate-200 text-slate-600 leading-relaxed italic">
                       {lightboxFile.url === 'MOCK_BAK' 
-                        ? "Kerusakan fisik armada terkonfirmasi oleh tim surveyor ASO di lapangan. Melakukan klaim pertanggungjawaban asuransi/biaya denda maintenance sesuai ketentuan asuransi nasional Sosro." 
+                        ? "Kerusakan fisik armada terkonfirmasi oleh tim surveyor ASO di lapangan. Melakukan klaim pertanggungjawaban asuransi/biaya denda maintenance sesuai ketentuan asuransi nasional ASSA." 
                         : lightboxFile.url === 'MOCK_HANDOVER_ASO_SALES'
-                          ? "Foto bukti fisik serah terima dari tim operasional ASO kepada Sales Keuangan telah diverifikasi. Lembaran dokumen fisik tercatat dalam status aktif."
-                          : "Dokumen fisik denda berupa Surat BAK asli, Surat SPK, Estimasi Bengkel, dan surat tilang ETLE telah diserahkan dari unit Sales Keuangan kepada Admin Piutang dalam kondisi lengkap dan tervalidasi."
+                          ? "Foto bukti fisik serah terima dari tim operasional ASO kepada BRO telah diverifikasi. Lembaran dokumen fisik tercatat dalam status aktif."
+                          : "Dokumen fisik denda berupa Surat BAK asli, Surat SPK, Estimasi Bengkel, dan surat tilang ETLE telah diserahkan dari unit BRO kepada Admin Piutang dalam kondisi lengkap dan tervalidasi."
                       }
                     </p>
                   </div>
@@ -1115,15 +2142,15 @@ export default function DetailModal({
                       <p className="font-black text-slate-700 mt-1 border-t border-slate-200 pt-1">Staff Cabang</p>
                     </div>
                     <div>
-                      <p className="text-slate-400 font-bold uppercase">Pihak II (Sales)</p>
+                      <p className="text-slate-400 font-bold uppercase">Pihak II (BRO)</p>
                       <div className="h-10 flex items-end justify-center">
-                        {transaction.status_confirm === 'Telah Dikonfirmasi' ? (
-                          <span className="text-[8px] text-emerald-600 font-mono font-bold border border-emerald-300 px-1 py-0.2 rounded bg-emerald-50">CONFIRMED</span>
+                        {transaction.id ? (
+                          <span className="text-[8px] text-emerald-600 font-mono font-bold border border-emerald-300 px-1 py-0.2 rounded bg-emerald-50">SUBMITTED</span>
                         ) : (
                           <span className="text-[8px] text-slate-300 font-mono italic">PENDING</span>
                         )}
                       </div>
-                      <p className="font-black text-slate-700 mt-1 border-t border-slate-200 pt-1">Sales Head</p>
+                      <p className="font-black text-slate-700 mt-1 border-t border-slate-200 pt-1">BRO</p>
                     </div>
                     <div>
                       <p className="text-slate-400 font-bold uppercase">Penerima (Admin)</p>
@@ -1143,7 +2170,7 @@ export default function DetailModal({
           </div>
 
           {/* Lightbox Footer */}
-          <div className="text-center text-[10px] text-slate-500 font-semibold border-t border-slate-800 pt-3">
+          <div className="text-center text-[10px] text-slate-500 font-semibold border-t border-slate-800 pt-3 print:hidden">
             Pratinjau Sistem denda Terpadu Nasional © 2026. Klik [X] di atas untuk kembali ke detail.
           </div>
 

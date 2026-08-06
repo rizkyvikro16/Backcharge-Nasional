@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS public.backcharges (
     category text NOT NULL,
     branch text NOT NULL,
     no_bak text DEFAULT '-',
+    no_tilang text DEFAULT '-',
     no_spk text DEFAULT '-',
     no_sap text DEFAULT '-',
     customer_name text NOT NULL,

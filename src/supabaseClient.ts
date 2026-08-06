@@ -24,16 +24,53 @@ export const supabase = isSupabaseConfigured
 const INITIAL_PROFILES: Profile[] = [
   { id: '1', email: 'admin.pusat@company.id', full_name: 'Aris Munandar (HQ Admin)', role: 'Administrator', branch: 'Nasional', created_at: new Date().toISOString() },
   { id: '2', email: 'aso.jkt@company.id', full_name: 'Hendra Wijaya (ASO Jkt)', role: 'ASO / Staff', branch: 'Jakarta', created_at: new Date().toISOString() },
-  { id: '3', email: 'sales.jkt@company.id', full_name: 'Dewi Lestari (Sales Jkt)', role: 'Sales / Sales Head', branch: 'Jakarta', created_at: new Date().toISOString() },
+  { id: '3', email: 'sales.jkt@company.id', full_name: 'Dewi Lestari (Sales Jkt)', role: 'Sales Head', branch: 'Jakarta', created_at: new Date().toISOString() },
   { id: '4', email: 'bro.sby@company.id', full_name: 'Bayu Saputra (BRO Sby)', role: 'BRO', branch: 'Surabaya', created_at: new Date().toISOString() },
   { id: '5', email: 'admin.sby@company.id', full_name: 'Siti Rahma (Admin Sby)', role: 'Admin', branch: 'Surabaya', created_at: new Date().toISOString() },
   { id: '6', email: 'aso.bdg@company.id', full_name: 'Budi Setiawan (ASO Bdg)', role: 'ASO / Staff', branch: 'Bandung', created_at: new Date().toISOString() },
-  { id: '7', email: 'sales.mdn@company.id', full_name: 'Rian Pratama (Sales Mdn)', role: 'Sales / Sales Head', branch: 'Medan', created_at: new Date().toISOString() }
+  { id: '7', email: 'sales.mdn@company.id', full_name: 'Rian Pratama (Sales Mdn)', role: 'Sales Head', branch: 'Medan', created_at: new Date().toISOString() },
+  { id: '8', email: 'kacab.jkt@company.id', full_name: 'Agus Salim (Kacab Jkt)', role: 'Kepala Cabang', branch: 'Jakarta', created_at: new Date().toISOString() },
+  { id: '9', email: 'rbu.nas@company.id', full_name: 'Rudy Hartono (Division Head)', role: 'Division Head', branch: 'Nasional', created_at: new Date().toISOString() },
+  { id: '10', email: 'rh.west@company.id', full_name: 'Herman Prasetyo (RH West)', role: 'Regional Head West', branch: 'Lampung, Medan, Padang, Palembang, Pekanbaru', created_at: new Date().toISOString() },
+  { id: '11', email: 'aso.ptk@company.id', full_name: 'Eko Prasetyo (ASO Pontianak)', role: 'ASO / Staff', branch: 'Pontianak', created_at: new Date().toISOString() },
+  { id: '12', email: 'rh.central@company.id', full_name: 'Bambang S (RH Central)', role: 'Regional Head Central', branch: 'Bandung, Jakarta, Pontianak', created_at: new Date().toISOString() },
+  { id: '13', email: 'rh.east@company.id', full_name: 'Agus K (RH East)', role: 'Regional Head East', branch: 'Bali, Balikpapan, Banjarmasin, Makassar, Malang, Semarang, Solo, Surabaya', created_at: new Date().toISOString() }
 ];
 
 // Initialize local storage mock database if not already present
 if (!localStorage.getItem('bc_profiles')) {
   localStorage.setItem('bc_profiles', JSON.stringify(INITIAL_PROFILES));
+} else {
+  // Ensure the new roles exist in localStorage if it was already initialized
+  try {
+    const currentProfs = JSON.parse(localStorage.getItem('bc_profiles') || '[]');
+    let modified = false;
+    
+    currentProfs.forEach((prof: any) => {
+      if ((prof.role as string) === 'kacab') { prof.role = 'Kepala Cabang'; modified = true; }
+      if ((prof.role as string) === 'RBU') { prof.role = 'Division Head'; modified = true; }
+      if ((prof.role as string) === 'RH') { prof.role = 'Regional Head'; modified = true; }
+    });
+
+    INITIAL_PROFILES.slice(7).forEach(p => {
+      const idx = currentProfs.findIndex((prof: any) => prof.email.toLowerCase() === p.email.toLowerCase());
+      if (idx === -1) {
+        currentProfs.push(p);
+        modified = true;
+      } else {
+        currentProfs[idx].role = p.role;
+        currentProfs[idx].full_name = p.full_name;
+        currentProfs[idx].branch = p.branch;
+        modified = true;
+      }
+    });
+
+    if (modified) {
+      localStorage.setItem('bc_profiles', JSON.stringify(currentProfs));
+    }
+  } catch (e) {
+    console.error("Failed to inject new mock profiles:", e);
+  }
 }
 
 if (!localStorage.getItem('bc_backcharges')) {
@@ -58,7 +95,8 @@ if (!localStorage.getItem('bc_backcharges')) {
       updated_at: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
       file_bak_url: 'dummy_pdf_file',
       file_handover_aso_sales_url: 'dummy_photo_1',
-      file_handover_sales_admin_url: 'dummy_photo_2'
+      file_handover_sales_admin_url: 'dummy_photo_2',
+      tanggal: '2026-06-28'
     },
     {
       id: 'BC-2026-0002',
@@ -78,7 +116,8 @@ if (!localStorage.getItem('bc_backcharges')) {
       created_by: 'bro.sby@company.id',
       created_at: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
       updated_at: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
-      file_bak_url: 'dummy_pdf_file'
+      file_bak_url: 'dummy_pdf_file',
+      tanggal: '2026-06-30'
     },
     {
       id: 'BC-2026-0003',
@@ -97,7 +136,28 @@ if (!localStorage.getItem('bc_backcharges')) {
       status_payment: 'Belum Bayar',
       created_by: 'aso.bdg@company.id',
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      tanggal: '2026-07-01'
+    },
+    {
+      id: 'BC-2026-0004',
+      category: 'ETLE',
+      branch: 'Pontianak',
+      no_bak: 'BAK/2026/07/004',
+      no_spk: '-',
+      no_sap: '-',
+      customer_name: 'PT Kalimantan Sawit Sejahtera',
+      license_plate: 'KB 1423 XX',
+      value: 2500000,
+      status_sap: 'N/A',
+      status_confirm: 'Belum Konfirmasi',
+      status_handover: 'Diserahkan ke Admin',
+      no_invoice: '-',
+      status_payment: 'Belum Bayar',
+      created_by: 'aso.ptk@company.id',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      tanggal: '2026-07-02'
     }
   ];
   localStorage.setItem('bc_backcharges', JSON.stringify(defaultBackcharges));
@@ -120,7 +180,7 @@ export const mockDb = {
   
   saveProfile: (p: Profile) => {
     const profiles = mockDb.getProfiles();
-    const idx = profiles.findIndex(prof => prof.email.toLowerCase() === p.email.toLowerCase());
+    const idx = profiles.findIndex(prof => (prof.id && p.id && prof.id === p.id) || prof.email.toLowerCase() === p.email.toLowerCase());
     if (idx !== -1) {
       profiles[idx] = p;
     } else {
@@ -129,9 +189,9 @@ export const mockDb = {
     localStorage.setItem('bc_profiles', JSON.stringify(profiles));
   },
   
-  deleteProfile: (email: string) => {
+  deleteProfile: (idOrEmail: string) => {
     const profiles = mockDb.getProfiles();
-    const filtered = profiles.filter(p => p.email.toLowerCase() !== email.toLowerCase());
+    const filtered = profiles.filter(p => p.id !== idOrEmail && p.email.toLowerCase() !== idOrEmail.toLowerCase());
     localStorage.setItem('bc_profiles', JSON.stringify(filtered));
   },
 

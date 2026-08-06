@@ -1,126 +1,244 @@
-// Service for automatic Google Drive uploads to prevent Supabase database bloat
-// PT Adi Sarana Armada, Tbk - Backcharge System
+/**
+ * Google Drive Integration Helper
+ * 
+ * Meliputi tiga metode pengunggahan:
+ * 1. Google Apps Script (Sangat Direkomendasikan & Bebas Error)
+ * 2. Akun Layanan / Service Account (Stabil, berjalan di server latar belakang)
+ * 3. Client OAuth 2.0 (Login menggunakan akun Google pribadi pengguna)
+ */
 
-export interface GoogleDriveFile {
-  id: string;
-  name: string;
-  webViewLink: string;
-}
-
-// Retrive Client ID from environment variables
-const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
+// Helper untuk mengubah File/Blob menjadi Base64 string
+const toBase64 = (file: File | Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const base64String = reader.result as string;
+      // Hapus prefix data:*/*;base64, agar hanya menyisakan string base64 murni
+      const base64Clean = base64String.split(',')[1];
+      resolve(base64Clean);
+    };
+    reader.onerror = (error) => reject(error);
+  });
+};
 
 /**
- * Initiates the Google OAuth2 flow via redirect/popup to request access to upload files to Google Drive.
+ * Memeriksa apakah token OAuth Google tersimpan di browser dan masih aktif.
  */
-export const initiateGoogleOAuth = (customClientId?: string) => {
-  const clientId = customClientId || CLIENT_ID;
+export const checkGoogleToken = (): string | null => {
+  const token = localStorage.getItem('google_oauth_token');
+  const expiresAt = localStorage.getItem('google_oauth_expires');
+  
+  if (!token) return null;
+  
+  // Jika ada waktu kadaluarsa, periksa apakah sudah lewat
+  if (expiresAt) {
+    if (Date.now() > parseInt(expiresAt, 10)) {
+      logoutGoogleDrive();
+      return null;
+    }
+  }
+  
+  return token;
+};
+
+/**
+ * Keluar / menghapus token login Google Drive dari browser.
+ */
+export const logoutGoogleDrive = (): void => {
+  localStorage.removeItem('google_oauth_token');
+  localStorage.removeItem('google_oauth_expires');
+};
+
+/**
+ * Menghubungkan akun Google dengan melakukan pengalihan (redirect) ke OAuth Google.
+ * @param customClientId Client ID kustom pilihan pengguna (jika diinput manual)
+ */
+export const initiateGoogleOAuth = (customClientId?: string): void => {
+  const clientId = customClientId || (import.meta as any).env.VITE_GOOGLE_CLIENT_ID;
+  
   if (!clientId) {
-    throw new Error('Google Client ID belum dikonfigurasi. Harap tambahkan VITE_GOOGLE_CLIENT_ID di environment variables.');
+    throw new Error("Client ID tidak ditemukan di environment variables!");
   }
 
+  // Tentukan redirect URI sesuai origin aplikasi saat ini
   const redirectUri = window.location.origin + window.location.pathname;
-  const scope = 'https://www.googleapis.com/auth/drive.file';
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scope)}&prompt=consent`;
+  const scope = "https://www.googleapis.com/auth/drive";
+  const responseType = "token";
   
-  // Open the auth URL
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=${responseType}&scope=${encodeURIComponent(scope)}&prompt=select_account`;
+  
   window.location.href = authUrl;
 };
 
 /**
- * Checks if there's an OAuth access token in the URL hash (from callback) or stored in sessionStorage.
+ * Memeriksa apakah integrasi Google Apps Script aktif (ada URL di env).
  */
-export const checkGoogleToken = (): string | null => {
-  // 1. Check URL hash first
-  const hash = window.location.hash;
-  if (hash) {
-    const params = new URLSearchParams(hash.substring(1));
-    const token = params.get('access_token');
-    if (token) {
-      sessionStorage.setItem('google_drive_access_token', token);
-      // Clean up the URL hash to make it look clean
-      window.history.replaceState(null, '', window.location.pathname + window.location.search);
-      return token;
-    }
+export const checkAppsScriptStatus = (): boolean => {
+  return !!(import.meta as any).env.VITE_GOOGLE_APPS_SCRIPT_URL;
+};
+
+/**
+ * Memeriksa apakah integrasi Service Account aktif (dideteksi via API Backend).
+ */
+export const checkServiceAccountStatus = async (): Promise<boolean> => {
+  try {
+    const response = await fetch('/api/health');
+    if (!response.ok) return false;
+    const data = await response.json();
+    return !!data.serviceAccountConnected;
+  } catch (err) {
+    console.error('Gagal mengecek status akun layanan:', err);
+    return false;
   }
-
-  // 2. Check sessionStorage
-  return sessionStorage.getItem('google_drive_access_token');
 };
 
 /**
- * Disconnects the Google Drive session by clearing token.
- */
-export const logoutGoogleDrive = () => {
-  sessionStorage.removeItem('google_drive_access_token');
-};
-
-/**
- * Uploads a file/blob to Google Drive and makes it viewable to anyone with the link
+ * Mengunggah file ke Google Drive menggunakan metode prioritas terbaik yang aktif.
+ * 
+ * Alur prioritas:
+ * 1. Google Apps Script (jika VITE_GOOGLE_APPS_SCRIPT_URL ada di env)
+ * 2. Service Account Backend (jika kredensial terpasang di backend)
+ * 3. Client OAuth (jika user login secara mandiri)
+ * 
+ * @param file Berkas yang ingin diunggah
+ * @param filename Nama berkas akhir di Google Drive
+ * @param token Token OAuth opsional
  */
 export const uploadFileToDrive = async (
   file: File | Blob, 
   filename: string, 
-  token: string
+  token: string | null = null
 ): Promise<string> => {
-  try {
-    // 1. Create a metadata part
-    const metadata = {
-      name: filename,
-      mimeType: file.type || 'image/jpeg'
-    };
-
-    const formData = new FormData();
-    formData.append(
-      'metadata',
-      new Blob([JSON.stringify(metadata)], { type: 'application/json' })
-    );
-    formData.append('file', file);
-
-    // 2. POST to upload endpoint
-    const response = await fetch(
-      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink',
-      {
+  // 1. PRIORITAS UTAMA: Google Apps Script Web App (Bebas Isu CORS, sangat mudah diatur)
+  const appsScriptUrl = (import.meta as any).env.VITE_GOOGLE_APPS_SCRIPT_URL;
+  if (appsScriptUrl && appsScriptUrl.trim() !== '') {
+    try {
+      console.log('Mengunggah ke Google Drive via Google Apps Script...');
+      const base64Data = await toBase64(file);
+      
+      const response = await fetch(appsScriptUrl, {
         method: 'POST',
+        mode: 'cors',
         headers: {
-          Authorization: `Bearer ${token}`
-        },
-        body: formData
-      }
-    );
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Google Drive Upload Gagal: ${response.statusText} (${errText})`);
-    }
-
-    const data = await response.json();
-    const fileId = data.id;
-
-    // 3. Update permissions to let anyone with link read/view this file
-    const permissionResponse = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${fileId}/permissions`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'text/plain;charset=utf-8', // Apps Script CORS menyukai Content-Type plain/text atau raw
         },
         body: JSON.stringify({
-          role: 'reader',
-          type: 'anyone'
+          fileBase64: base64Data,
+          fileName: filename,
+          mimeType: file.type || 'image/jpeg'
         })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
       }
-    );
 
-    if (!permissionResponse.ok) {
-      console.warn('Gagal mengubah hak akses file menjadi publik, tautan mungkin hanya bisa diakses oleh pengunggah saja.');
+      const data = await response.json();
+      if (data.status === 'success' && data.fileUrl) {
+        console.log('Unggah via Apps Script sukses!', data.fileUrl);
+        return data.fileUrl;
+      } else {
+        throw new Error(data.message || 'Respons gagal dari Apps Script');
+      }
+    } catch (err: any) {
+      console.error('Gagal mengunggah via Apps Script:', err);
+      throw new Error(`Apps Script Upload Gagal: ${err.message || err}`);
     }
-
-    // 4. Return the shareable webViewLink
-    return data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
-  } catch (err: any) {
-    console.error('Error during Google Drive operations:', err);
-    throw err;
   }
+
+  // 2. PRIORITAS KEDUA: Service Account (Berjalan di backend Express aman)
+  const isServiceAccountActive = await checkServiceAccountStatus();
+  if (isServiceAccountActive) {
+    try {
+      console.log('Mengunggah ke Google Drive via Service Account Backend...');
+      const formData = new FormData();
+      formData.append('file', file, filename);
+
+      const response = await fetch('/api/upload-to-drive', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || response.statusText);
+      }
+
+      const data = await response.json();
+      if (data.webViewLink) {
+        console.log('Unggah via Service Account sukses!', data.webViewLink);
+        return data.webViewLink;
+      } else {
+        throw new Error('Respons backend tidak valid (webViewLink kosong)');
+      }
+    } catch (err: any) {
+      console.error('Gagal mengunggah via Service Account:', err);
+      throw new Error(`Service Account Upload Gagal: ${err.message || err}`);
+    }
+  }
+
+  // 3. PRIORITAS KETIGA: Client OAuth (Pengguna login manual via browser)
+  const activeToken = token || checkGoogleToken();
+  if (activeToken) {
+    try {
+      console.log('Mengunggah ke Google Drive via Client OAuth...');
+      
+      // Tahap 1: Buat file metadata
+      const metadata = {
+        name: filename,
+        mimeType: file.type || 'image/jpeg'
+      };
+
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', file);
+
+      const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${activeToken}`
+        },
+        body: form
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          logoutGoogleDrive();
+          throw new Error('Token Google Drive kedaluwarsa. Silakan hubungkan kembali.');
+        }
+        const errText = await response.text();
+        throw new Error(`Google API error: ${errText}`);
+      }
+
+      const data = await response.json();
+      
+      // Atur izin file agar dapat dilihat publik (agar Google AI Studio / Gemini dapat membaca URL-nya)
+      try {
+        await fetch(`https://www.googleapis.com/drive/v3/files/${data.id}/permissions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${activeToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            role: 'reader',
+            type: 'anyone'
+          })
+        });
+      } catch (permErr) {
+        console.warn('Gagal mengubah hak akses file menjadi publik:', permErr);
+      }
+
+      const fileUrl = data.webViewLink || `https://drive.google.com/file/d/${data.id}/view`;
+      console.log('Unggah via Client OAuth sukses!', fileUrl);
+      return fileUrl;
+
+    } catch (err: any) {
+      console.error('Gagal mengunggah via Client OAuth:', err);
+      throw new Error(`Client OAuth Upload Gagal: ${err.message || err}`);
+    }
+  }
+
+  throw new Error("Tidak ada metode integrasi Google Drive yang aktif (Apps Script, Service Account, maupun login OAuth)");
 };
