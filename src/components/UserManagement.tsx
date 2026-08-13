@@ -328,6 +328,7 @@ export default function UserManagement({
                   <option value="Sales Head">Sales Head</option>
                   <option value="BRO">BRO</option>
                   <option value="Admin">Admin</option>
+                  <option value="Admin Head">Admin Head</option>
                   <option value="Administrator">Administrator</option>
                   <option value="Kepala Cabang">Kepala Cabang</option>
                   <option value="Division Head">Division Head</option>
@@ -449,7 +450,7 @@ export default function UserManagement({
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
             <h3 className="text-sm font-bold text-slate-900 mb-2">Konfirmasi Hapus Pengguna</h3>
             <p className="text-xs text-slate-600 leading-relaxed">
-              Apakah Anda yakin ingin menghapus akses denda untuk staf berikut?
+              Apakah Anda yakin ingin menghapus akses Backcharge untuk staf berikut?
             </p>
             <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs">
               <p className="font-extrabold text-slate-800">{userToDelete.full_name}</p>

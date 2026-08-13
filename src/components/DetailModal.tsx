@@ -4,7 +4,7 @@ import {
   Image, Eye,
   Cloud, Loader2, ExternalLink
 } from 'lucide-react';
-import { Backcharge, Profile } from '../types';
+import { Backcharge, Profile, isRegionalHeadRole } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
 
 interface DetailModalProps {
@@ -12,6 +12,7 @@ interface DetailModalProps {
   currentUser: Profile;
   onClose: () => void;
   onUpdateStatus: (id: string, updates: Partial<Backcharge>, logMessage: string) => void;
+  addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 const getDrivePreviewUrl = (url: string): string => {
@@ -33,17 +34,32 @@ export default function DetailModal({
   transaction, 
   currentUser, 
   onClose, 
-  onUpdateStatus
+  onUpdateStatus,
+  addToast
 }: DetailModalProps) {
   
   const [actionLoading, setActionLoading] = useState(false);
-  const [showActionForm, setShowActionForm] = useState<'sap' | 'invoice' | 'sales_admin_handover' | 'handover_courier' | 'approval' | null>(null);
+  const [showActionForm, setShowActionForm] = useState<'sap' | 'invoice' | 'sales_admin_handover' | 'handover_courier' | 'approval' | 'regional_approval' | 'division_approval' | 'paid' | null>(null);
 
   // Form states for actions
   const [modalSAPStatus, setModalSAPStatus] = useState('Bill');
   const [modalInvoiceNo, setModalInvoiceNo] = useState('');
   const [modalApprovalStatus, setModalApprovalStatus] = useState<string>('Disetujui');
+  const [approvalAttachment1, setApprovalAttachment1] = useState<string | null>(null);
+  const [approvalAttachment2, setApprovalAttachment2] = useState<string | null>(null);
+  const [approvalAttachment3, setApprovalAttachment3] = useState<string | null>(null);
+  const [approvalAttachment1Name, setApprovalAttachment1Name] = useState<string>('');
+  const [approvalAttachment2Name, setApprovalAttachment2Name] = useState<string>('');
+  const [approvalAttachment3Name, setApprovalAttachment3Name] = useState<string>('');
+  const [uploadingAttachment1, setUploadingAttachment1] = useState(false);
+  const [uploadingAttachment2, setUploadingAttachment2] = useState(false);
+  const [uploadingAttachment3, setUploadingAttachment3] = useState(false);
   const [modalApprovalNotes, setModalApprovalNotes] = useState<string>('');
+  const [modalRegionalApprovalStatus, setModalRegionalApprovalStatus] = useState<string>('Disetujui');
+  const [modalRegionalApprovalNotes, setModalRegionalApprovalNotes] = useState<string>('');
+  const [modalDivisionApprovalStatus, setModalDivisionApprovalStatus] = useState<string>('Disetujui');
+  const [modalDivisionApprovalNotes, setModalDivisionApprovalNotes] = useState<string>('');
+  const [modalPaymentDate, setModalPaymentDate] = useState<string>('');
 
   // Individual file attachment update states
   const [localFileBak, setLocalFileBak] = useState<string | null>(transaction.file_bak_url || null);
@@ -133,6 +149,16 @@ export default function DetailModal({
       setLocalDokPendukungAlasan(transaction.dok_pendukung_alasan === '-' ? '' : (transaction.dok_pendukung_alasan || ''));
       setModalApprovalStatus(transaction.status_approval === 'Disetujui' ? 'Disetujui' : 'Disetujui');
       setModalApprovalNotes(transaction.approval_note || '');
+      setApprovalAttachment1(transaction.approval_attachment_1_url || null);
+      setApprovalAttachment2(transaction.approval_attachment_2_url || null);
+      setApprovalAttachment3(transaction.approval_attachment_3_url || null);
+      setApprovalAttachment1Name(transaction.approval_attachment_1_url ? 'Lampiran 1 Tersimpan' : '');
+      setApprovalAttachment2Name(transaction.approval_attachment_2_url ? 'Lampiran 2 Tersimpan' : '');
+      setApprovalAttachment3Name(transaction.approval_attachment_3_url ? 'Lampiran 3 Tersimpan' : '');
+      setModalRegionalApprovalStatus(transaction.regional_approval_status === 'Disetujui' ? 'Disetujui' : (transaction.regional_approval_status || 'Disetujui'));
+      setModalRegionalApprovalNotes(transaction.regional_approval_note || '');
+      setModalDivisionApprovalStatus(transaction.division_approval_status === 'Disetujui' ? 'Disetujui' : (transaction.division_approval_status || 'Disetujui'));
+      setModalDivisionApprovalNotes(transaction.division_approval_note || '');
     }
   }, [transaction]);
 
@@ -187,8 +213,8 @@ export default function DetailModal({
         salesAdmin: "Foto Serah Terima BRO ke Admin"
       };
     }
-    if (category === 'Maintenance' || category === 'ETLE' || category === 'TPL') {
-      const initName = category === 'Maintenance' ? 'SA' : category === 'ETLE' ? 'VRO' : 'SA';
+    if (category === 'Maintenance' || category === 'ETLE' || category === 'TPL' || category === 'Unclaimable Insurance' || category === 'Dokumen Kendaraan') {
+      const initName = (category === 'Maintenance' || category === 'Unclaimable Insurance' || category === 'Dokumen Kendaraan' || category === 'TPL') ? 'SA' : category === 'ETLE' ? 'VRO' : 'SA';
       return {
         bak: `Berkas Inisiasi (${initName})`,
         asoSales: `Foto Serah Terima ${initName} ke Admin`,
@@ -211,59 +237,83 @@ export default function DetailModal({
 
   const getSteps = (t: Backcharge) => {
     const kat = t.category;
+    const val = t.value || 0;
     
     const step1 = true;
     const stepHandover = t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin';
-    const stepSap = t.status_sap !== 'N/A' && t.status_sap !== '' && t.status_sap !== undefined;
+    const stepSap = kat === 'Own Risk' ? (t.status_sap !== 'N/A' && t.status_sap !== '' && t.status_sap !== undefined) : true;
     const stepApproval = t.status_approval === 'Disetujui';
+
+    const isMaintenance = kat === 'Maintenance';
+    const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
+    const isDivisionHeadReq = val > 15000000;
+
+    const stepRegionalApproval = t.regional_approval_status === 'Disetujui';
+    const stepDivisionApproval = t.division_approval_status === 'Disetujui';
+
     const stepInvoice = t.no_invoice && t.no_invoice !== '-';
     const stepPayment = t.status_payment === 'Lunas';
 
+    const approvalPic = (kat === 'Maintenance' || kat === 'TPL' || kat === 'Unclaimable Insurance' || kat === 'Dokumen Kendaraan') ? 'Kacab' : 'Sales Head';
+
+    let stepsArr: Array<{ label: string; pic: string; completed: boolean; active: boolean }> = [];
+
     if (kat === 'Own Risk') {
-      return [
+      stepsArr.push(
         { label: "Buat BAK & Input SAP", pic: "ASO / Staff", completed: step1, active: !stepHandover },
         { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO / Staff", completed: stepHandover, active: !stepHandover },
         { label: "Update SAP (Bill/No)", pic: "Sales Head", completed: stepSap, active: stepHandover && !stepSap },
-        { label: "Approval Backcharge", pic: "Sales Head", completed: stepApproval, active: stepHandover && stepSap && !stepApproval },
-        { label: "Cetak & Kirim Invoice", pic: "Admin", completed: stepInvoice, active: stepHandover && stepSap && stepApproval && !stepInvoice },
-        { label: "Pelunasan Denda", pic: "Customer", completed: stepPayment, active: stepHandover && stepSap && stepApproval && stepInvoice && !stepPayment }
-      ];
-    }
-    
-    if (kat === 'Maintenance' || kat === 'TPL') {
-      return [
-        { label: "Inisiasi Berkas (SA)", pic: "SA", completed: step1, active: !stepHandover },
-        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO / Staff", completed: stepHandover, active: !stepHandover },
-        { label: "Verifikasi Berkas & Dokumen", pic: "BRO / Admin", completed: stepHandover, active: stepHandover && !stepApproval },
-        { label: "Approval Backcharge", pic: "Kepala Cabang", completed: stepApproval, active: stepHandover && !stepApproval },
-        { label: "Cetak & Kirim Invoice", pic: "Admin", completed: stepInvoice, active: stepHandover && stepApproval && !stepInvoice },
-        { label: "Pelunasan Denda", pic: "Customer", completed: stepPayment, active: stepHandover && stepApproval && stepInvoice && !stepPayment }
-      ];
-    }
-
-    if (kat === 'Ekspedisi') {
-      return [
+        { label: "Approval Backcharge", pic: "Sales Head", completed: stepApproval, active: stepHandover && stepSap && !stepApproval }
+      );
+    } else if (kat === 'Ekspedisi') {
+      stepsArr.push(
         { label: "Buat Order Ekspedisi", pic: "ASO / Staff", completed: step1, active: !stepHandover },
         { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO / Staff", completed: stepHandover, active: !stepHandover },
         { label: "Verifikasi Berkas & Dokumen", pic: "BRO / Admin", completed: stepHandover, active: stepHandover && !stepApproval },
-        { label: "Approval Backcharge", pic: "Sales Head", completed: stepApproval, active: stepHandover && !stepApproval },
-        { label: "Cetak & Kirim Invoice", pic: "Admin", completed: stepInvoice, active: stepHandover && stepApproval && !stepInvoice },
-        { label: "Pelunasan Denda", pic: "Customer", completed: stepPayment, active: stepHandover && stepApproval && stepInvoice && !stepPayment }
-      ];
-    }
-
-    if (kat === 'ETLE') {
-      return [
+        { label: "Approval Backcharge", pic: "Sales Head", completed: stepApproval, active: stepHandover && !stepApproval }
+      );
+    } else if (kat === 'ETLE') {
+      stepsArr.push(
         { label: "Inisiasi Berkas (VRO)", pic: "VRO", completed: step1, active: !stepHandover },
         { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO / Staff", completed: stepHandover, active: !stepHandover },
         { label: "Verifikasi Berkas & Dokumen", pic: "BRO / Admin", completed: stepHandover, active: stepHandover && !stepApproval },
-        { label: "Approval Backcharge", pic: "Sales Head", completed: stepApproval, active: stepHandover && !stepApproval },
-        { label: "Cetak & Kirim Invoice", pic: "Admin", completed: stepInvoice, active: stepHandover && stepApproval && !stepInvoice },
-        { label: "Pelunasan Denda", pic: "Customer", completed: stepPayment, active: stepHandover && stepApproval && stepInvoice && !stepPayment }
-      ];
+        { label: "Approval Backcharge", pic: "Sales Head", completed: stepApproval, active: stepHandover && !stepApproval }
+      );
+    } else {
+      stepsArr.push(
+        { label: "Inisiasi Berkas (SA)", pic: "SA", completed: step1, active: !stepHandover },
+        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO / Staff", completed: stepHandover, active: !stepHandover },
+        { label: "Verifikasi Berkas & Dokumen", pic: "BRO / Admin", completed: stepHandover, active: stepHandover && !stepApproval },
+        { label: "Approval Backcharge", pic: approvalPic, completed: stepApproval, active: stepHandover && !stepApproval }
+      );
     }
 
-    return [];
+    if (isRegionalHeadReq || isDivisionHeadReq) {
+      stepsArr.push({
+        label: "Approval Regional Head",
+        pic: "Regional Head",
+        completed: stepRegionalApproval,
+        active: stepApproval && !stepRegionalApproval
+      });
+    }
+
+    if (isDivisionHeadReq) {
+      stepsArr.push({
+        label: "Approval Division Head",
+        pic: "Division Head",
+        completed: stepDivisionApproval,
+        active: stepRegionalApproval && !stepDivisionApproval
+      });
+    }
+
+    const lastApprovalCompleted = isDivisionHeadReq ? stepDivisionApproval : (isRegionalHeadReq ? stepRegionalApproval : stepApproval);
+
+    stepsArr.push(
+      { label: "Cetak & Kirim Invoice", pic: "Admin", completed: stepInvoice, active: stepHandover && lastApprovalCompleted && !stepInvoice },
+      { label: "Pelunasan Backcharge", pic: "Customer", completed: stepPayment, active: stepHandover && lastApprovalCompleted && stepInvoice && !stepPayment }
+    );
+
+    return stepsArr;
   };
 
   const steps = getSteps(transaction);
@@ -402,7 +452,7 @@ export default function DetailModal({
     ctx.font = '16px "Segoe UI", Arial, sans-serif';
     ctx.fillStyle = '#475569';
     const descText = isBak 
-      ? `Dokumen Kerusakan & Inisiasi fisik denda kendaraan ${transaction.license_plate} milik customer ${transaction.customer_name} telah diverifikasi secara sah di Cabang ${transaction.branch}.`
+      ? `Dokumen Kerusakan & Inisiasi fisik Backcharge kendaraan ${transaction.license_plate} milik customer ${transaction.customer_name} telah diverifikasi secara sah di Cabang ${transaction.branch}.`
       : `Dokumen fisik serah terima berkas penyerahan backcharge (${transaction.id}) telah diverifikasi secara digital dan fisik oleh tim operasional ASSA.`;
     ctx.fillText(descText, 110, 960);
 
@@ -470,7 +520,7 @@ export default function DetailModal({
     ctx.textAlign = 'center';
     ctx.font = 'italic 14px "Segoe UI", Arial, sans-serif';
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText(`Dicetak otomatis dari Portal Denda Terpadu ASSA pada ${new Date().toLocaleString('id-ID')}`, 600, 1530);
+    ctx.fillText(`Dicetak otomatis dari Portal Backcharge Terpadu ASSA pada ${new Date().toLocaleString('id-ID')}`, 600, 1530);
 
     return canvas.toDataURL('image/png');
   };
@@ -478,7 +528,11 @@ export default function DetailModal({
   // File download helper (handles Base64, Google Drive, and mock document rendering without corruption)
   const downloadFile = (fileData: string | null | undefined, defaultName: string, title?: string) => {
     if (!fileData) {
-      alert("Tidak ada file lampiran!");
+      if (addToast) {
+        addToast("Tidak ada file lampiran!", "error");
+      } else {
+        alert("Tidak ada file lampiran!");
+      }
       return;
     }
     
@@ -556,7 +610,7 @@ export default function DetailModal({
           updates.status_handover = 'Diserahkan ke Admin';
           updates.file_handover_sales_admin_url = base64;
           updates.tanggal_handover = transaction.tanggal_handover || new Date().toLocaleString('id-ID');
-          logMsg = `ASO mengunggah Foto Bukti Serah Terima ASO ke Admin dan menyerahkan fisik berkas denda lengkap ke departemen Admin`;
+          logMsg = `ASO mengunggah Foto Bukti Serah Terima ASO ke Admin dan menyerahkan fisik berkas Backcharge lengkap ke departemen Admin`;
         }
 
         onUpdateStatus(
@@ -589,7 +643,11 @@ export default function DetailModal({
 
   const handleInvoiceInput = () => {
     if (!modalInvoiceNo.trim()) {
-      alert('Nomor invoice wajib diisi!');
+      if (addToast) {
+        addToast('Nomor invoice wajib diisi!', 'error');
+      } else {
+        alert('Nomor invoice wajib diisi!');
+      }
       return;
     }
     const confirmMessage = `Konfirmasi Penerbitan Invoice:\nApakah Anda yakin ingin menerbitkan Invoice No: ${modalInvoiceNo.trim()}?`;
@@ -608,7 +666,11 @@ export default function DetailModal({
 
   const handleSalesAdminHandoverSubmit = () => {
     if (!localHandoverSalesAdminFile) {
-      alert('Bukti serah terima wajib diunggah!');
+      if (addToast) {
+        addToast('Bukti serah terima wajib diunggah!', 'error');
+      } else {
+        alert('Bukti serah terima wajib diunggah!');
+      }
       return;
     }
     const confirmMessage = `Konfirmasi Serah Terima Berkas:\nApakah Anda yakin ingin mengunggah Foto Bukti Serah Terima Sales ke Admin?`;
@@ -630,7 +692,7 @@ export default function DetailModal({
 
 
   const handleSetPaid = () => {
-    const confirmMessage = `Konfirmasi Status Lunas:\nApakah Anda yakin ingin mengubah status pembayaran transaksi ini menjadi "Lunas"? Tindakan ini akan menyelesaikan alur transaksi denda.`;
+    const confirmMessage = `Konfirmasi Status Lunas:\nApakah Anda yakin ingin mengubah status pembayaran transaksi ini menjadi "Lunas"? Tindakan ini akan menyelesaikan alur transaksi Backcharge.`;
     if (!window.confirm(confirmMessage)) {
       return;
     }
@@ -658,9 +720,50 @@ export default function DetailModal({
         status_approval: modalApprovalStatus,
         approved_by: `${currentUser.full_name || currentUser.email} (${roleTitle})`,
         approved_at: new Date().toLocaleString('id-ID'),
-        approval_note: modalApprovalNotes.trim() || null
+        approval_note: modalApprovalNotes.trim() || null,
+        approval_attachment_1_url: approvalAttachment1,
+        approval_attachment_2_url: approvalAttachment2,
+        approval_attachment_3_url: approvalAttachment3
       },
       `${roleTitle} memproses Approval Backcharge kategori ${transaction.category}: ${modalApprovalStatus}.${modalApprovalNotes.trim() ? ` Catatan: ${modalApprovalNotes.trim()}` : ''}`
+    );
+    setActionLoading(false);
+    setShowActionForm(null);
+  };
+
+  const handleRegionalApprovalSubmit = () => {
+    const confirmMessage = `PERINGATAN STATUS KRITIS!\n\nApakah Anda yakin ingin menyimpan keputusan Approval Regional Head ini dengan status: "${modalRegionalApprovalStatus.toUpperCase()}"?\n\nPerubahan ini akan dicatat atas nama ${currentUser.full_name || currentUser.email} (Regional Head).`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setActionLoading(true);
+    onUpdateStatus(
+      transaction.id,
+      {
+        regional_approval_status: modalRegionalApprovalStatus,
+        regional_approved_by: `${currentUser.full_name || currentUser.email} (${currentUser.role})`,
+        regional_approved_at: new Date().toLocaleString('id-ID'),
+        regional_approval_note: modalRegionalApprovalNotes.trim() || null
+      },
+      `Regional Head memproses Approval Regional Head: ${modalRegionalApprovalStatus}.${modalRegionalApprovalNotes.trim() ? ` Catatan: ${modalRegionalApprovalNotes.trim()}` : ''}`
+    );
+    setActionLoading(false);
+    setShowActionForm(null);
+  };
+
+  const handleDivisionApprovalSubmit = () => {
+    const confirmMessage = `PERINGATAN STATUS KRITIS!\n\nApakah Anda yakin ingin menyimpan keputusan Approval Division Head ini dengan status: "${modalDivisionApprovalStatus.toUpperCase()}"?\n\nPerubahan ini akan dicatat atas nama ${currentUser.full_name || currentUser.email} (Division Head).`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setActionLoading(true);
+    onUpdateStatus(
+      transaction.id,
+      {
+        division_approval_status: modalDivisionApprovalStatus,
+        division_approved_by: `${currentUser.full_name || currentUser.email} (${currentUser.role})`,
+        division_approved_at: new Date().toLocaleString('id-ID'),
+        division_approval_note: modalDivisionApprovalNotes.trim() || null
+      },
+      `Division Head memproses Approval Division Head: ${modalDivisionApprovalStatus}.${modalDivisionApprovalNotes.trim() ? ` Catatan: ${modalDivisionApprovalNotes.trim()}` : ''}`
     );
     setActionLoading(false);
     setShowActionForm(null);
@@ -672,7 +775,51 @@ export default function DetailModal({
   const isSales = currentUser.role === 'Sales Head' || currentUser.role === 'Kepala Cabang' || (currentUser.role as string) === 'Sales / Sales Head' || (currentUser.role as string) === 'kacab' || currentUser.role === 'Administrator';
   const isBro = currentUser.role === 'BRO';
   const isAdmin = currentUser.role === 'Admin' || currentUser.role === 'Administrator';
+  const isAdminView = isAdmin || currentUser.role === 'Admin Head';
   const isAso = currentUser.role === 'ASO / Staff' || currentUser.role === 'Administrator';
+
+  const txValue = transaction.value || 0;
+  const isRegionalHeadView = isRegionalHeadRole(currentUser.role as string);
+  const isDivisionHeadView = currentUser.role === 'Division Head';
+
+  const expectedApproverLabel = 
+    (transaction.category === 'Maintenance' || transaction.category === 'TPL') ? 'Kepala Cabang (Kacab)' : 'Sales Head (SH)';
+
+  const isMaintenance = transaction.category === 'Maintenance';
+  const isTPL = transaction.category === 'TPL';
+  const isOtherCat = transaction.category === 'Own Risk' || transaction.category === 'Ekspedisi' || transaction.category === 'ETLE' || transaction.category === 'Unclaimable Insurance' || transaction.category === 'Dokumen Kendaraan';
+
+  const isAuthorizedApprover = 
+    currentUser.role === 'Administrator' ||
+    (isKacabRole && (isMaintenance || isTPL)) ||
+    (isSalesHeadRole && isOtherCat) ||
+    (isRegionalHeadView && ((isMaintenance && txValue > 7500000) || (!isMaintenance && txValue > 5000000))) ||
+    (isDivisionHeadView && txValue > 15000000);
+
+  const isSuperAdmin = currentUser.role === 'Administrator';
+  const isRegionalHeadUser = isRegionalHeadView;
+  const isDivisionHeadUser = isDivisionHeadView;
+  const isKacabUser = isKacabRole && !isRegionalHeadUser && !isDivisionHeadUser;
+  const isSalesHeadUser = isSalesHeadRole && !isRegionalHeadUser && !isDivisionHeadUser;
+  const isAdminUser = isAdminView && !isRegionalHeadUser && !isDivisionHeadUser && !isKacabRole && !isSalesHeadRole;
+
+  const isRegionalHeadReq = isMaintenance 
+    ? (txValue > 7500000) 
+    : (txValue > 5000000);
+
+  const isDivisionHeadReq = txValue > 15000000;
+  const isFullyApproved = 
+    transaction.status_approval === 'Disetujui' &&
+    (!isRegionalHeadReq || transaction.regional_approval_status === 'Disetujui') &&
+    (!isDivisionHeadReq || transaction.division_approval_status === 'Disetujui');
+
+  const showBlockSAP = isSuperAdmin || (isSalesHeadUser && transaction.category === 'Own Risk');
+  const showBlockApprovalL1 = isSuperAdmin || ((isKacabUser && (isMaintenance || isTPL)) || (isSalesHeadUser && isOtherCat));
+  const showBlockRegionalApproval = isSuperAdmin || (isRegionalHeadUser && isRegionalHeadReq);
+  const showBlockDivisionApproval = isSuperAdmin || (isDivisionHeadUser && txValue > 15000000);
+  const showBlockInvoice = isSuperAdmin || (isAdminUser && isFullyApproved);
+
+  const showActionPanel = isSuperAdmin || !isAdminUser || isFullyApproved;
 
   return (
     <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white print:fixed print:inset-0">
@@ -713,7 +860,7 @@ export default function DetailModal({
             </h3>
           </div>
           <p className="text-xs text-slate-400 font-medium print:hidden">
-            Informasi komparasi dokumen fisik & langkah pelacakan alur denda nasional.
+            Informasi komparasi dokumen fisik & langkah pelacakan alur Backcharge nasional.
           </p>
         </div>
 
@@ -738,23 +885,138 @@ export default function DetailModal({
               </div>
 
               <div>
-                <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Status Approval Backcharge</span>
-                <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-extrabold mt-1 ${
-                  transaction.status_approval === 'Disetujui' 
-                    ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' 
-                    : transaction.status_approval === 'Ditolak'
-                    ? 'bg-red-50 border border-red-200 text-red-800'
-                    : 'bg-amber-50 border border-amber-200 text-amber-800'
-                }`}>
-                  <span>{transaction.status_approval === 'Disetujui' ? '✅ Disetujui' : transaction.status_approval === 'Ditolak' ? '❌ Tidak Disetujui (Not Approved)' : '⏳ Belum Approval'}</span>
-                  <span className="text-[9px] font-bold opacity-75">
-                    ({transaction.category === 'Maintenance' || transaction.category === 'TPL' ? 'Kacab' : 'Sales Head'})
-                  </span>
-                </span>
-                {transaction.approved_by && (
-                  <p className="text-[10px] text-slate-500 mt-1 font-medium">
-                    Oleh: <strong className="text-slate-700">{transaction.approved_by}</strong> {transaction.approved_at ? `pada ${transaction.approved_at}` : ''}
-                  </p>
+                <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">Status Approval Backcharge</span>
+                <div className="space-y-2.5">
+                  {/* Level 1 Approval */}
+                  <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-extrabold text-slate-800">
+                        {isMaintenance || isTPL ? '1. Approval Kacab' : '1. Approval Sales Head'}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold ${
+                        transaction.status_approval === 'Disetujui'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : transaction.status_approval === 'Ditolak'
+                          ? 'bg-red-100 text-red-800 border border-red-200'
+                          : 'bg-amber-100 text-amber-800 border border-amber-200'
+                      }`}>
+                        {transaction.status_approval === 'Disetujui' ? '✅ Disetujui' : transaction.status_approval === 'Ditolak' ? '❌ Ditolak' : '⏳ Belum'}
+                      </span>
+                    </div>
+                    <p className="text-[9px] text-slate-500 font-bold">Wewenang: {isMaintenance || isTPL ? 'Kepala Cabang (Kacab)' : 'Sales Head (SH)'}</p>
+                    {transaction.approved_by && (
+                      <p className="text-[9px] text-slate-600">Oleh: <strong className="text-slate-700">{transaction.approved_by}</strong> {transaction.approved_at ? `(${transaction.approved_at})` : ''}</p>
+                    )}
+                    {transaction.approval_note && (
+                      <p className="text-[9px] text-slate-600 italic">"{transaction.approval_note}"</p>
+                    )}
+                  </div>
+
+                  {/* Regional Head Approval (if required) */}
+                  {isRegionalHeadReq && (
+                    <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold text-slate-800">2. Approval Regional Head</span>
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold ${
+                          transaction.regional_approval_status === 'Disetujui'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            : transaction.regional_approval_status === 'Ditolak'
+                            ? 'bg-red-100 text-red-800 border border-red-200'
+                            : 'bg-amber-100 text-amber-800 border border-amber-200'
+                        }`}>
+                          {transaction.regional_approval_status === 'Disetujui' ? '✅ Disetujui' : transaction.regional_approval_status === 'Ditolak' ? '❌ Ditolak' : '⏳ Belum'}
+                        </span>
+                      </div>
+                      <p className="text-[9px] text-slate-500 font-bold">Wewenang: Regional Head</p>
+                      {transaction.regional_approved_by && (
+                        <p className="text-[9px] text-slate-600">Oleh: <strong className="text-slate-700">{transaction.regional_approved_by}</strong> {transaction.regional_approved_at ? `(${transaction.regional_approved_at})` : ''}</p>
+                      )}
+                      {transaction.regional_approval_note && (
+                        <p className="text-[9px] text-slate-600 italic">"{transaction.regional_approval_note}"</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Division Head Approval (if required) */}
+                  {txValue > 15000000 && (
+                    <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold text-slate-800">3. Approval Division Head</span>
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold ${
+                          transaction.division_approval_status === 'Disetujui'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            : transaction.division_approval_status === 'Ditolak'
+                            ? 'bg-red-100 text-red-800 border border-red-200'
+                            : 'bg-amber-100 text-amber-800 border border-amber-200'
+                        }`}>
+                          {transaction.division_approval_status === 'Disetujui' ? '✅ Disetujui' : transaction.division_approval_status === 'Ditolak' ? '❌ Ditolak' : '⏳ Belum'}
+                        </span>
+                      </div>
+                      <p className="text-[9px] text-slate-500 font-bold">Wewenang: Division Head</p>
+                      {transaction.division_approved_by && (
+                        <p className="text-[9px] text-slate-600">Oleh: <strong className="text-slate-700">{transaction.division_approved_by}</strong> {transaction.division_approved_at ? `(${transaction.division_approved_at})` : ''}</p>
+                      )}
+                      {transaction.division_approval_note && (
+                        <p className="text-[9px] text-slate-600 italic">"{transaction.division_approval_note}"</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {(transaction.approval_attachment_1_url || transaction.approval_attachment_2_url || transaction.approval_attachment_3_url) && (
+                  <div className="mt-3.5 space-y-1.5 p-3 bg-amber-50/50 border border-amber-200/50 rounded-xl">
+                    <span className="block text-[8px] font-black text-amber-800 uppercase tracking-wider mb-1">Akses Pratinjau Instan</span>
+                    <div className="flex flex-wrap gap-2">
+                      {transaction.approval_attachment_1_url && (
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setLightboxFile({ 
+                              url: transaction.approval_attachment_1_url!, 
+                              title: `Lampiran Pendukung 1 (Approval): ${transaction.id}`, 
+                              docName: "Lampiran_Approval_1" 
+                            });
+                          }}
+                          className="flex items-center space-x-1 px-2 py-1 bg-amber-100/70 hover:bg-amber-200/80 text-amber-900 border border-amber-200/60 rounded-lg text-[9px] font-black transition-colors"
+                        >
+                          <Eye className="w-3 h-3 text-amber-700" />
+                          <span>Lampiran 1</span>
+                        </button>
+                      )}
+                      {transaction.approval_attachment_2_url && (
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setLightboxFile({ 
+                              url: transaction.approval_attachment_2_url!, 
+                              title: `Lampiran Pendukung 2 (Approval): ${transaction.id}`, 
+                              docName: "Lampiran_Approval_2" 
+                            });
+                          }}
+                          className="flex items-center space-x-1 px-2 py-1 bg-amber-100/70 hover:bg-amber-200/80 text-amber-900 border border-amber-200/60 rounded-lg text-[9px] font-black transition-colors"
+                        >
+                          <Eye className="w-3 h-3 text-amber-700" />
+                          <span>Lampiran 2</span>
+                        </button>
+                      )}
+                      {transaction.approval_attachment_3_url && (
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setLightboxFile({ 
+                              url: transaction.approval_attachment_3_url!, 
+                              title: `Lampiran Pendukung 3 (Approval): ${transaction.id}`, 
+                              docName: "Lampiran_Approval_3" 
+                            });
+                          }}
+                          className="flex items-center space-x-1 px-2 py-1 bg-amber-100/70 hover:bg-amber-200/80 text-amber-900 border border-amber-200/60 rounded-lg text-[9px] font-black transition-colors"
+                        >
+                          <Eye className="w-3 h-3 text-amber-700" />
+                          <span>Lampiran 3</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -934,55 +1196,6 @@ export default function DetailModal({
                   </div>
                 </div>
 
-                {/* 3. Handover Sales - Admin (Only show for historical transactions if file exists) */}
-                {transaction.file_handover_sales_admin_url && (
-                  <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200">
-                    <div className="flex items-center space-x-2 min-w-0">
-                      <Image className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                      <span 
-                        onClick={() => {
-                          const labels = getFileLabels(transaction.category);
-                          if (transaction.file_handover_sales_admin_url) {
-                            setLightboxFile({ url: transaction.file_handover_sales_admin_url, title: `${labels.salesAdmin}: ${transaction.id}`, docName: labels.salesAdmin });
-                          } else {
-                            alert("file atau foto belum di upload");
-                          }
-                        }}
-                        className="text-[10px] font-bold text-slate-700 truncate cursor-pointer hover:text-emerald-600 hover:underline"
-                      >
-                        {`${getFileLabels(transaction.category).salesAdmin}.img`}
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <button 
-                        onClick={() => {
-                          const labels = getFileLabels(transaction.category);
-                          if (transaction.file_handover_sales_admin_url) {
-                            setLightboxFile({ url: transaction.file_handover_sales_admin_url, title: `${labels.salesAdmin}: ${transaction.id}`, docName: labels.salesAdmin });
-                          } else {
-                            alert("file atau foto belum di upload");
-                          }
-                        }}
-                        className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors"
-                        title="Lihat Langsung"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
-                      <button 
-                        onClick={() => downloadFile(
-                          transaction.file_handover_sales_admin_url, 
-                          getFormattedFileName(getFileLabels(transaction.category).salesAdmin, transaction, transaction.file_handover_sales_admin_url),
-                          getFileLabels(transaction.category).salesAdmin
-                        )}
-                        className="p-1.5 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
-                        title="Unduh Foto"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 {/* 4. Dokumen Pendukung */}
                 <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200">
                   <div className="flex items-center space-x-2 min-w-0">
@@ -1030,6 +1243,147 @@ export default function DetailModal({
                   </div>
                 </div>
 
+                {/* 5. Lampiran Pendukung 1 (Approval) */}
+                {transaction.approval_attachment_1_url && (
+                  <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200 animate-in fade-in duration-200">
+                    <div className="flex items-center space-x-2 min-w-0">
+                      <FileText className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                      <span 
+                        onClick={() => {
+                          setLightboxFile({ 
+                            url: transaction.approval_attachment_1_url!, 
+                            title: `Lampiran Pendukung 1 (Approval): ${transaction.id}`, 
+                            docName: "Lampiran_Approval_1" 
+                          });
+                        }}
+                        className="text-[10px] font-bold text-slate-700 truncate cursor-pointer hover:text-rose-600 hover:underline"
+                      >
+                        Lampiran Pendukung 1 (Approval)
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <button 
+                        onClick={() => {
+                          setLightboxFile({ 
+                            url: transaction.approval_attachment_1_url!, 
+                            title: `Lampiran Pendukung 1 (Approval): ${transaction.id}`, 
+                            docName: "Lampiran_Approval_1" 
+                          });
+                        }}
+                        className="p-1.5 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-colors"
+                        title="Lihat Langsung"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        onClick={() => downloadFile(
+                          transaction.approval_attachment_1_url!, 
+                          getFormattedFileName("Lampiran_Approval_1", transaction, transaction.approval_attachment_1_url),
+                          "Lampiran Approval 1"
+                        )}
+                        className="p-1.5 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                        title="Unduh File"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 6. Lampiran Pendukung 2 (Approval) */}
+                {transaction.approval_attachment_2_url && (
+                  <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200 animate-in fade-in duration-200">
+                    <div className="flex items-center space-x-2 min-w-0">
+                      <FileText className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                      <span 
+                        onClick={() => {
+                          setLightboxFile({ 
+                            url: transaction.approval_attachment_2_url!, 
+                            title: `Lampiran Pendukung 2 (Approval): ${transaction.id}`, 
+                            docName: "Lampiran_Approval_2" 
+                          });
+                        }}
+                        className="text-[10px] font-bold text-slate-700 truncate cursor-pointer hover:text-rose-600 hover:underline"
+                      >
+                        Lampiran Pendukung 2 (Approval)
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <button 
+                        onClick={() => {
+                          setLightboxFile({ 
+                            url: transaction.approval_attachment_2_url!, 
+                            title: `Lampiran Pendukung 2 (Approval): ${transaction.id}`, 
+                            docName: "Lampiran_Approval_2" 
+                          });
+                        }}
+                        className="p-1.5 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-colors"
+                        title="Lihat Langsung"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        onClick={() => downloadFile(
+                          transaction.approval_attachment_2_url!, 
+                          getFormattedFileName("Lampiran_Approval_2", transaction, transaction.approval_attachment_2_url),
+                          "Lampiran Approval 2"
+                        )}
+                        className="p-1.5 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                        title="Unduh File"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 7. Lampiran Pendukung 3 (Approval) */}
+                {transaction.approval_attachment_3_url && (
+                  <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200 animate-in fade-in duration-200">
+                    <div className="flex items-center space-x-2 min-w-0">
+                      <FileText className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                      <span 
+                        onClick={() => {
+                          setLightboxFile({ 
+                            url: transaction.approval_attachment_3_url!, 
+                            title: `Lampiran Pendukung 3 (Approval): ${transaction.id}`, 
+                            docName: "Lampiran_Approval_3" 
+                          });
+                        }}
+                        className="text-[10px] font-bold text-slate-700 truncate cursor-pointer hover:text-rose-600 hover:underline"
+                      >
+                        Lampiran Pendukung 3 (Approval)
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <button 
+                        onClick={() => {
+                          setLightboxFile({ 
+                            url: transaction.approval_attachment_3_url!, 
+                            title: `Lampiran Pendukung 3 (Approval): ${transaction.id}`, 
+                            docName: "Lampiran_Approval_3" 
+                          });
+                        }}
+                        className="p-1.5 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-colors"
+                        title="Lihat Langsung"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        onClick={() => downloadFile(
+                          transaction.approval_attachment_3_url!, 
+                          getFormattedFileName("Lampiran_Approval_3", transaction, transaction.approval_attachment_3_url),
+                          "Lampiran Approval 3"
+                        )}
+                        className="p-1.5 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                        title="Unduh File"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
               </div>
             </div>
           </div>
@@ -1076,7 +1430,7 @@ export default function DetailModal({
                         <p className="text-[9px] text-slate-500 mt-0.5 font-medium">
                           {step.label.includes("Serah Terima Berkas") 
                             ? (step.completed 
-                                ? `Dokumen baru telah di-input oleh ASO & berkas fisik denda diserahkan langsung ke Admin${transaction.tanggal_handover ? ` pada ${transaction.tanggal_handover}` : ''}` 
+                                ? `Dokumen baru telah di-input oleh ASO & berkas fisik Backcharge diserahkan langsung ke Admin${transaction.tanggal_handover ? ` pada ${transaction.tanggal_handover}` : ''}` 
                                 : step.active 
                                   ? "Menunggu unggahan Foto Serah Terima ASO ke Admin untuk memproses penyerahan berkas" 
                                   : "Menunggu tahap sebelumnya")
@@ -1095,11 +1449,12 @@ export default function DetailModal({
             </div>
 
             {/* ACTION PANEL (print:hidden) */}
-            <div className="bg-slate-50/90 rounded-2xl border border-slate-200 p-5 flex flex-col space-y-4 print:hidden">
+            {showActionPanel && (
+              <div className="bg-slate-50/90 rounded-2xl border border-slate-200 p-5 flex flex-col space-y-4 print:hidden">
               <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                 <div className="flex items-center space-x-2">
                   <div className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-pulse"></div>
-                  <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Tindakan Otoritas Alur Denda</span>
+                  <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Tindakan Otoritas Alur Backcharge</span>
                 </div>
                 <span className="text-[10px] bg-slate-200/80 text-slate-700 px-2 py-0.5 rounded-full font-bold">
                   Peran Anda: {currentUser.role}
@@ -1111,7 +1466,7 @@ export default function DetailModal({
                 <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex items-center justify-between">
                   <div>
                     <h5 className="text-xs font-extrabold text-indigo-900">📦 Serah Terima Berkas (ASO ke Admin)</h5>
-                    <p className="text-[10px] text-indigo-700 font-medium">Serahkan berkas fisik denda ke Admin untuk melanjutkan alur invoice.</p>
+                    <p className="text-[10px] text-indigo-700 font-medium">Serahkan berkas fisik Backcharge ke Admin untuk melanjutkan alur invoice.</p>
                   </div>
                   <button 
                     onClick={() => setShowActionForm('handover_courier')}
@@ -1126,15 +1481,15 @@ export default function DetailModal({
               {transaction.status_payment === 'Lunas' && (
                 <div className="w-full p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl font-bold flex items-center space-x-2">
                   <span>🎉</span>
-                  <span>Transaksi denda lunas &amp; tuntas. Seluruh siklus dokumen telah selesai divalidasi.</span>
+                  <span>Transaksi Backcharge lunas &amp; tuntas. Seluruh siklus dokumen telah selesai divalidasi.</span>
                 </div>
               )}
 
               {/* 3 SEPARATED AUTHORITY BLOCKS (FILTERED BY ROLE PERMISSION) */}
               <div className="grid grid-cols-1 gap-3">
 
-                {/* BLOCK 1: UPDATE SAP (BILL / NOT BILL) - Visible for Sales Head */}
-                {isSalesHeadRole && (
+                {/* BLOCK 1: UPDATE SAP (BILL / NOT BILL) - Visible for Sales Head when Own Risk */}
+                {showBlockSAP && (
                   <div className={`p-4 rounded-xl border transition-all ${
                     showActionForm === 'sap' 
                       ? 'bg-blue-50/90 border-blue-300 ring-2 ring-blue-500/20 shadow-sm' 
@@ -1190,7 +1545,7 @@ export default function DetailModal({
                       <div className="flex items-center justify-between pt-1">
                         <p className="text-[10px] text-slate-500">
                           {transaction.category === 'Own Risk' 
-                            ? 'Atur pembebanan billing denda di SAP ERP (Bill vs Not Bill).' 
+                            ? 'Atur pembebanan billing Backcharge di SAP ERP (Bill vs Not Bill).' 
                             : 'Kategori Non-Own Risk terproses otomatis di SAP.'}
                         </p>
                         {transaction.category === 'Own Risk' && isSalesHeadRole && (
@@ -1207,9 +1562,7 @@ export default function DetailModal({
                 )}
 
                 {/* BLOCK 2: APPROVAL BACKCHARGE - Visible for Kacab (Maintenance/TPL) or Sales Head (OR/Ekspedisi/ETLE) */}
-                {((isKacabRole && (transaction.category === 'Maintenance' || transaction.category === 'TPL')) ||
-                  (isSalesHeadRole && (transaction.category === 'Own Risk' || transaction.category === 'Ekspedisi' || transaction.category === 'ETLE')) ||
-                  currentUser.role === 'Administrator') && (
+                {showBlockApprovalL1 && (
                   <div className={`p-4 rounded-xl border transition-all ${
                     showActionForm === 'approval' 
                       ? 'bg-amber-50/90 border-amber-300 ring-2 ring-amber-500/20 shadow-sm' 
@@ -1221,7 +1574,7 @@ export default function DetailModal({
                         <div>
                           <h5 className="text-xs font-extrabold text-slate-800">2. Approval Backcharge</h5>
                           <span className="text-[9px] text-slate-500 font-bold">
-                            Wewenang: {transaction.category === 'Maintenance' || transaction.category === 'TPL' ? 'Kepala Cabang (Kacab)' : 'Sales Head (SH)'}
+                            Wewenang: {expectedApproverLabel}
                           </span>
                         </div>
                       </div>
@@ -1242,7 +1595,7 @@ export default function DetailModal({
                           <div className="flex items-center space-x-2">
                             <span className="text-xs font-bold text-slate-800">Form Persetujuan Approval Backcharge</span>
                             <span className="text-[9px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-extrabold uppercase">
-                              {transaction.category === 'Maintenance' || transaction.category === 'TPL' ? 'Wewenang Kacab' : 'Wewenang Sales Head'}
+                              Wewenang {expectedApproverLabel}
                             </span>
                           </div>
                           <button onClick={() => setShowActionForm(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold">Batal</button>
@@ -1272,6 +1625,118 @@ export default function DetailModal({
                             />
                           </div>
 
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Lampiran Pendukung (Maks. 3)</label>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                              {[
+                                { 
+                                  state: approvalAttachment1, 
+                                  setter: setApprovalAttachment1, 
+                                  label: 'Lampiran 1', 
+                                  uploading: uploadingAttachment1, 
+                                  setUploading: setUploadingAttachment1, 
+                                  name: approvalAttachment1Name, 
+                                  setName: setApprovalAttachment1Name 
+                                },
+                                { 
+                                  state: approvalAttachment2, 
+                                  setter: setApprovalAttachment2, 
+                                  label: 'Lampiran 2', 
+                                  uploading: uploadingAttachment2, 
+                                  setUploading: setUploadingAttachment2, 
+                                  name: approvalAttachment2Name, 
+                                  setName: setApprovalAttachment2Name 
+                                },
+                                { 
+                                  state: approvalAttachment3, 
+                                  setter: setApprovalAttachment3, 
+                                  label: 'Lampiran 3', 
+                                  uploading: uploadingAttachment3, 
+                                  setUploading: setUploadingAttachment3, 
+                                  name: approvalAttachment3Name, 
+                                  setName: setApprovalAttachment3Name 
+                                }
+                              ].map((item, idx) => {
+                                const isUploading = item.uploading;
+                                return (
+                                  <div key={idx} className="flex items-center space-x-1 w-full min-w-0">
+                                    <label className={`flex flex-1 items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-2 py-2 rounded-xl cursor-pointer font-bold border border-slate-200 transition-all min-w-0 ${isUploading ? 'opacity-60 cursor-not-allowed pointer-events-none' : ''}`}>
+                                      {isUploading ? (
+                                        <Loader2 className="w-3.5 h-3.5 mr-1.5 text-blue-600 animate-spin flex-shrink-0" />
+                                      ) : (
+                                        <Upload className="w-3.5 h-3.5 mr-1.5 text-blue-600 flex-shrink-0" />
+                                      )}
+                                      <span className="truncate max-w-[80px] font-sans">
+                                        {isUploading 
+                                          ? 'Mengunggah...' 
+                                          : item.state 
+                                            ? (item.name ? item.name : 'Ubah ' + item.label) 
+                                            : item.label
+                                        }
+                                      </span>
+                                      <input 
+                                        type="file" 
+                                        accept="application/pdf,image/*" 
+                                        disabled={isUploading}
+                                        onChange={async (e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) {
+                                            item.setName(file.name);
+                                            const isDriveActive = googleToken || serviceAccountActive || appsScriptActive;
+                                            if (isDriveActive) {
+                                              item.setUploading(true);
+                                              try {
+                                                const docName = `Lampiran_Approval_${idx + 1}`;
+                                                const fileNameToUpload = getFormattedFileName(docName, transaction, file.name);
+                                                const driveUrl = await uploadFileToDrive(file, fileNameToUpload, googleToken);
+                                                item.setter(driveUrl);
+                                              } catch (err: any) {
+                                                console.error("Gagal mengunggah ke Google Drive:", err);
+                                                alert("Gagal mengunggah otomatis ke Google Drive. Disimpan secara lokal.");
+                                                const reader = new FileReader();
+                                                reader.onloadend = () => {
+                                                  item.setter(reader.result as string);
+                                                };
+                                                reader.readAsDataURL(file);
+                                              } finally {
+                                                item.setUploading(false);
+                                              }
+                                            } else {
+                                              const reader = new FileReader();
+                                              reader.onloadend = () => {
+                                                item.setter(reader.result as string);
+                                              };
+                                              reader.readAsDataURL(file);
+                                            }
+                                          }
+                                        }}
+                                        className="hidden" 
+                                      />
+                                    </label>
+                                    {item.state && !isUploading && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          setLightboxFile({
+                                            url: item.state!,
+                                            title: `Lampiran ${idx + 1}: ${transaction.id}`,
+                                            docName: `Lampiran_Approval_${idx + 1}`
+                                          });
+                                        }}
+                                        className="p-1.5 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-colors flex-shrink-0"
+                                        title="Lihat Langsung"
+                                      >
+                                        <Eye className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
                           <button 
                             onClick={handleApprovalSubmit}
                             disabled={actionLoading}
@@ -1290,8 +1755,7 @@ export default function DetailModal({
                             <span>Membutuhkan persetujuan pejabat berwenang sebelum penerbitan invoice.</span>
                           )}
                         </div>
-                        {((isKacabRole && (transaction.category === 'Maintenance' || transaction.category === 'TPL')) ||
-                          (isSalesHeadRole && (transaction.category === 'Own Risk' || transaction.category === 'Ekspedisi' || transaction.category === 'ETLE'))) && (
+                        {(isAuthorizedApprover || currentUser.role === 'Administrator') && (
                           <button 
                             onClick={() => {
                               setModalApprovalStatus(transaction.status_approval === 'Disetujui' ? 'Disetujui' : 'Disetujui');
@@ -1310,8 +1774,242 @@ export default function DetailModal({
                   </div>
                 )}
 
+                {/* BLOCK 2B: APPROVAL REGIONAL HEAD (If required by value & category) */}
+                {showBlockRegionalApproval && (
+                  <div className={`p-4 rounded-xl border transition-all ${
+                    showActionForm === 'regional_approval' 
+                      ? 'bg-amber-50/90 border-amber-300 ring-2 ring-amber-500/20 shadow-sm' 
+                      : 'bg-white border-slate-200 hover:border-amber-200'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-base">🌐</span>
+                        <div>
+                          <h5 className="text-xs font-extrabold text-slate-800">Approval Regional Head</h5>
+                          <span className="text-[9px] text-slate-500 font-bold">Wewenang: Regional Head</span>
+                        </div>
+                      </div>
+                      <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold ${
+                        transaction.regional_approval_status === 'Disetujui'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : transaction.regional_approval_status === 'Ditolak'
+                          ? 'bg-red-100 text-red-800 border border-red-200'
+                          : 'bg-amber-100 text-amber-800 border border-amber-200'
+                      }`}>
+                        {transaction.regional_approval_status === 'Disetujui' ? '✅ Disetujui' : transaction.regional_approval_status === 'Ditolak' ? '❌ Tidak Disetujui' : '⏳ Belum Approval RH'}
+                      </span>
+                    </div>
+
+                    {showActionForm === 'regional_approval' ? (
+                      <div className="space-y-3 border-t border-amber-200/80 pt-3 mt-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-slate-800">Form Persetujuan Regional Head</span>
+                          <button onClick={() => setShowActionForm(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold">Batal</button>
+                        </div>
+                        <div className="space-y-3 text-xs">
+                          {/* View of Level 1 approval notes & attachments */}
+                          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                            <span className="block text-[9px] font-extrabold text-slate-500 uppercase">Catatan & Lampiran Level 1 (Kacab / Sales Head):</span>
+                            {transaction.approval_note ? (
+                              <p className="text-xs text-slate-700 italic">"{transaction.approval_note}"</p>
+                            ) : (
+                              <p className="text-[10px] text-slate-400 italic">Tidak ada catatan dari Level 1.</p>
+                            )}
+                            {(transaction.approval_attachment_1_url || transaction.approval_attachment_2_url || transaction.approval_attachment_3_url) && (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {transaction.approval_attachment_1_url && (
+                                  <a href={transaction.approval_attachment_1_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold">
+                                    <FileText className="w-3 h-3" />
+                                    <span>Lampiran 1</span>
+                                  </a>
+                                )}
+                                {transaction.approval_attachment_2_url && (
+                                  <a href={transaction.approval_attachment_2_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold">
+                                    <FileText className="w-3 h-3" />
+                                    <span>Lampiran 2</span>
+                                  </a>
+                                )}
+                                {transaction.approval_attachment_3_url && (
+                                  <a href={transaction.approval_attachment_3_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold">
+                                    <FileText className="w-3 h-3" />
+                                    <span>Lampiran 3</span>
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Keputusan Approval</label>
+                            <select 
+                              value={modalRegionalApprovalStatus}
+                              onChange={(e) => setModalRegionalApprovalStatus(e.target.value)}
+                              className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                            >
+                              <option value="Disetujui">✅ Disetujui (Approved)</option>
+                              <option value="Ditolak">❌ Tidak Disetujui (Not Approved)</option>
+                            </select>
+                          </div>
+                          <button 
+                            onClick={handleRegionalApprovalSubmit}
+                            disabled={actionLoading || transaction.status_approval !== 'Disetujui'}
+                            className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white py-2 rounded-xl text-xs font-extrabold transition-all shadow cursor-pointer"
+                          >
+                            Simpan Approval Regional Head
+                          </button>
+                          {transaction.status_approval !== 'Disetujui' && (
+                            <p className="text-[10px] text-amber-700 font-semibold text-center">ℹ️ Approval Level 1 (Kacab/SH) harus disetujui terlebih dahulu.</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between pt-1">
+                        <div className="text-[10px] text-slate-500">
+                          {transaction.regional_approved_by ? (
+                            <span>Disetujui oleh: <strong className="text-slate-700">{transaction.regional_approved_by}</strong></span>
+                          ) : (
+                            <span>Membutuhkan persetujuan Regional Head (Nominal menengah).</span>
+                          )}
+                        </div>
+                        {(isRegionalHeadView || currentUser.role === 'Administrator') && (
+                          <button 
+                            onClick={() => {
+                              setModalRegionalApprovalStatus(transaction.regional_approval_status === 'Disetujui' ? 'Disetujui' : 'Disetujui');
+                              setModalRegionalApprovalNotes(transaction.regional_approval_note || '');
+                              setShowActionForm('regional_approval');
+                            }}
+                            disabled={transaction.status_approval !== 'Disetujui'}
+                            className={`px-3 py-1.5 text-white text-xs font-extrabold rounded-lg shadow transition-all cursor-pointer shrink-0 disabled:opacity-50 ${
+                              transaction.regional_approval_status === 'Disetujui' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700 animate-pulse'
+                            }`}
+                          >
+                            {transaction.regional_approval_status === 'Disetujui' ? 'Ubah Approval RH' : 'Proses Approval RH'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* BLOCK 2C: APPROVAL DIVISION HEAD (If txValue > 15000000) */}
+                {showBlockDivisionApproval && (
+                  <div className={`p-4 rounded-xl border transition-all ${
+                    showActionForm === 'division_approval' 
+                      ? 'bg-amber-50/90 border-amber-300 ring-2 ring-amber-500/20 shadow-sm' 
+                      : 'bg-white border-slate-200 hover:border-amber-200'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-base">🏢</span>
+                        <div>
+                          <h5 className="text-xs font-extrabold text-slate-800">Approval Division Head</h5>
+                          <span className="text-[9px] text-slate-500 font-bold">Wewenang: Division Head</span>
+                        </div>
+                      </div>
+                      <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold ${
+                        transaction.division_approval_status === 'Disetujui'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : transaction.division_approval_status === 'Ditolak'
+                          ? 'bg-red-100 text-red-800 border border-red-200'
+                          : 'bg-amber-100 text-amber-800 border border-amber-200'
+                      }`}>
+                        {transaction.division_approval_status === 'Disetujui' ? '✅ Disetujui' : transaction.division_approval_status === 'Ditolak' ? '❌ Tidak Disetujui' : '⏳ Belum Approval DH'}
+                      </span>
+                    </div>
+
+                    {showActionForm === 'division_approval' ? (
+                      <div className="space-y-3 border-t border-amber-200/80 pt-3 mt-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-slate-800">Form Persetujuan Division Head</span>
+                          <button onClick={() => setShowActionForm(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold">Batal</button>
+                        </div>
+                        <div className="space-y-3 text-xs">
+                          {/* View of Level 1 approval notes & attachments */}
+                          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                            <span className="block text-[9px] font-extrabold text-slate-500 uppercase">Catatan & Lampiran Level 1 (Kacab / Sales Head):</span>
+                            {transaction.approval_note ? (
+                              <p className="text-xs text-slate-700 italic">"{transaction.approval_note}"</p>
+                            ) : (
+                              <p className="text-[10px] text-slate-400 italic">Tidak ada catatan dari Level 1.</p>
+                            )}
+                            {(transaction.approval_attachment_1_url || transaction.approval_attachment_2_url || transaction.approval_attachment_3_url) && (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {transaction.approval_attachment_1_url && (
+                                  <a href={transaction.approval_attachment_1_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold">
+                                    <FileText className="w-3 h-3" />
+                                    <span>Lampiran 1</span>
+                                  </a>
+                                )}
+                                {transaction.approval_attachment_2_url && (
+                                  <a href={transaction.approval_attachment_2_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold">
+                                    <FileText className="w-3 h-3" />
+                                    <span>Lampiran 2</span>
+                                  </a>
+                                )}
+                                {transaction.approval_attachment_3_url && (
+                                  <a href={transaction.approval_attachment_3_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold">
+                                    <FileText className="w-3 h-3" />
+                                    <span>Lampiran 3</span>
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Keputusan Approval</label>
+                            <select 
+                              value={modalDivisionApprovalStatus}
+                              onChange={(e) => setModalDivisionApprovalStatus(e.target.value)}
+                              className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                            >
+                              <option value="Disetujui">✅ Disetujui (Approved)</option>
+                              <option value="Ditolak">❌ Tidak Disetujui (Not Approved)</option>
+                            </select>
+                          </div>
+                          <button 
+                            onClick={handleDivisionApprovalSubmit}
+                            disabled={actionLoading || transaction.status_approval !== 'Disetujui' || transaction.regional_approval_status !== 'Disetujui'}
+                            className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white py-2 rounded-xl text-xs font-extrabold transition-all shadow cursor-pointer"
+                          >
+                            Simpan Approval Division Head
+                          </button>
+                          {(transaction.status_approval !== 'Disetujui' || transaction.regional_approval_status !== 'Disetujui') && (
+                            <p className="text-[10px] text-amber-700 font-semibold text-center">ℹ️ Approval Level 1 dan Regional Head harus disetujui terlebih dahulu.</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between pt-1">
+                        <div className="text-[10px] text-slate-500">
+                          {transaction.division_approved_by ? (
+                            <span>Disetujui oleh: <strong className="text-slate-700">{transaction.division_approved_by}</strong></span>
+                          ) : (
+                            <span>Membutuhkan persetujuan Division Head (Nominal &gt; 15 Juta).</span>
+                          )}
+                        </div>
+                        {(isDivisionHeadView || currentUser.role === 'Administrator') && (
+                          <button 
+                            onClick={() => {
+                              setModalDivisionApprovalStatus(transaction.division_approval_status === 'Disetujui' ? 'Disetujui' : 'Disetujui');
+                              setModalDivisionApprovalNotes(transaction.division_approval_note || '');
+                              setShowActionForm('division_approval');
+                            }}
+                            disabled={transaction.status_approval !== 'Disetujui' || transaction.regional_approval_status !== 'Disetujui'}
+                            className={`px-3 py-1.5 text-white text-xs font-extrabold rounded-lg shadow transition-all cursor-pointer shrink-0 disabled:opacity-50 ${
+                              transaction.division_approval_status === 'Disetujui' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700 animate-pulse'
+                            }`}
+                          >
+                            {transaction.division_approval_status === 'Disetujui' ? 'Ubah Approval DH' : 'Proses Approval DH'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* BLOCK 3: CETAK & KIRIM INVOICE - Visible for Admin / Administrator */}
-                {isAdmin && (
+                {showBlockInvoice && (
                   <div className={`p-4 rounded-xl border transition-all ${
                     showActionForm === 'invoice' 
                       ? 'bg-purple-50/90 border-purple-300 ring-2 ring-purple-500/20 shadow-sm' 
@@ -1334,7 +2032,7 @@ export default function DetailModal({
                         <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
                           transaction.status_payment === 'Lunas' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
                         }`}>
-                          {transaction.status_payment === 'Lunas' ? 'Lunas' : 'Belum Bayar'}
+                          {transaction.status_payment === 'Lunas' ? (transaction.payment_date ? `Lunas (${transaction.payment_date})` : 'Lunas') : 'Belum Bayar'}
                         </span>
                       </div>
                     </div>
@@ -1370,7 +2068,7 @@ export default function DetailModal({
                         <p className="text-[10px] text-slate-500">
                           {transaction.no_invoice && transaction.no_invoice !== '-' 
                             ? `Invoice ${transaction.no_invoice} telah diterbitkan.` 
-                            : 'Terbitkan nomor invoice setelah persetujuan denda diselesaikan.'}
+                            : 'Terbitkan nomor invoice setelah persetujuan Backcharge diselesaikan.'}
                         </p>
                         <div className="flex items-center space-x-2 shrink-0">
                           {(!transaction.no_invoice || transaction.no_invoice === '-') && isAdmin && (
@@ -1386,7 +2084,7 @@ export default function DetailModal({
                           )}
                           {transaction.no_invoice && transaction.no_invoice !== '-' && transaction.status_payment === 'Belum Bayar' && isAdmin && (
                             <button 
-                              onClick={handleSetPaid}
+                              onClick={() => setShowActionForm('paid')}
                               className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-lg shadow transition-all cursor-pointer"
                             >
                               💰 Set Status Lunas
@@ -1395,15 +2093,41 @@ export default function DetailModal({
                         </div>
                       </div>
                     )}
+                    {showActionForm === 'paid' && (
+                      <div className="space-y-3 border-t border-emerald-200/80 pt-3 mt-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-slate-800">Form Konfirmasi Pelunasan</span>
+                          <button onClick={() => setShowActionForm(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer">Batal</button>
+                        </div>
+                        <div className="space-y-3 text-xs">
+                          <div>
+                            <label className="block text-slate-600 font-semibold mb-1">Tanggal Bayar Customer <span className="text-rose-500">*</span></label>
+                            <input 
+                              type="date"
+                              className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-emerald-500 outline-none"
+                              value={modalPaymentDate}
+                              onChange={(e) => setModalPaymentDate(e.target.value)}
+                            />
+                          </div>
+                          <button 
+                            onClick={handleSetPaid}
+                            disabled={actionLoading || !modalPaymentDate}
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white py-2 rounded-xl text-xs font-bold cursor-pointer transition-all shadow"
+                          >
+                            Konfirmasi Lunas
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* NO ACTIONABLE AUTHORITY MESSAGE */}
-                {!(isSales || isBro || isAdmin) &&
+                {!(isSales || isBro || isAdminView) &&
                  !((isKacabRole && (transaction.category === 'Maintenance' || transaction.category === 'TPL')) ||
-                   (isSalesHeadRole && (transaction.category === 'Own Risk' || transaction.category === 'Ekspedisi' || transaction.category === 'ETLE')) ||
+                   (isSalesHeadRole && (transaction.category === 'Own Risk' || transaction.category === 'Ekspedisi' || transaction.category === 'ETLE' || transaction.category === 'Unclaimable Insurance' || transaction.category === 'Dokumen Kendaraan')) ||
                    currentUser.role === 'Administrator') &&
-                 !isAdmin && (
+                 !isAdminView && (
                   <div className="p-4 bg-slate-100 border border-slate-200 rounded-xl text-center">
                     <p className="text-xs font-bold text-slate-600">
                       ℹ️ Peran Anda (<strong>{currentUser.role}</strong>) tidak memiliki tindakan otoritas langsung pada alur kategori {transaction.category} ini.
@@ -1437,7 +2161,7 @@ export default function DetailModal({
                         ? "Pilih foto bukti serah terima. Berkas akan otomatis diunggah ke Google Drive Perusahaan via Service Account secara instan."
                         : googleToken 
                         ? "Pilih foto bukti serah terima. Berkas akan otomatis diunggah ke Google Drive Anda secara instan." 
-                        : "Unggah foto bukti serah terima berkas penyerahan denda dari Sales kepada Admin Piutang."
+                        : "Unggah foto bukti serah terima berkas penyerahan Backcharge dari Sales kepada Admin Piutang."
                       }
                     </p>
 
@@ -1557,7 +2281,7 @@ export default function DetailModal({
                   </div>
                   <div className="space-y-3 text-xs">
                     <p className="text-[10px] text-slate-500 font-medium leading-relaxed font-sans">
-                      Lengkapi unggahan dokumen lampiran dan foto bukti penyerahan berkas denda dari ASO kepada Admin.
+                      Lengkapi unggahan dokumen lampiran dan foto bukti penyerahan berkas Backcharge dari ASO kepada Admin.
                     </p>
 
                     <div className="space-y-3">
@@ -1835,6 +2559,7 @@ export default function DetailModal({
               )}
 
             </div>
+            )}
           </div>
 
         </div>
@@ -1893,7 +2618,7 @@ export default function DetailModal({
                   <td className="p-2 font-mono font-bold">{transaction.no_invoice || '-'}</td>
                 </tr>
                 <tr className="border-b border-slate-200">
-                  <td className="p-2 font-extrabold bg-slate-50">Nilai Tuntutan Denda (IDR)</td>
+                  <td className="p-2 font-extrabold bg-slate-50">Nilai Tuntutan Backcharge (IDR)</td>
                   <td className="p-2 font-mono font-black text-blue-900 text-sm">
                     {formatRupiah(transaction.value)}
                   </td>
@@ -2094,7 +2819,7 @@ export default function DetailModal({
                 {/* Metadata Table */}
                 <div className="space-y-3.5 text-xs">
                   <p className="text-[10px] leading-relaxed text-slate-600">
-                    Dengan ini dinyatakan secara sah dan sadar mengenai penyerahan berkas denda kecelakaan/pemeliharaan kendaraan operasional cabang ASSA :
+                    Dengan ini dinyatakan secara sah dan sadar mengenai penyerahan berkas Backcharge kecelakaan/pemeliharaan kendaraan operasional cabang ASSA :
                   </p>
 
                   <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
@@ -2107,7 +2832,7 @@ export default function DetailModal({
                       <span className="font-extrabold text-slate-800 mt-0.5 block">{transaction.branch}</span>
                     </div>
                     <div>
-                      <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-wider">Nilai Tuntutan Denda</span>
+                      <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-wider">Nilai Tuntutan Backcharge</span>
                       <span className="font-bold text-blue-600 mt-0.5 block font-mono">{formatRupiah(transaction.value)}</span>
                     </div>
                     <div>
@@ -2124,10 +2849,10 @@ export default function DetailModal({
                     <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Catatan Keterangan</span>
                     <p className="text-[10px] bg-slate-50/50 p-2.5 rounded-lg border border-dashed border-slate-200 text-slate-600 leading-relaxed italic">
                       {lightboxFile.url === 'MOCK_BAK' 
-                        ? "Kerusakan fisik armada terkonfirmasi oleh tim surveyor ASO di lapangan. Melakukan klaim pertanggungjawaban asuransi/biaya denda maintenance sesuai ketentuan asuransi nasional ASSA." 
+                        ? "Kerusakan fisik armada terkonfirmasi oleh tim surveyor ASO di lapangan. Melakukan klaim pertanggungjawaban asuransi/biaya Backcharge maintenance sesuai ketentuan asuransi nasional ASSA." 
                         : lightboxFile.url === 'MOCK_HANDOVER_ASO_SALES'
                           ? "Foto bukti fisik serah terima dari tim operasional ASO kepada BRO telah diverifikasi. Lembaran dokumen fisik tercatat dalam status aktif."
-                          : "Dokumen fisik denda berupa Surat BAK asli, Surat SPK, Estimasi Bengkel, dan surat tilang ETLE telah diserahkan dari unit BRO kepada Admin Piutang dalam kondisi lengkap dan tervalidasi."
+                          : "Dokumen fisik Backcharge berupa Surat BAK asli, Surat SPK, Estimasi Bengkel, dan surat tilang ETLE telah diserahkan dari unit BRO kepada Admin Piutang dalam kondisi lengkap dan tervalidasi."
                       }
                     </p>
                   </div>
@@ -2171,7 +2896,7 @@ export default function DetailModal({
 
           {/* Lightbox Footer */}
           <div className="text-center text-[10px] text-slate-500 font-semibold border-t border-slate-800 pt-3 print:hidden">
-            Pratinjau Sistem denda Terpadu Nasional © 2026. Klik [X] di atas untuk kembali ke detail.
+            Pratinjau Sistem Backcharge Terpadu Nasional © 2026. Klik [X] di atas untuk kembali ke detail.
           </div>
 
         </div>

@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS public.backcharges (
     status_handover TEXT NOT NULL DEFAULT 'Pending', -- E.g. Pending, Diserahkan ke Admin, Diterima Admin
     no_invoice TEXT DEFAULT '-',
     status_payment TEXT NOT NULL DEFAULT 'Belum Bayar', -- E.g. Belum Bayar, Lunas
+    status_approval TEXT,
+    approved_by TEXT,
+    approved_at TEXT,
     created_by TEXT NOT NULL, -- Email of creator
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -62,7 +65,11 @@ CREATE TABLE IF NOT EXISTS public.backcharges (
     -- File & Photo Upload Columns (Storage URLs or Object Paths)
     file_bak_url TEXT,
     file_handover_aso_sales_url TEXT,
-    file_handover_sales_admin_url TEXT
+    file_handover_sales_admin_url TEXT,
+    approval_note TEXT,
+    approval_attachment_1_url TEXT,
+    approval_attachment_2_url TEXT,
+    approval_attachment_3_url TEXT
 );
 
 -- Enable RLS for Backcharges

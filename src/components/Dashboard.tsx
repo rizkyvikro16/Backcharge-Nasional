@@ -32,7 +32,7 @@ export default function Dashboard({
 }: DashboardProps) {
   // Role helper
   const userRole = currentUser?.role || 'ASO / Staff';
-  const isAdmin = userRole === 'Admin';
+  const isAdmin = userRole === 'Admin' || userRole === 'Admin Head';
 
   // Local/global settings
   const [startDate, setStartDate] = useState<string>('');
@@ -200,13 +200,15 @@ export default function Dashboard({
   let rejectCount = 0;
   let rejectValue = 0;
 
-  // Pipeline stage counters (6 stages)
-  let stage1Input = 0;      // 1. ASO input Backcharge (Total denda di-input)
+  // Pipeline stage counters (8 stages)
+  let stage1Input = 0;      // 1. ASO input Backcharge (Total Backcharge di-input)
   let stage2InAso = 0;      // 2. Dok masih di ASO (Fisik berkas masih di ASO / pending handover)
-  let stage3AtAdmin = 0;    // 3. Dok ASO sudah ke ADMIN (Berkas di Admin, menunggu approval customer)
-  let stage4Approve = 0;    // 4. Approve Sales head / kacab (Menunggu approval status SAP)
-  let stage5Invoice = 0;    // 5. Cetak Invoice (Menunggu cetak & kirim invoice)
-  let stage6Payment = 0;    // 6. Kolektif Bayar (Menunggu pelunasan denda)
+  let stage3AtAdmin = 0;    // 3. Dok ASO sudah ke ADMIN (Berkas di Admin)
+  let stage4ApproveL1 = 0;  // 4. Belum Approve L1 (SH / Kacab)
+  let stage5RegionalApprove = 0; // 5. Belum Approve Regional Head
+  let stage6DivisionApprove = 0; // 6. Belum Approve Division Head
+  let stage7Invoice = 0;    // 7. Belum Cetak Invoice
+  let stage8Payment = 0;    // 8. Kolektif Bayar
 
   // Category counts
   const categoryStats: Record<BackchargeCategory, { count: number; value: number }> = {
@@ -214,7 +216,9 @@ export default function Dashboard({
     'Maintenance': { count: 0, value: 0 },
     'Ekspedisi': { count: 0, value: 0 },
     'ETLE': { count: 0, value: 0 },
-    'TPL': { count: 0, value: 0 }
+    'TPL': { count: 0, value: 0 },
+    'Unclaimable Insurance': { count: 0, value: 0 },
+    'Dokumen Kendaraan': { count: 0, value: 0 }
   };
 
   // Branch mapping - filtered according to user role / branch access
@@ -271,7 +275,12 @@ export default function Dashboard({
     if (t.status_payment === 'Lunas') {
       lunasCount++;
       lunasValue += val;
-    } else if (t.status_approval === 'Ditolak' || t.status_confirm === 'Ditolak / Negosiasi Ulang') {
+    } else if (
+      t.status_approval === 'Ditolak' || 
+      t.regional_approval_status === 'Ditolak' || 
+      t.division_approval_status === 'Ditolak' || 
+      t.status_confirm === 'Ditolak / Negosiasi Ulang'
+    ) {
       rejectCount++;
       rejectValue += val;
     } else {
@@ -283,36 +292,43 @@ export default function Dashboard({
     stage1Input = filteredTransactions.length;
 
     // Pipeline classification
-    const isPendingApproval = !t.status_approval || t.status_approval === 'Belum Approval';
+    const transVal = Number(t.value) || 0;
+    const isMaintenance = t.category === 'Maintenance';
+    const isRegionalHeadReq = isMaintenance 
+      ? (transVal > 7500000) 
+      : (transVal > 5000000);
+    const isDivisionHeadReq = transVal > 15000000;
+
+    const isPendingL1 = !t.status_approval || t.status_approval === 'Belum Approval' || t.status_approval === 'Pending';
+    const isL1Approved = t.status_approval === 'Disetujui';
+    const isRegionalApproved = !isRegionalHeadReq || t.regional_approval_status === 'Disetujui';
+
     const stepInvoice = t.no_invoice && t.no_invoice !== '-' && t.no_invoice !== '';
     const stepPayment = t.status_payment === 'Lunas';
 
     if (t.status_handover === 'Pending') {
-      // Stage 2: Dok masih di ASO (Fisik berkas belum diserahkan)
+      // Stage 2: Dok masih di ASO
       stage2InAso++;
     } else if (stepInvoice || stepPayment) {
-      // Stage 6: Kolektif Bayar (invoice already printed or payment processed)
-      stage6Payment++;
-    } else if (isPendingApproval && (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin')) {
-      // Stage 4: Approval Sales Head / Kacab sesuai otorisasi
-      const role = currentUser?.role as string;
-      const isKacabRole = role === 'Kepala Cabang' || role === 'kacab';
-      const isSalesHeadRole = role === 'Sales Head' || role === 'Sales / Sales Head';
-      const isSuperAdmin = role === 'Administrator';
-
-      let matchesAuth = true;
-      if (isKacabRole && !isSuperAdmin) {
-        matchesAuth = (t.category === 'Maintenance' || t.category === 'TPL');
-      } else if (isSalesHeadRole && !isSuperAdmin) {
-        matchesAuth = (t.category === 'Own Risk' || t.category === 'Ekspedisi' || t.category === 'ETLE');
-      }
-
-      if (matchesAuth) {
-        stage4Approve++;
+      // Stage 8: Kolektif Bayar
+      stage8Payment++;
+    } else if (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') {
+      if (isPendingL1) {
+        // Stage 4: Belum Approve L1 (SH / Kacab)
+        stage4ApproveL1++;
+      } else if (isL1Approved && isRegionalHeadReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval')) {
+        // Stage 5: Belum Approve Regional Head
+        stage5RegionalApprove++;
+      } else if (isL1Approved && isRegionalApproved && isDivisionHeadReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval')) {
+        // Stage 6: Belum Approve Division Head
+        stage6DivisionApprove++;
+      } else {
+        // Stage 7: Belum Cetak Invoice
+        stage7Invoice++;
       }
     } else {
-      // Stage 5: Cetak Invoice
-      stage5Invoice++;
+      // Stage 7: Belum Cetak Invoice
+      stage7Invoice++;
     }
   });
 
@@ -323,7 +339,7 @@ export default function Dashboard({
   // Unpaid cases where creation date is > 15 days ago (SLA Warning)
   const dueSoonCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && (new Date().getTime() - new Date(t.created_at).getTime()) > 15 * 24 * 3600 * 1000).length;
   // Unpaid cases pending confirmation or action for > 3 days
-  const pendingOldCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && (new Date().getTime() - new Date(t.created_at).getTime()) > 3 * 24 * 3600 * 1000).length;
+  const pendingOldCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && (new Date().getTime() - new Date(t.created_at).getTime()) > 7 * 24 * 3600 * 1000).length;
   // Unpaid OS cases with lead time > 30 days
   const over30DaysOsCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && Math.floor((new Date().getTime() - new Date(t.created_at).getTime()) / (1000 * 60 * 60 * 24)) > 30).length;
 
@@ -399,42 +415,310 @@ export default function Dashboard({
     .sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0))
     .slice(0, 5);
 
-  // Download filtered data in CSV Excel format
+  // Top 5 customers with highest cumulative bill value
+  const topCustomers = (() => {
+    const customerMap: Record<string, { 
+      name: string; 
+      cases: number; 
+      totalValue: number; 
+      branches: Record<string, number>; 
+      categories: Record<string, number>; 
+    }> = {};
+
+    filteredTransactions.forEach(t => {
+      const name = t.customer_name || 'Umum / Unknown';
+      const val = Number(t.value) || 0;
+      if (!customerMap[name]) {
+        customerMap[name] = { 
+          name, 
+          cases: 0, 
+          totalValue: 0, 
+          branches: {}, 
+          categories: {} 
+        };
+      }
+      customerMap[name].cases++;
+      customerMap[name].totalValue += val;
+      
+      if (t.branch) {
+        customerMap[name].branches[t.branch] = (customerMap[name].branches[t.branch] || 0) + 1;
+      }
+      if (t.category) {
+        customerMap[name].categories[t.category] = (customerMap[name].categories[t.category] || 0) + 1;
+      }
+    });
+
+    return Object.values(customerMap)
+      .map(c => {
+        const mainBranch = Object.entries(c.branches).sort((a, b) => b[1] - a[1])[0]?.[0] || '-';
+        const domCategory = Object.entries(c.categories).sort((a, b) => b[1] - a[1])[0]?.[0] || '-';
+        return {
+          name: c.name,
+          casesCount: c.cases,
+          totalValue: c.totalValue,
+          branch: mainBranch,
+          category: domCategory
+        };
+      })
+      .sort((a, b) => b.totalValue - a.totalValue)
+      .slice(0, 5);
+  })();
+
+  // Download filtered data in XLS Excel format
   const handleDownloadExcel = () => {
     if (filteredTransactions.length === 0) {
       if (addToast) addToast('Tidak ada data dalam periode ini untuk diunduh', 'error');
       return;
     }
+
+    const formatDateOnly = (dateStr?: string | null) => {
+      if (!dateStr) return '-';
+      try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr;
+        return d.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      } catch {
+        return dateStr;
+      }
+    };
+
     try {
-      const headers = ['Nomor Transaksi', 'Kategori', 'Cabang Kota', 'Nama Customer', 'No Polis', 'Nilai Tagihan (IDR)', 'Status SAP', 'Status Serah Terima', 'No Invoice', 'Status Pembayaran', 'Tanggal Dibuat'];
-      const rows = filteredTransactions.map(t => [
-        t.id,
-        t.category,
-        t.branch,
-        `"${t.customer_name.replace(/"/g, '""')}"`,
-        t.license_plate,
-        t.value,
-        t.status_sap,
-        t.status_handover,
-        t.no_invoice || '-',
-        t.status_payment,
-        t.created_at
-      ]);
+      // Calculate Summary Metrics for Management
+      const totalTransactions = filteredTransactions.length;
+      const totalValue = filteredTransactions.reduce((acc, t) => acc + (Number(t.value) || 0), 0);
       
-      const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
-        + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-      
-      const encodedUri = encodeURI(csvContent);
+      const lunasTx = filteredTransactions.filter(t => t.status_payment === 'Lunas');
+      const totalLunasCount = lunasTx.length;
+      const totalLunasValue = lunasTx.reduce((acc, t) => acc + (Number(t.value) || 0), 0);
+      const pctLunasValue = totalValue > 0 ? Math.round((totalLunasValue / totalValue) * 100) : 0;
+
+      const belumBayarTx = filteredTransactions.filter(t => t.status_payment !== 'Lunas');
+      const totalBelumBayarCount = belumBayarTx.length;
+      const totalBelumBayarValue = totalValue - totalLunasValue;
+
+      const divApprovedCount = filteredTransactions.filter(t => t.division_approval_status === 'Disetujui').length;
+      const pctDivApproved = totalTransactions > 0 ? Math.round((divApprovedCount / totalTransactions) * 100) : 0;
+
+      const userName = currentUser?.full_name || 'Admin';
+      const userRoleName = currentUser?.role || 'Executive';
+
+      let excelTemplate = `
+        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+          <meta charset="utf-8" />
+          <!--[if gte mso 9]>
+          <xml>
+            <x:ExcelWorkbook>
+              <x:ExcelWorksheets>
+                <x:ExcelWorksheet>
+                  <x:Name>Laporan Executive ASSA</x:Name>
+                  <x:WorksheetOptions>
+                    <x:DisplayGridlines/>
+                  </x:WorksheetOptions>
+                </x:ExcelWorksheet>
+              </x:ExcelWorksheets>
+            </x:ExcelWorkbook>
+          </xml>
+          <![endif]-->
+          <style>
+            table { border-collapse: collapse; font-family: 'Segoe UI', Arial, sans-serif; font-size: 10px; }
+            
+            /* Typography */
+            .title-text { font-size: 16px; font-weight: bold; color: #1e3a8a; text-align: left; }
+            .subtitle-text { font-size: 10px; color: #475569; text-align: left; }
+            
+            /* KPI Cards */
+            .kpi-title { background-color: #0f172a; color: #ffffff; font-weight: bold; font-size: 10px; text-align: center; border: 1px solid #1e293b; padding: 6px; }
+            .kpi-value-blue { background-color: #f8fafc; color: #1e40af; font-weight: bold; font-size: 15px; text-align: center; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; padding: 8px; }
+            .kpi-value-green { background-color: #f8fafc; color: #15803d; font-weight: bold; font-size: 15px; text-align: center; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; padding: 8px; }
+            .kpi-value-red { background-color: #f8fafc; color: #b91c1c; font-weight: bold; font-size: 15px; text-align: center; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; padding: 8px; }
+            .kpi-value-orange { background-color: #f8fafc; color: #c2410c; font-weight: bold; font-size: 15px; text-align: center; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; padding: 8px; }
+            .kpi-desc { background-color: #f1f5f9; color: #64748b; font-size: 9px; text-align: center; border: 1px solid #cbd5e1; padding: 4px; }
+            
+            /* Table Formatting */
+            .header-row th { background-color: #1e3a8a; color: #ffffff; font-weight: bold; font-size: 11px; border: 1px solid #0f172a; padding: 12px 6px; text-align: center; }
+            td { border: 1px solid #cbd5e1; padding: 8px 6px; text-align: left; vertical-align: middle; }
+            
+            /* Zebra striping */
+            .row-even { background-color: #f8fafc; }
+            .row-odd { background-color: #ffffff; }
+            
+            /* Cell formatting alignments and formats */
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .font-mono { font-family: 'Consolas', 'Courier New', monospace; }
+            
+            /* Excel formatting structures */
+            .force-text { mso-number-format: "\\@"; }
+            .currency-format { mso-number-format: "IDR\\ #\\,\\#\\#0"; text-align: right; font-weight: bold; }
+            .number-format { mso-number-format: "\\#\\,\\#\\#0"; text-align: right; }
+            
+            /* Status pill styling in Excel */
+            .status-lunas { background-color: #dcfce7; color: #15803d; font-weight: bold; text-align: center; }
+            .status-belum-bayar { background-color: #fee2e2; color: #b91c1c; font-weight: bold; text-align: center; }
+            
+            .status-approved { background-color: #ecfdf5; color: #047857; font-weight: bold; text-align: center; }
+            .status-pending { background-color: #fffbeb; color: #b45309; font-weight: bold; text-align: center; }
+            .status-rejected { background-color: #fef2f2; color: #b91c1c; font-weight: bold; text-align: center; }
+            
+            .status-handover-done { background-color: #eff6ff; color: #1d4ed8; font-weight: bold; text-align: center; }
+            .status-handover-pending { background-color: #f8fafc; color: #64748b; text-align: center; }
+            
+            .total-row { background-color: #e2e8f0; font-weight: bold; border-top: 2px double #0f172a; border-bottom: 2px double #0f172a; }
+          </style>
+        </head>
+        <body>
+          <table>
+            <!-- TITLE HEADER BLOCK -->
+            <tr>
+              <td colspan="22" class="title-text" style="border: none;">PT ADI SARANA ARMADA, TBK (ASSA)</td>
+            </tr>
+            <tr>
+              <td colspan="22" class="title-text" style="font-size: 14px; color: #475569; border: none;">LAPORAN EXECUTIVE REKAPITULASI DATA BACKCHARGE</td>
+            </tr>
+            <tr>
+              <td colspan="22" class="subtitle-text" style="border: none; padding-bottom: 15px;">
+                Filter Periode: <strong>${startDate} s/d ${endDate}</strong> | Unduh Oleh: <strong>${userName} (${userRoleName})</strong> | Tanggal Unduh: ${new Date().toLocaleString('id-ID')} | Total Item: <strong>${totalTransactions}</strong>
+              </td>
+            </tr>
+            <tr><td colspan="22" style="border: none; height: 10px;"></td></tr>
+
+            <!-- EXECUTIVE SUMMARY METRIC CARDS -->
+            <tr>
+              <td colspan="5" class="kpi-title">TOTAL PORTFOLIO BACKCHARGE</td>
+              <td style="border: none;"></td>
+              <td colspan="5" class="kpi-title">STATUS PEMBAYARAN (LUNAS)</td>
+              <td style="border: none;"></td>
+              <td colspan="5" class="kpi-title">STATUS OUTSTANDING (BELUM BAYAR)</td>
+              <td style="border: none;"></td>
+              <td colspan="4" class="kpi-title">APPROVAL STATUS (DIVISI HEAD)</td>
+            </tr>
+            <tr>
+              <td colspan="5" class="kpi-value-blue" style="mso-number-format: 'IDR\\ #\\,\\#\\#0';">${totalValue}</td>
+              <td style="border: none;"></td>
+              <td colspan="5" class="kpi-value-green" style="mso-number-format: 'IDR\\ #\\,\\#\\#0';">${totalLunasValue}</td>
+              <td style="border: none;"></td>
+              <td colspan="5" class="kpi-value-red" style="mso-number-format: 'IDR\\ #\\,\\#\\#0';">${totalBelumBayarValue}</td>
+              <td style="border: none;"></td>
+              <td colspan="4" class="kpi-value-orange">${divApprovedCount} / ${totalTransactions}</td>
+            </tr>
+            <tr>
+              <td colspan="5" class="kpi-desc">Dari Akumulasi <strong>${totalTransactions} Kasus</strong> Backcharge</td>
+              <td style="border: none;"></td>
+              <td colspan="5" class="kpi-desc">Tingkat Kolektabilitas: <strong>${pctLunasValue}%</strong> (${totalLunasCount} Kasus)</td>
+              <td style="border: none;"></td>
+              <td colspan="5" class="kpi-desc">Total Kasus Outstanding: <strong>${totalBelumBayarCount} Item</strong></td>
+              <td style="border: none;"></td>
+              <td colspan="4" class="kpi-desc">Persetujuan Akhir: <strong>${pctDivApproved}% Disetujui</strong></td>
+            </tr>
+            
+            <!-- SPACING -->
+            <tr><td colspan="22" style="border: none; height: 15px;"></td></tr>
+
+            <!-- TABLE HEADER ROW -->
+            <thead>
+              <tr class="header-row">
+                <th style="width: 40px;">No</th>
+                <th style="width: 110px;">ID Transaksi</th>
+                <th style="width: 90px;">Tanggal BAK</th>
+                <th style="width: 100px;">Kategori</th>
+                <th style="width: 90px;">Cabang Kota</th>
+                <th style="width: 120px;">No BAK</th>
+                <th style="width: 110px;">No Surat Tilang</th>
+                <th style="width: 120px;">No SPK</th>
+                <th style="width: 120px;">No SAP</th>
+                <th style="width: 180px;">Nama Customer</th>
+                <th style="width: 90px;">No Polisi</th>
+                <th style="width: 120px;">Nilai Backcharge</th>
+                <th style="width: 80px;">Status SAP</th>
+                <th style="width: 110px;">Serah Terima</th>
+                <th style="width: 110px;">No Invoice</th>
+                <th style="width: 90px;">Status Bayar</th>
+                <th style="width: 130px;">Nama PIC</th>
+                <th style="width: 180px;">Alasan/Keterangan Backcharge</th>
+                <th style="width: 110px;">Appr. ASO/Sales</th>
+                <th style="width: 110px;">Appr. Regional</th>
+                <th style="width: 110px;">Appr. Divisi</th>
+                <th style="width: 130px;">Tanggal Diinput</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      filteredTransactions.forEach((t, index) => {
+        const isEven = index % 2 === 0;
+        const rowClass = isEven ? 'row-even' : 'row-odd';
+
+        const pStatus = t.status_payment === 'Lunas' ? 'status-lunas' : 'status-belum-bayar';
+        
+        const appASO = t.status_approval === 'Disetujui' ? 'status-approved' : 
+                       t.status_approval === 'Ditolak' ? 'status-rejected' : 'status-pending';
+                       
+        const appReg = t.regional_approval_status === 'Disetujui' ? 'status-approved' : 
+                       t.regional_approval_status === 'Ditolak' ? 'status-rejected' : 'status-pending';
+                       
+        const appDiv = t.division_approval_status === 'Disetujui' ? 'status-approved' : 
+                       t.division_approval_status === 'Ditolak' ? 'status-rejected' : 'status-pending';
+                       
+        const hStatus = t.status_handover === 'Diterima Admin' || t.status_handover === 'Diserahkan ke Admin' 
+                        ? 'status-handover-done' : 'status-handover-pending';
+
+        const brokerName = t.nama_bro || t.bro_name || '-';
+        const reasonText = t.alasan || '-';
+
+        excelTemplate += `
+          <tr class="${rowClass}">
+            <td class="text-center number-format">${index + 1}</td>
+            <td class="force-text" style="font-weight: bold; color: #1e3a8a;">${t.id}</td>
+            <td class="text-center">${formatDateOnly(t.tanggal)}</td>
+            <td>${t.category}</td>
+            <td class="text-center" style="font-weight: 500;">${t.branch}</td>
+            <td class="force-text">${t.no_bak || '-'}</td>
+            <td class="force-text">${t.no_tilang || '-'}</td>
+            <td class="force-text">${t.no_spk || '-'}</td>
+            <td class="force-text">${t.no_sap || '-'}</td>
+            <td style="font-weight: 500;">${t.customer_name}</td>
+            <td class="font-mono text-center force-text" style="font-weight: bold;">${t.license_plate || '-'}</td>
+            <td class="currency-format">${t.value}</td>
+            <td class="text-center force-text" style="font-weight: 500;">${t.status_sap || '-'}</td>
+            <td class="${hStatus}">${t.status_handover}</td>
+            <td class="force-text">${t.no_invoice || '-'}</td>
+            <td class="${pStatus}">${t.status_payment}</td>
+            <td>${brokerName}</td>
+            <td>${reasonText}</td>
+            <td class="${appASO}">${t.status_approval || 'Belum Approval'}</td>
+            <td class="${appReg}">${t.regional_approval_status || 'Belum Approval'}</td>
+            <td class="${appDiv}">${t.division_approval_status || 'Belum Approval'}</td>
+            <td class="text-center subtitle-text">${new Date(t.created_at).toLocaleString('id-ID')}</td>
+          </tr>
+        `;
+      });
+
+      excelTemplate += `
+              <tr class="total-row">
+                <td colspan="11" style="text-align: right; padding: 10px; font-size: 11px;">GRAND TOTAL REKAPITULASI:</td>
+                <td class="currency-format" style="font-size: 11px;">${totalValue}</td>
+                <td colspan="10" style="background-color: #e2e8f0;"></td>
+              </tr>
+            </tbody>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const blob = new Blob([excelTemplate], { type: 'application/vnd.ms-excel;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `Laporan_Executive_ASSA_${startDate}_${endDate}.csv`);
+      link.href = url;
+      link.download = `Laporan_Executive_ASSA_${startDate}_${endDate}.xls`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(url);
       
-      if (addToast) addToast('Berhasil mengunduh data denda format Excel (CSV)!', 'success');
-    } catch {
-      if (addToast) addToast('Gagal memproses ekspor data', 'error');
+      if (addToast) addToast('Berhasil mengunduh data Backcharge format Excel Executive!', 'success');
+    } catch (err: any) {
+      if (addToast) addToast('Gagal memproses ekspor data: ' + err.message, 'error');
     }
   };
 
@@ -458,7 +742,7 @@ export default function Dashboard({
       setIsSendingEmail(false);
       setShowEmailModal(false);
       if (addToast) {
-        addToast(`Ringkasan eksekutif denda denda berhasil dikirim ke ${emailAddress}!`, 'success');
+        addToast(`Ringkasan eksekutif Backcharge berhasil dikirim ke ${emailAddress}!`, 'success');
       }
     }, 1200);
   };
@@ -638,32 +922,32 @@ export default function Dashboard({
             {/* Alert 1 */}
             <div 
               onClick={() => {
-                onSelectAlertFilter?.('due');
-                onSelectDashboardFilter?.({ alert: 'due' });
+                onSelectAlertFilter?.('pending');
+                onSelectDashboardFilter?.({ alert: 'pending' });
               }}
-              className="flex items-center space-x-2 bg-rose-50 border border-rose-100 hover:bg-rose-100 hover:border-rose-200 text-rose-700 px-3 py-2 rounded-2xl text-[10px] font-black flex-1 min-w-[150px] shadow-sm hover:shadow transition-all cursor-pointer active:scale-[0.98] transform duration-150 group"
-              title="Klik untuk menyaring transaksi jatuh tempo"
+              className="flex items-center space-x-2 bg-blue-50 border border-blue-100 hover:bg-blue-100 hover:border-blue-200 text-blue-700 px-3 py-2 rounded-2xl text-[10px] font-black flex-1 min-w-[150px] shadow-sm hover:shadow transition-all cursor-pointer active:scale-[0.98] transform duration-150 group"
+              title="Klik untuk menyaring transaksi jatuh tempo 7 hari"
             >
-              <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse flex-shrink-0 group-hover:scale-125 transition-transform"></span>
+              <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 group-hover:scale-125 transition-transform"></span>
               <div className="min-w-0">
-                <span className="block text-[11px] text-rose-800 font-extrabold">{dueSoonCount || 0} Transaksi</span>
-                <span className="text-[9px] text-rose-500 block font-semibold mt-0.5 group-hover:underline">Jatuh tempo dalam 7 hari</span>
+                <span className="block text-[11px] text-blue-800 font-extrabold">{pendingOldCount || 0} Transaksi</span>
+                <span className="text-[9px] text-blue-500 block font-semibold mt-0.5 group-hover:underline">Jatuh tempo dalam 7 hari</span>
               </div>
             </div>
 
             {/* Alert 2 */}
             <div 
               onClick={() => {
-                onSelectAlertFilter?.('pending');
-                onSelectDashboardFilter?.({ alert: 'pending' });
+                onSelectAlertFilter?.('due');
+                onSelectDashboardFilter?.({ alert: 'due' });
               }}
-              className="flex items-center space-x-2 bg-amber-50 border border-amber-100 hover:bg-amber-100 hover:border-amber-200 text-amber-700 px-3 py-2 rounded-2xl text-[10px] font-black flex-1 min-w-[150px] shadow-sm hover:shadow transition-all cursor-pointer active:scale-[0.98] transform duration-150 group"
-              title="Klik untuk menyaring transaksi pending > 3 hari"
+              className="flex items-center space-x-2 bg-yellow-50 border border-yellow-100 hover:bg-yellow-100 hover:border-yellow-200 text-yellow-700 px-3 py-2 rounded-2xl text-[10px] font-black flex-1 min-w-[150px] shadow-sm hover:shadow transition-all cursor-pointer active:scale-[0.98] transform duration-150 group"
+              title="Klik untuk menyaring transaksi jatuh tempo 15 hari"
             >
-              <span className="w-2 h-2 bg-amber-500 rounded-full flex-shrink-0 group-hover:scale-125 transition-transform"></span>
+              <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse flex-shrink-0 group-hover:scale-125 transition-transform"></span>
               <div className="min-w-0">
-                <span className="block text-[11px] text-amber-800 font-extrabold">{pendingOldCount || 0} Transaksi</span>
-                <span className="text-[9px] text-amber-500 block font-semibold mt-0.5 group-hover:underline">Pending &gt; 3 hari</span>
+                <span className="block text-[11px] text-yellow-800 font-extrabold">{dueSoonCount || 0} Transaksi</span>
+                <span className="text-[9px] text-yellow-500 block font-semibold mt-0.5 group-hover:underline">Jatuh tempo dalam 15 hari</span>
               </div>
             </div>
 
@@ -673,13 +957,13 @@ export default function Dashboard({
                 onSelectAlertFilter?.('high_value');
                 onSelectDashboardFilter?.({ alert: 'high_value' });
               }}
-              className="flex items-center space-x-2 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 hover:border-indigo-200 text-indigo-700 px-3 py-2 rounded-2xl text-[10px] font-black flex-1 min-w-[150px] shadow-sm hover:shadow transition-all cursor-pointer active:scale-[0.98] transform duration-150 group"
-              title="Klik untuk menyaring transaksi lead time OS > 30 hari"
+              className="flex items-center space-x-2 bg-red-50 border border-red-100 hover:bg-red-100 hover:border-red-200 text-red-700 px-3 py-2 rounded-2xl text-[10px] font-black flex-1 min-w-[150px] shadow-sm hover:shadow transition-all cursor-pointer active:scale-[0.98] transform duration-150 group"
+              title="Klik untuk menyaring transaksi jatuh tempo 30 hari"
             >
-              <span className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce flex-shrink-0 group-hover:scale-125 transition-transform"></span>
+              <span className="w-2 h-2 bg-red-500 rounded-full animate-bounce flex-shrink-0 group-hover:scale-125 transition-transform"></span>
               <div className="min-w-0">
-                <span className="block text-[11px] text-indigo-800 font-extrabold">{over30DaysOsCount || 0} Transaksi</span>
-                <span className="text-[9px] text-indigo-500 block font-semibold mt-0.5 group-hover:underline">Lead Time OS &gt; 30 Hari</span>
+                <span className="block text-[11px] text-red-800 font-extrabold">{over30DaysOsCount || 0} Transaksi</span>
+                <span className="text-[9px] text-red-500 block font-semibold mt-0.5 group-hover:underline">Jatuh tempo dalam 30 hari</span>
               </div>
             </div>
           </div>
@@ -840,13 +1124,13 @@ export default function Dashboard({
           </div>
 
           {/* horizontal timeline */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 lg:gap-1.5">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 lg:gap-1.5">
             
             {/* Step 1: ASO Input Backcharge */}
             <div className="flex items-center space-x-1">
               <div 
                 onClick={() => onSelectDashboardFilter?.({})}
-                className="bg-slate-50 border border-slate-200 hover:border-blue-300 hover:bg-blue-50/20 rounded-2xl p-3 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
+                className="bg-slate-50 border border-slate-200 hover:border-blue-300 hover:bg-blue-50/20 rounded-2xl p-2.5 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
                 title="Klik untuk menyaring semua transaksi inisiasi"
               >
                 <div className="absolute top-0 left-0 bottom-0 w-1 bg-blue-500"></div>
@@ -854,115 +1138,157 @@ export default function Dashboard({
                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">1. Input ASO</span>
                   <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
                 </div>
-                <h4 className="text-2xl font-black text-slate-900 mt-1">{stage1Input}</h4>
-                <p className="text-[9px] text-slate-500 font-semibold mt-0.5">Inisiasi Transaksi</p>
-                <div className="mt-2 text-[8px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold inline-block">
+                <h4 className="text-xl font-black text-slate-900 mt-1">{stage1Input}</h4>
+                <p className="text-[8px] text-slate-500 font-semibold mt-0.5 truncate">Inisiasi Transaksi</p>
+                <div className="mt-1.5 text-[8px] bg-blue-50 text-blue-700 px-1 py-0.5 rounded font-bold inline-block">
                   SLA: Aktif
                 </div>
               </div>
-              <ArrowRight className="hidden lg:block w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+              <ArrowRight className="hidden lg:block w-3 h-3 text-slate-300 flex-shrink-0" />
             </div>
 
-            {/* Step 2: Dok masih di ASO */}
+            {/* Step 2: Berkas di ASO */}
             <div className="flex items-center space-x-1">
               <div 
                 onClick={() => onSelectDashboardFilter?.({ stage: '1_handover' })}
-                className="bg-slate-50 border border-slate-200 hover:border-purple-300 hover:bg-purple-50/20 rounded-2xl p-3 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
-                title="Klik untuk menyaring transaksi di tahap 1 (ASO)"
+                className="bg-slate-50 border border-slate-200 hover:border-purple-300 hover:bg-purple-50/20 rounded-2xl p-2.5 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
+                title="Klik untuk menyaring transaksi fisik di ASO"
               >
                 <div className="absolute top-0 left-0 bottom-0 w-1 bg-purple-500"></div>
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">2. Berkas di ASO</span>
                   <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
                 </div>
-                <h4 className="text-2xl font-black text-slate-900 mt-1">{stage2InAso}</h4>
-                <p className="text-[9px] text-slate-500 font-semibold mt-0.5">Fisik di ASO</p>
-                <div className="mt-2 text-[8px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-bold inline-block">
-                  SLA: {stage2InAso > 0 ? 'Pending Serah Terima' : 'Aman'}
+                <h4 className="text-xl font-black text-slate-900 mt-1">{stage2InAso}</h4>
+                <p className="text-[8px] text-slate-500 font-semibold mt-0.5 truncate">Fisik di ASO</p>
+                <div className="mt-1.5 text-[8px] bg-purple-50 text-purple-700 px-1 py-0.5 rounded font-bold inline-block">
+                  SLA: {stage2InAso > 0 ? 'Pending' : 'Aman'}
                 </div>
               </div>
-              <ArrowRight className="hidden lg:block w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+              <ArrowRight className="hidden lg:block w-3 h-3 text-slate-300 flex-shrink-0" />
             </div>
 
-            {/* Step 3: Dok ASO sudah ke ADMIN */}
+            {/* Step 3: Berkas di Admin */}
             <div className="flex items-center space-x-1">
               <div 
                 onClick={() => onSelectDashboardFilter?.({ stage: '2_confirm' })}
-                className="bg-slate-50 border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/20 rounded-2xl p-3 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
-                title="Klik untuk menyaring transaksi di tahap 2 (Admin)"
+                className="bg-slate-50 border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/20 rounded-2xl p-2.5 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
+                title="Klik untuk menyaring transaksi di Admin"
               >
                 <div className="absolute top-0 left-0 bottom-0 w-1 bg-indigo-500"></div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">3. Berkas di Admin</span>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">3. Berkas Admin</span>
                   <span className="w-2 h-2 bg-indigo-500 rounded-full"></span>
                 </div>
-                <h4 className="text-2xl font-black text-slate-900 mt-1">{stage3AtAdmin}</h4>
-                <p className="text-[9px] text-slate-500 font-semibold mt-0.5">Menunggu Approval</p>
-                <div className="mt-2 text-[8px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-bold inline-block">
-                  SLA: {stage3AtAdmin > 0 ? 'Perlu Tindakan' : 'Aman'}
+                <h4 className="text-xl font-black text-slate-900 mt-1">{stage3AtAdmin}</h4>
+                <p className="text-[8px] text-slate-500 font-semibold mt-0.5 truncate">Di Admin</p>
+                <div className="mt-1.5 text-[8px] bg-indigo-50 text-indigo-700 px-1 py-0.5 rounded font-bold inline-block">
+                  SLA: {stage3AtAdmin > 0 ? 'Proses' : 'Aman'}
                 </div>
               </div>
-              <ArrowRight className="hidden lg:block w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+              <ArrowRight className="hidden lg:block w-3 h-3 text-slate-300 flex-shrink-0" />
             </div>
 
-            {/* Step 4: Approval Sales Head / Kacab */}
+            {/* Step 4: Belum Approve L1 */}
             <div className="flex items-center space-x-1">
               <div 
-                onClick={() => onSelectDashboardFilter?.({ stage: '3_sap' })}
-                className="bg-slate-50 border border-slate-200 hover:border-amber-300 hover:bg-amber-50/20 rounded-2xl p-3 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
-                title="Klik untuk menyaring transaksi di tahap 4 (Approval)"
+                onClick={() => onSelectDashboardFilter?.({ stage: '3_sap_l1' })}
+                className="bg-slate-50 border border-slate-200 hover:border-amber-300 hover:bg-amber-50/20 rounded-2xl p-2.5 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
+                title="Klik untuk menyaring Belum Approve L1 (SH / Kacab)"
               >
                 <div className="absolute top-0 left-0 bottom-0 w-1 bg-amber-500"></div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">4. Approval</span>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">4. Belum Appr.</span>
                   <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
                 </div>
-                <h4 className="text-2xl font-black text-slate-900 mt-1">{stage4Approve}</h4>
-                <p className="text-[9px] text-slate-500 font-semibold mt-0.5">Otorisasi SH / Kacab</p>
-                <div className="mt-2 text-[8px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-bold inline-block">
-                  SLA: {stage4Approve > 0 ? 'Review Backcharge' : 'Aman'}
+                <h4 className="text-xl font-black text-slate-900 mt-1">{stage4ApproveL1}</h4>
+                <p className="text-[8px] text-slate-500 font-semibold mt-0.5 truncate">SH / Kacab</p>
+                <div className="mt-1.5 text-[8px] bg-amber-50 text-amber-700 px-1 py-0.5 rounded font-bold inline-block">
+                  SLA: {stage4ApproveL1 > 0 ? 'Pending' : 'Aman'}
                 </div>
               </div>
-              <ArrowRight className="hidden lg:block w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+              <ArrowRight className="hidden lg:block w-3 h-3 text-slate-300 flex-shrink-0" />
             </div>
 
-            {/* Step 5: Cetak Invoice */}
+            {/* Step 5: Belum Approve Regional Head */}
+            <div className="flex items-center space-x-1">
+              <div 
+                onClick={() => onSelectDashboardFilter?.({ stage: '3_sap_rh' })}
+                className="bg-slate-50 border border-slate-200 hover:border-orange-300 hover:bg-orange-50/20 rounded-2xl p-2.5 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
+                title="Klik untuk menyaring Belum Approve Regional Head"
+              >
+                <div className="absolute top-0 left-0 bottom-0 w-1 bg-orange-500"></div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">5. Belum Appr.</span>
+                  <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
+                </div>
+                <h4 className="text-xl font-black text-slate-900 mt-1">{stage5RegionalApprove}</h4>
+                <p className="text-[8px] text-slate-500 font-semibold mt-0.5 truncate">Regional Head</p>
+                <div className="mt-1.5 text-[8px] bg-orange-50 text-orange-700 px-1 py-0.5 rounded font-bold inline-block">
+                  SLA: {stage5RegionalApprove > 0 ? 'Pending' : 'Aman'}
+                </div>
+              </div>
+              <ArrowRight className="hidden lg:block w-3 h-3 text-slate-300 flex-shrink-0" />
+            </div>
+
+            {/* Step 6: Belum Approve Division Head */}
+            <div className="flex items-center space-x-1">
+              <div 
+                onClick={() => onSelectDashboardFilter?.({ stage: '3_sap_dh' })}
+                className="bg-slate-50 border border-slate-200 hover:border-rose-300 hover:bg-rose-50/20 rounded-2xl p-2.5 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
+                title="Klik untuk menyaring Belum Approve Division Head"
+              >
+                <div className="absolute top-0 left-0 bottom-0 w-1 bg-rose-500"></div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">6. Belum Appr.</span>
+                  <span className="w-2 h-2 bg-rose-500 rounded-full"></span>
+                </div>
+                <h4 className="text-xl font-black text-slate-900 mt-1">{stage6DivisionApprove}</h4>
+                <p className="text-[8px] text-slate-500 font-semibold mt-0.5 truncate">Division Head</p>
+                <div className="mt-1.5 text-[8px] bg-rose-50 text-rose-700 px-1 py-0.5 rounded font-bold inline-block">
+                  SLA: {stage6DivisionApprove > 0 ? 'Pending' : 'Aman'}
+                </div>
+              </div>
+              <ArrowRight className="hidden lg:block w-3 h-3 text-slate-300 flex-shrink-0" />
+            </div>
+
+            {/* Step 7: Belum Cetak Invoice */}
             <div className="flex items-center space-x-1">
               <div 
                 onClick={() => onSelectDashboardFilter?.({ stage: '4_invoice' })}
-                className="bg-slate-50 border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50/20 rounded-2xl p-3 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
-                title="Klik untuk menyaring transaksi di tahap 4 (Invoice)"
+                className="bg-slate-50 border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50/20 rounded-2xl p-2.5 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
+                title="Klik untuk menyaring Belum Cetak Invoice"
               >
                 <div className="absolute top-0 left-0 bottom-0 w-1 bg-cyan-500"></div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">5. Cetak Invoice</span>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">7. Blm Invoice</span>
                   <span className="w-2 h-2 bg-cyan-500 rounded-full"></span>
                 </div>
-                <h4 className="text-2xl font-black text-slate-900 mt-1">{stage5Invoice}</h4>
-                <p className="text-[9px] text-slate-500 font-semibold mt-0.5">Penomoran &amp; Kirim</p>
-                <div className="mt-2 text-[8px] bg-cyan-50 text-cyan-700 px-1.5 py-0.5 rounded font-bold inline-block">
-                  SLA: {stage5Invoice > 0 ? 'Cetak Invoice' : 'Aman'}
+                <h4 className="text-xl font-black text-slate-900 mt-1">{stage7Invoice}</h4>
+                <p className="text-[8px] text-slate-500 font-semibold mt-0.5 truncate">Cetak Invoice</p>
+                <div className="mt-1.5 text-[8px] bg-cyan-50 text-cyan-700 px-1 py-0.5 rounded font-bold inline-block">
+                  SLA: {stage7Invoice > 0 ? 'Pending' : 'Aman'}
                 </div>
               </div>
-              <ArrowRight className="hidden lg:block w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+              <ArrowRight className="hidden lg:block w-3 h-3 text-slate-300 flex-shrink-0" />
             </div>
 
-            {/* Step 6: Kolektif Bayar */}
+            {/* Step 8: Kolektif Bayar */}
             <div className="flex items-center space-x-1">
               <div 
                 onClick={() => onSelectDashboardFilter?.({ stage: '5_payment' })}
-                className="bg-slate-50 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/20 rounded-2xl p-3 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
-                title="Klik untuk menyaring transaksi di tahap 5 (Kolektif Bayar)"
+                className="bg-slate-50 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/20 rounded-2xl p-2.5 flex-1 relative overflow-hidden cursor-pointer active:scale-[0.98] transform transition-all shadow-sm hover:shadow"
+                title="Klik untuk menyaring Kolektif Bayar"
               >
                 <div className="absolute top-0 left-0 bottom-0 w-1 bg-emerald-600"></div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">6. Kolektif Bayar</span>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">8. Bayar</span>
                   <span className="w-2 h-2 bg-emerald-600 rounded-full"></span>
                 </div>
-                <h4 className="text-2xl font-black text-slate-900 mt-1">{stage6Payment}</h4>
-                <p className="text-[9px] text-slate-500 font-semibold mt-0.5">Outstanding Pelunasan</p>
-                <div className="mt-2 text-[8px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold inline-block">
-                  SLA: {stage6Payment > 0 ? 'Tertagih' : 'Selesai'}
+                <h4 className="text-xl font-black text-slate-900 mt-1">{stage8Payment}</h4>
+                <p className="text-[8px] text-slate-500 font-semibold mt-0.5 truncate">Kolektif Bayar</p>
+                <div className="mt-1.5 text-[8px] bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded font-bold inline-block">
+                  SLA: {stage8Payment > 0 ? 'Tertagih' : 'Selesai'}
                 </div>
               </div>
             </div>
@@ -995,6 +1321,8 @@ export default function Dashboard({
               else if (catName === 'Ekspedisi') barColor = "bg-sky-400";
               else if (catName === 'ETLE') barColor = "bg-amber-500";
               else if (catName === 'TPL') barColor = "bg-rose-500";
+              else if (catName === 'Unclaimable Insurance') barColor = "bg-teal-500";
+              else if (catName === 'Dokumen Kendaraan') barColor = "bg-purple-500";
 
               return (
                 <div 
@@ -1192,15 +1520,15 @@ export default function Dashboard({
             </div>
           </div>
 
-          {/* TABLE: TOP 5 KASUS DENGAN NILAI TERTINGGI (Right - 4 cols) */}
+          {/* TABLE: TOP 5 CUSTOMERS DENGAN NILAI TERTINGGI (Right - 4 cols) */}
           <div className="lg:col-span-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-md space-y-3 flex flex-col justify-between">
             <div className="space-y-3">
               <div>
                 <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                   <Award className="w-4 h-4 text-amber-500" />
-                  Top 5 Kasus dengan Nilai Tertinggi
+                  Top 5 Customer dengan Nilai Tertinggi
                 </h3>
-                <p className="text-[10px] text-slate-400">Daftar 5 kasus backcharge dengan nilai tagihan terbesar.</p>
+                <p className="text-[10px] text-slate-400">Daftar 5 mitra/customer dengan total akumulasi tagihan terbesar.</p>
               </div>
 
               <div className="overflow-x-auto">
@@ -1208,29 +1536,34 @@ export default function Dashboard({
                   <thead>
                     <tr className="border-b border-slate-100 text-slate-400 uppercase text-[8px]">
                       <th className="pb-1.5">NO</th>
-                      <th className="pb-1.5">NOMOR TRANSAKSI</th>
+                      <th className="pb-1.5">NAMA CUSTOMER</th>
+                      <th className="pb-1.5 text-center">KASUS</th>
                       <th className="pb-1.5">CABANG</th>
-                      <th className="pb-1.5">KATEGORI</th>
-                      <th className="pb-1.5 text-right">NILAI TAGIHAN</th>
+                      <th className="pb-1.5 text-right">TOTAL TAGIHAN</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 text-slate-700">
-                    {topHighestValueTransactions.map((t, idx) => (
+                    {topCustomers.map((c, idx) => (
                       <tr 
-                        key={t.id} 
-                        onClick={() => onSelectTransaction?.(t.id)}
-                        className="hover:bg-slate-50 transition-colors cursor-pointer group"
+                        key={c.name} 
+                        className="hover:bg-slate-50 transition-colors group"
                       >
-                        <td className="py-2 text-slate-400">{idx + 1}</td>
-                        <td className="py-2 font-mono text-slate-900 group-hover:text-indigo-600 transition-colors">{t.id}</td>
-                        <td className="py-2">{t.branch}</td>
-                        <td className="py-2 text-slate-600 font-medium">{t.category}</td>
-                        <td className="py-2 text-right font-mono text-slate-900 font-extrabold">{formatRupiah(t.value)}</td>
+                        <td className="py-2.5 text-slate-400">{idx + 1}</td>
+                        <td className="py-2.5 text-slate-900 group-hover:text-indigo-600 transition-colors truncate max-w-[110px]" title={c.name}>
+                          {c.name}
+                        </td>
+                        <td className="py-2.5 text-center text-slate-500 font-mono font-black">{c.casesCount}x</td>
+                        <td className="py-2.5">
+                          <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[8px] font-black uppercase font-mono">
+                            {c.branch.substring(0, 3).toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right font-mono text-slate-900 font-extrabold">{formatRupiah(c.totalValue)}</td>
                       </tr>
                     ))}
-                    {topHighestValueTransactions.length === 0 && (
+                    {topCustomers.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="py-4 text-center text-slate-400 italic">Tidak ada data transaksi ditemukan.</td>
+                        <td colSpan={5} className="py-4 text-center text-slate-400 italic">Tidak ada data customer ditemukan.</td>
                       </tr>
                     )}
                   </tbody>
@@ -1239,7 +1572,7 @@ export default function Dashboard({
             </div>
 
             <p className="text-[8px] bg-slate-50 text-slate-500 p-2 rounded-xl border border-slate-100 font-semibold mt-2">
-              Daftar 5 kasus dengan nilai tagihan tertinggi memerlukan perhatian prioritas penagihan &amp; pemantauan.
+              Daftar 5 mitra dengan akumulasi nilai tagihan tertinggi memerlukan prioritas penagihan &amp; koordinasi berkala.
             </p>
           </div>
 
@@ -1291,9 +1624,9 @@ export default function Dashboard({
                 </span>
                 <h3 className="text-lg font-black text-slate-900 mt-1 flex items-center gap-1.5">
                   <Map className="w-5 h-5 text-indigo-600" />
-                  Daftar Transaksi Denda Cabang {selectedDrillDownBranch}
+                  Daftar Transaksi Backcharge Cabang {selectedDrillDownBranch}
                 </h3>
-                <p className="text-[11px] text-slate-500 font-medium">Menampilkan seluruh denda aktif & lunas untuk wilayah regional ini.</p>
+                <p className="text-[11px] text-slate-500 font-medium">Menampilkan seluruh Backcharge aktif & lunas untuk wilayah regional ini.</p>
               </div>
               <button 
                 onClick={() => {
@@ -1330,7 +1663,7 @@ export default function Dashboard({
                     }
                   }}
                   className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black transition-all cursor-pointer shadow-sm"
-                  title={`Lihat semua data denda Cabang ${selectedDrillDownBranch} di menu Basis Data`}
+                  title={`Lihat semua data Backcharge Cabang ${selectedDrillDownBranch} di menu Basis Data`}
                 >
                   Buka di Basis Data ↗
                 </button>
@@ -1394,7 +1727,7 @@ export default function Dashboard({
                     })}
                     {drillDownTransactions.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-slate-400 italic">Tidak ada transaksi denda ditemukan.</td>
+                        <td colSpan={7} className="p-8 text-center text-slate-400 italic">Tidak ada transaksi Backcharge ditemukan.</td>
                       </tr>
                     )}
                   </tbody>
@@ -1455,13 +1788,13 @@ export default function Dashboard({
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 uppercase tracking-widest block">Pesan Tambahan (Opsional)</label>
                   <textarea 
-                    placeholder="Halo pak, ini adalah laporan denda denda regional PT ASSA per hari ini. Mohon ditinjau kembali."
+                    placeholder="Halo pak, ini adalah laporan Backcharge regional PT ASSA per hari ini. Mohon ditinjau kembali."
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 h-20 resize-none"
                   />
                 </div>
 
                 <div className="bg-blue-50 border border-blue-100 p-3 rounded-2xl text-[10px] text-blue-700 leading-relaxed font-semibold">
-                  📧 Sistem akan menyusun draf ringkasan PDF serta metrik utama denda denda dan melampirkannya langsung ke email.
+                  📧 Sistem akan menyusun draf ringkasan PDF serta metrik utama Backcharge dan melampirkannya langsung ke email.
                 </div>
               </div>
 

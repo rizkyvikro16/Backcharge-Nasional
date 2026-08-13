@@ -6,12 +6,14 @@ import {
 } from 'lucide-react';
 import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
+import * as XLSX from 'xlsx';
 
 interface DatabaseViewProps {
   transactions: Backcharge[];
   currentUser: Profile;
   isLoading?: boolean;
   onAddTransaction: (newTx: Omit<Backcharge, 'id' | 'created_by' | 'created_at' | 'updated_at'>) => Promise<void>;
+  onBulkAddTransactions?: (newTxs: Omit<Backcharge, 'id' | 'created_by' | 'created_at' | 'updated_at'>[]) => Promise<void>;
   onSelectTransaction: (id: string) => void;
   onDeleteTransaction?: (id: string) => void;
   onUpdateTransaction?: (id: string, updates: Partial<Backcharge>, logMessage: string) => Promise<void> | void;
@@ -19,6 +21,7 @@ interface DatabaseViewProps {
   onClearAlertFilter?: () => void;
   activeDashboardFilter?: DashboardFilter | null;
   onClearDashboardFilter?: () => void;
+  addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 export default function DatabaseView({ 
@@ -26,13 +29,15 @@ export default function DatabaseView({
   currentUser, 
   isLoading = false,
   onAddTransaction, 
+  onBulkAddTransactions,
   onSelectTransaction,
   onDeleteTransaction,
   onUpdateTransaction,
   activeAlertFilter,
   onClearAlertFilter,
   activeDashboardFilter,
-  onClearDashboardFilter
+  onClearDashboardFilter,
+  addToast
 }: DatabaseViewProps) {
   
   // Role permissions
@@ -48,21 +53,22 @@ export default function DatabaseView({
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const isNasional = currentUser.branch === 'Nasional' || 
-    currentUser.branch.includes(',') || 
+    (currentUser.branch && currentUser.branch.includes(',')) || 
     currentUser.role === 'Administrator' || 
     currentUser.role === 'Division Head' || 
-    currentUser.role.startsWith('Regional Head');
+    (currentUser.role && currentUser.role.startsWith('Regional Head'));
   const userBranchList = currentUser.branch && currentUser.branch !== 'Nasional'
     ? currentUser.branch.split(',').map(s => s.trim()).filter(Boolean)
     : null;
   const availableBranchOptions = userBranchList && userBranchList.length > 0
     ? BRANCH_LIST.filter(b => userBranchList.some(ub => ub.toLowerCase() === b.toLowerCase()))
     : BRANCH_LIST;
-  const [selectedBranch, setSelectedBranch] = useState(isNasional ? '' : currentUser.branch);
+  const [selectedBranch, setSelectedBranch] = useState(isNasional ? '' : (currentUser.branch || ''));
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [selectedStage, setSelectedStage] = useState('');
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState('');
+  const [selectedConfirmStatus, setSelectedConfirmStatus] = useState('');
 
   // Synchronize dashboard filters with local state
   useEffect(() => {
@@ -79,6 +85,9 @@ export default function DatabaseView({
       if (activeDashboardFilter.statusPayment !== undefined) {
         setSelectedPaymentStatus(activeDashboardFilter.statusPayment);
       }
+      if (activeDashboardFilter.statusConfirm !== undefined) {
+        setSelectedConfirmStatus(activeDashboardFilter.statusConfirm);
+      }
     }
   }, [activeDashboardFilter]);
 
@@ -88,7 +97,16 @@ export default function DatabaseView({
 
   // Form states
   const [category, setCategory] = useState<BackchargeCategory>('Own Risk');
-  const [branch, setBranch] = useState(isNasional ? 'Jakarta' : currentUser.branch);
+  const [branch, setBranch] = useState(() => {
+    if (currentUser.branch === 'Nasional' || currentUser.role === 'Administrator' || currentUser.role === 'Division Head') {
+      return 'Jakarta';
+    }
+    if (userBranchList && userBranchList.length > 0) {
+      const found = BRANCH_LIST.find(b => userBranchList.some(ub => ub.toLowerCase() === b.toLowerCase()));
+      return found || userBranchList[0];
+    }
+    return currentUser.branch || 'Jakarta';
+  });
   const [noBak, setNoBak] = useState('');
   const [noSpk, setNoSpk] = useState('');
   const [noSap, setNoSap] = useState('');
@@ -172,7 +190,11 @@ export default function DatabaseView({
     if (!file) return;
 
     if (file.size > 15 * 1024 * 1024) {
-      alert("Ukuran file maksimal adalah 15MB");
+      if (addToast) {
+        addToast("Ukuran file maksimal adalah 15MB", "error");
+      } else {
+        alert("Ukuran file maksimal adalah 15MB");
+      }
       return;
     }
 
@@ -194,7 +216,11 @@ export default function DatabaseView({
           setFile(reader.result as string);
         };
         reader.readAsDataURL(file);
-        alert("Gagal mengunggah otomatis ke Google Drive. File disimpan secara lokal.");
+        if (addToast) {
+          addToast("Gagal mengunggah otomatis ke Google Drive. File disimpan secara lokal.", "info");
+        } else {
+          alert("Gagal mengunggah otomatis ke Google Drive. File disimpan secara lokal.");
+        }
       } finally {
         setUploadingToDrive(prev => ({ ...prev, [uploadKey]: false }));
       }
@@ -227,6 +253,252 @@ export default function DatabaseView({
   const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
   const [bulkSuccessMessage, setBulkSuccessMessage] = useState<string | null>(null);
   const [bulkErrorMessage, setBulkErrorMessage] = useState<string | null>(null);
+
+  // Bulk import states (Administrator Only)
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [bulkImportList, setBulkImportList] = useState<any[]>([]);
+  const [bulkImportError, setBulkImportError] = useState<string | null>(null);
+  const [isProcessingImport, setIsProcessingImport] = useState(false);
+
+  const downloadTemplate = () => {
+    const headers = [
+      ["Tanggal", "Kategori", "Cabang", "Nama Customer", "No Polisi", "Nilai Backcharge", "No BAK", "No SPK", "No SAP", "No Tilang", "PIC", "Alasan"]
+    ];
+    const sampleData = [
+      ["12/08/2026", "Own Risk", "Jakarta", "PT Maju Bersama", "B 1234 ABC", "150000", "BAK-001", "SPK-001", "SAP-001", "-", "John Doe", "Klaim Own Risk"]
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet([...headers, ...sampleData]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Template Backcharge");
+    worksheet['!cols'] = Array(12).fill({ wch: 18 });
+    XLSX.writeFile(workbook, "template_import_backcharge.xlsx");
+  };
+
+  const handleBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = new Uint8Array(event.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        // Convert to JSON array of arrays
+        const jsonData = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
+        
+        if (jsonData.length === 0) {
+          setBulkImportError("File Excel kosong.");
+          return;
+        }
+        
+        // Check if first row is headers, if yes, skip it
+        let startIndex = 0;
+        const firstRow = jsonData[0];
+        if (firstRow && firstRow.length > 0) {
+          const potentialHeader = String(firstRow[0]).toLowerCase();
+          const isHeader = potentialHeader.includes('tanggal') || 
+                           potentialHeader.includes('kategori') || 
+                           potentialHeader.includes('cabang') || 
+                           potentialHeader.includes('customer') ||
+                           potentialHeader.includes('nama') ||
+                           potentialHeader.includes('nopol') ||
+                           potentialHeader.includes('nilai');
+          if (isHeader) {
+            startIndex = 1;
+          }
+        }
+
+        const resultList: any[] = [];
+        for (let i = startIndex; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (!row || row.length === 0) continue;
+          
+          // Pad array to at least 12 elements
+          const parts = Array.from({ length: 12 }, (_, idx) => {
+            const val = row[idx];
+            return val !== undefined && val !== null ? String(val).trim() : '';
+          });
+
+          const rawTanggal = parts[0];
+          const rawKategori = parts[1];
+          const rawCabang = parts[2];
+          const rawCustomer = parts[3];
+          const rawNoPolisi = parts[4];
+          const rawValue = parts[5];
+          const rawNoBak = parts[6];
+          const rawNoSpk = parts[7];
+          const rawNoSap = parts[8];
+          const rawNoTilang = parts[9];
+          const rawBroker = parts[10];
+          const rawAlasan = parts[11];
+          
+          if (!rawCustomer && !rawTanggal && !rawValue) {
+            // Skip completely empty row
+            continue;
+          }
+
+          // Clean and validate Tanggal
+          let formattedDate = '';
+          if (rawTanggal) {
+            // If Excel date was parsed as a number (serial number)
+            if (!isNaN(Number(rawTanggal)) && Number(rawTanggal) > 20000 && Number(rawTanggal) < 60000) {
+              try {
+                const dateObj = new Date((Number(rawTanggal) - 25569) * 86400 * 1000);
+                if (!isNaN(dateObj.getTime())) {
+                  formattedDate = dateObj.toISOString().split('T')[0];
+                }
+              } catch {}
+            } else {
+              const cleanDateStr = rawTanggal.replace(/["']/g, '').trim();
+              const partsSlash = cleanDateStr.split('/');
+              const partsDash = cleanDateStr.split('-');
+              
+              if (partsSlash.length === 3) {
+                const d = partsSlash[0].padStart(2, '0');
+                const m = partsSlash[1].padStart(2, '0');
+                const y = partsSlash[2];
+                if (y.length === 4) {
+                  formattedDate = `${y}-${m}-${d}`;
+                } else if (y.length === 2) {
+                  formattedDate = `20${y}-${m}-${d}`;
+                }
+              } else if (partsDash.length === 3) {
+                if (partsDash[0].length === 4) {
+                  formattedDate = cleanDateStr;
+                } else {
+                  const d = partsDash[0].padStart(2, '0');
+                  const m = partsDash[1].padStart(2, '0');
+                  const y = partsDash[2];
+                  if (y.length === 4) {
+                    formattedDate = `${y}-${m}-${d}`;
+                  } else {
+                    formattedDate = `20${y}-${m}-${d}`;
+                  }
+                }
+              } else {
+                try {
+                  const parsed = new Date(cleanDateStr);
+                  if (!isNaN(parsed.getTime())) {
+                    formattedDate = parsed.toISOString().split('T')[0];
+                  }
+                } catch {}
+              }
+            }
+          }
+          
+          if (!formattedDate) {
+            const today = new Date();
+            formattedDate = today.toISOString().split('T')[0];
+          }
+          
+          // Kategori matching
+          let matchedCategory: BackchargeCategory = 'Own Risk';
+          const cleanKategori = rawKategori.replace(/["']/g, '').trim().toLowerCase();
+          
+          if (cleanKategori.includes('own') || cleanKategori.includes('risk')) matchedCategory = 'Own Risk';
+          else if (cleanKategori.includes('maint') || cleanKategori.includes('perawatan')) matchedCategory = 'Maintenance';
+          else if (cleanKategori.includes('ekspedisi') || cleanKategori.includes('exp')) matchedCategory = 'Ekspedisi';
+          else if (cleanKategori.includes('etle') || cleanKategori.includes('tilang')) matchedCategory = 'ETLE';
+          else if (cleanKategori.includes('tpl') || cleanKategori.includes('third')) matchedCategory = 'TPL';
+          else if (cleanKategori.includes('unclaim') || cleanKategori.includes('insurance')) matchedCategory = 'Unclaimable Insurance';
+          else if (cleanKategori.includes('dokumen') || cleanKategori.includes('stnk') || cleanKategori.includes('kendaraan')) matchedCategory = 'Dokumen Kendaraan';
+          
+          // Cabang matching
+          let matchedBranch = 'Jakarta';
+          const cleanCabang = rawCabang.replace(/["']/g, '').trim().toLowerCase();
+          const foundBranch = BRANCH_LIST.find(b => b.toLowerCase() === cleanCabang);
+          if (foundBranch) {
+            matchedBranch = foundBranch;
+          } else {
+            const partialBranch = BRANCH_LIST.find(b => cleanCabang.includes(b.toLowerCase()) || b.toLowerCase().includes(cleanCabang));
+            if (partialBranch) {
+              matchedBranch = partialBranch;
+            }
+          }
+          
+          // Value parsing
+          const cleanValueStr = rawValue.replace(/[^0-9.-]+/g, '');
+          const parsedValue = parseFloat(cleanValueStr) || 0;
+          
+          const rowObj = {
+            tanggal: formattedDate,
+            category: matchedCategory,
+            branch: matchedBranch,
+            customer_name: rawCustomer.replace(/["']/g, '').trim(),
+            license_plate: rawNoPolisi.replace(/["']/g, '').trim() || '-',
+            value: parsedValue,
+            no_bak: rawNoBak.replace(/["']/g, '').trim() || '-',
+            no_spk: rawNoSpk.replace(/["']/g, '').trim() || '-',
+            no_sap: rawNoSap.replace(/["']/g, '').trim() || '-',
+            no_tilang: rawNoTilang.replace(/["']/g, '').trim() || '-',
+            bro_name: rawBroker.replace(/["']/g, '').trim() || '-',
+            nama_bro: rawBroker.replace(/["']/g, '').trim() || '-',
+            alasan: rawAlasan.replace(/["']/g, '').trim() || '-',
+            dok_pendukung_alasan: rawAlasan.replace(/["']/g, '').trim() || '-',
+            status_sap: 'N/A',
+            status_confirm: 'Telah Dikonfirmasi',
+            status_handover: 'Pending',
+            status_payment: 'Belum Bayar',
+            no_invoice: '-',
+            errors: [] as string[]
+          };
+          
+          if (!rowObj.customer_name) {
+            rowObj.errors.push('Nama Customer wajib diisi');
+          }
+          if (rowObj.value <= 0) {
+            rowObj.errors.push('Nilai Backcharge harus > 0');
+          }
+          
+          resultList.push(rowObj);
+        }
+        
+        setBulkImportList(resultList);
+        setBulkImportError(null);
+      } catch (err: any) {
+        setBulkImportError("Gagal membaca file Excel: " + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const executeBulkImport = async () => {
+    if (!onBulkAddTransactions || bulkImportList.length === 0) return;
+    
+    const hasErrors = bulkImportList.some(item => item.errors && item.errors.length > 0);
+    if (hasErrors) {
+      if (addToast) addToast('Silakan perbaiki data yang error sebelum mengimpor!', 'error');
+      return;
+    }
+
+    setIsProcessingImport(true);
+    try {
+      const payload = bulkImportList.map(item => {
+        const { errors, ...cleanItem } = item;
+        return cleanItem;
+      });
+
+      await onBulkAddTransactions(payload);
+      
+      setBulkImportList([]);
+      setShowBulkImportModal(false);
+      if (addToast) addToast(`Berhasil mengimpor ${payload.length} data Backcharge!`, 'success');
+    } catch (err: any) {
+      setBulkImportError(err.message || 'Gagal melakukan import massal.');
+      if (addToast) addToast('Gagal melakukan import massal: ' + err.message, 'error');
+    } finally {
+      setIsProcessingImport(false);
+    }
+  };
+
+  const removeBulkImportRow = (idx: number) => {
+    const updated = [...bulkImportList];
+    updated.splice(idx, 1);
+    setBulkImportList(updated);
+  };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -345,7 +617,11 @@ export default function DatabaseView({
     if (!file) return;
 
     if (file.size > 15 * 1024 * 1024) {
-      alert("Ukuran file maksimal adalah 15MB");
+      if (addToast) {
+        addToast("Ukuran file maksimal adalah 15MB", "error");
+      } else {
+        alert("Ukuran file maksimal adalah 15MB");
+      }
       return;
     }
 
@@ -365,7 +641,11 @@ export default function DatabaseView({
           setFile(reader.result as string);
         };
         reader.readAsDataURL(file);
-        alert("Gagal mengunggah otomatis ke Google Drive. File disimpan secara lokal.");
+        if (addToast) {
+          addToast("Gagal mengunggah otomatis ke Google Drive. File disimpan secara lokal.", "info");
+        } else {
+          alert("Gagal mengunggah otomatis ke Google Drive. File disimpan secara lokal.");
+        }
       } finally {
         setUploadingToDrive(prev => ({ ...prev, [uploadKey]: false }));
       }
@@ -425,7 +705,7 @@ export default function DatabaseView({
       return;
     }
 
-    const confirmMsg = `Konfirmasi Revisi Data:\nApakah Anda yakin ingin menyimpan perubahan data denda transaksi ${editingTransaction.id} (${editCustomerName.trim()})?`;
+    const confirmMsg = `Konfirmasi Revisi Data:\nApakah Anda yakin ingin menyimpan perubahan data Backcharge transaksi ${editingTransaction.id} (${editCustomerName.trim()})?`;
     if (!window.confirm(confirmMsg)) {
       return;
     }
@@ -454,7 +734,7 @@ export default function DatabaseView({
           upload_dok_pendukung: editUploadDokPendukung
         };
 
-        const logMsg = `Merevisi data denda ${editingTransaction.id} (${editCustomerName})`;
+        const logMsg = `Merevisi data Backcharge ${editingTransaction.id} (${editCustomerName})`;
         await onUpdateTransaction(editingTransaction.id, updates, logMsg);
         setEditSuccess(true);
         setTimeout(() => {
@@ -471,7 +751,7 @@ export default function DatabaseView({
   // Auto reset pagination page when filters or search change
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, selectedCategory, selectedBranch, filterStartDate, filterEndDate, selectedStage, selectedPaymentStatus, activeAlertFilter, activeDashboardFilter]);
+  }, [search, selectedCategory, selectedBranch, filterStartDate, filterEndDate, selectedStage, selectedPaymentStatus, selectedConfirmStatus, activeAlertFilter, activeDashboardFilter]);
 
   // Memoized transactions filtering for optimal rendering performance & minimal re-computations
   const filteredTransactions = useMemo(() => {
@@ -488,6 +768,16 @@ export default function DatabaseView({
         t.branch === selectedBranch || 
         (selectedBranch.includes(',') && selectedBranch.split(',').map(s => s.trim()).includes(t.branch));
       const matchesPaymentStatus = !selectedPaymentStatus || t.status_payment === selectedPaymentStatus;
+      
+      let matchesConfirmStatus = true;
+      if (selectedConfirmStatus === 'Ditolak / Negosiasi Ulang') {
+        matchesConfirmStatus = t.status_approval === 'Ditolak' || 
+          t.regional_approval_status === 'Ditolak' || 
+          t.division_approval_status === 'Ditolak' || 
+          t.status_confirm === 'Ditolak / Negosiasi Ulang';
+      } else if (selectedConfirmStatus) {
+        matchesConfirmStatus = t.status_confirm === selectedConfirmStatus;
+      }
 
       let matchesDateRange = true;
       if (filterStartDate || filterEndDate) {
@@ -512,18 +802,31 @@ export default function DatabaseView({
         if (selectedStage === '1_handover') {
           matchesStage = t.status_handover === 'Pending';
         } else if (selectedStage === '2_confirm' || selectedStage === '2_admin') {
-          matchesStage = t.status_handover === 'Diserahkan ke Admin';
-        } else if (selectedStage === '3_sap') {
-          const isPendingApproval = !t.status_approval || t.status_approval === 'Belum Approval';
-          let matchesAuthApproval = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && isPendingApproval && !stepInvoice && !stepPayment;
-          if (isKacabUser && !isSuperAdmin) {
-            matchesAuthApproval = matchesAuthApproval && (t.category === 'Maintenance' || t.category === 'TPL');
-          } else if (isSalesHeadUser && !isSuperAdmin) {
-            matchesAuthApproval = matchesAuthApproval && (t.category === 'Own Risk' || t.category === 'Ekspedisi' || t.category === 'ETLE');
-          }
-          matchesStage = matchesAuthApproval;
+          matchesStage = t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin';
+        } else if (selectedStage === '3_sap_l1' || selectedStage === '3_sap') {
+          const isPendingL1 = !t.status_approval || t.status_approval === 'Belum Approval' || t.status_approval === 'Pending';
+          matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && isPendingL1 && !stepInvoice && !stepPayment;
+        } else if (selectedStage === '3_sap_rh') {
+          const val = t.value || 0;
+          const isMaintenance = t.category === 'Maintenance';
+          const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
+          matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && t.status_approval === 'Disetujui' && isRegionalHeadReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval') && !stepInvoice && !stepPayment;
+        } else if (selectedStage === '3_sap_dh') {
+          const val = t.value || 0;
+          const isMaintenance = t.category === 'Maintenance';
+          const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
+          const isDivisionHeadReq = val > 15000000;
+          const isRegionalApproved = !isRegionalHeadReq || t.regional_approval_status === 'Disetujui';
+          matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && t.status_approval === 'Disetujui' && isRegionalApproved && isDivisionHeadReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval') && !stepInvoice && !stepPayment;
         } else if (selectedStage === '4_invoice') {
-          matchesStage = t.status_handover !== 'Pending' && !stepInvoice && !stepPayment && !((!t.status_approval || t.status_approval === 'Belum Approval'));
+          const val = t.value || 0;
+          const isMaintenance = t.category === 'Maintenance';
+          const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
+          const isDivisionHeadReq = val > 15000000;
+          const isPendingL1 = !t.status_approval || t.status_approval === 'Belum Approval' || t.status_approval === 'Pending';
+          const isPendingRH = isRegionalHeadReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval');
+          const isPendingDH = isDivisionHeadReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval');
+          matchesStage = t.status_handover !== 'Pending' && !stepInvoice && !stepPayment && !isPendingL1 && !isPendingRH && !isPendingDH;
         } else if (selectedStage === '5_payment') {
           matchesStage = stepInvoice || stepPayment;
         } else if (selectedStage === '6_done') {
@@ -538,15 +841,15 @@ export default function DatabaseView({
         if (combinedAlert === 'due') {
           matchesAlertFilter = t.status_payment === 'Belum Bayar' && ageMs > 15 * 24 * 3600 * 1000;
         } else if (combinedAlert === 'pending') {
-          matchesAlertFilter = t.status_payment === 'Belum Bayar' && ageMs > 3 * 24 * 3600 * 1000;
+          matchesAlertFilter = t.status_payment === 'Belum Bayar' && ageMs > 7 * 24 * 3600 * 1000;
         } else if (combinedAlert === 'high_value') {
           matchesAlertFilter = t.status_payment === 'Belum Bayar' && ageMs > 30 * 24 * 3600 * 1000;
         }
       }
 
-      return matchesSearch && matchesCategory && matchesBranch && matchesDateRange && matchesStage && matchesPaymentStatus && matchesAlertFilter;
+      return matchesSearch && matchesCategory && matchesBranch && matchesDateRange && matchesStage && matchesPaymentStatus && matchesConfirmStatus && matchesAlertFilter;
     });
-  }, [transactions, search, selectedCategory, selectedBranch, filterStartDate, filterEndDate, selectedStage, selectedPaymentStatus, activeAlertFilter, activeDashboardFilter]);
+  }, [transactions, search, selectedCategory, selectedBranch, filterStartDate, filterEndDate, selectedStage, selectedPaymentStatus, selectedConfirmStatus, activeAlertFilter, activeDashboardFilter]);
 
   // Pagination computations
   const totalItems = filteredTransactions.length;
@@ -650,12 +953,36 @@ export default function DatabaseView({
             const isKacab = currentUser.role === 'Kepala Cabang' || (currentUser.role as string) === 'kacab';
             const isSH = currentUser.role === 'Sales Head' || (currentUser.role as string) === 'Sales / Sales Head';
             const isAdmin = currentUser.role === 'Administrator';
+            const isRH = currentUser.role && currentUser.role.startsWith('Regional Head');
+            const isDH = currentUser.role === 'Division Head';
+            const val = item.value || 0;
+            const isMaintenance = item.category === 'Maintenance';
+            const isTPL = item.category === 'TPL';
 
             let canApproveThisItem = isAdmin;
-            if (isKacab && (item.category === 'Maintenance' || item.category === 'TPL')) canApproveThisItem = true;
-            if (isSH && (item.category === 'Own Risk' || item.category === 'Ekspedisi' || item.category === 'ETLE')) canApproveThisItem = true;
+            const tier1Approved = item.status_approval === 'Disetujui';
+            const isRegionalHeadReq = isMaintenance 
+              ? (val > 7500000) 
+              : (val > 5000000);
+            const tier2Approved = !isRegionalHeadReq || item.regional_approval_status === 'Disetujui';
 
-            if (canApproveThisItem) {
+            if (isKacab && (isMaintenance || isTPL) && (!item.status_approval || item.status_approval === 'Belum Approval')) {
+              itemUpdates.status_approval = bulkStatusApproval;
+              itemUpdates.approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
+              itemUpdates.approved_at = new Date().toLocaleString('id-ID');
+            } else if (isSH && (item.category === 'Own Risk' || item.category === 'Ekspedisi' || item.category === 'ETLE' || item.category === 'Unclaimable Insurance' || item.category === 'Dokumen Kendaraan') && (!item.status_approval || item.status_approval === 'Belum Approval')) {
+              itemUpdates.status_approval = bulkStatusApproval;
+              itemUpdates.approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
+              itemUpdates.approved_at = new Date().toLocaleString('id-ID');
+            } else if (isRH && isRegionalHeadReq && tier1Approved && (!item.regional_approval_status || item.regional_approval_status === 'Belum Approval')) {
+              itemUpdates.regional_approval_status = bulkStatusApproval;
+              itemUpdates.regional_approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
+              itemUpdates.regional_approved_at = new Date().toLocaleString('id-ID');
+            } else if (isDH && val > 15000000 && tier1Approved && tier2Approved && (!item.division_approval_status || item.division_approval_status === 'Belum Approval')) {
+              itemUpdates.division_approval_status = bulkStatusApproval;
+              itemUpdates.division_approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
+              itemUpdates.division_approved_at = new Date().toLocaleString('id-ID');
+            } else if (isAdmin) {
               itemUpdates.status_approval = bulkStatusApproval;
               itemUpdates.approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
               itemUpdates.approved_at = new Date().toLocaleString('id-ID');
@@ -691,9 +1018,29 @@ export default function DatabaseView({
   // Export visible transactions to Excel (styled XML spreadsheet format)
   const handleExportExcel = () => {
     if (filteredTransactions.length === 0) {
-      alert("Tidak ada data untuk diexport!");
+      if (addToast) {
+        addToast("Tidak ada data untuk diexport!", "error");
+      } else {
+        alert("Tidak ada data untuk diexport!");
+      }
       return;
     }
+
+    // Calculate Summary Metrics for Management
+    const totalTransactions = filteredTransactions.length;
+    const totalValue = filteredTransactions.reduce((acc, t) => acc + (Number(t.value) || 0), 0);
+    
+    const lunasTx = filteredTransactions.filter(t => t.status_payment === 'Lunas');
+    const totalLunasCount = lunasTx.length;
+    const totalLunasValue = lunasTx.reduce((acc, t) => acc + (Number(t.value) || 0), 0);
+    const pctLunasValue = totalValue > 0 ? Math.round((totalLunasValue / totalValue) * 100) : 0;
+
+    const belumBayarTx = filteredTransactions.filter(t => t.status_payment !== 'Lunas');
+    const totalBelumBayarCount = belumBayarTx.length;
+    const totalBelumBayarValue = totalValue - totalLunasValue;
+
+    const divApprovedCount = filteredTransactions.filter(t => t.division_approval_status === 'Disetujui').length;
+    const pctDivApproved = totalTransactions > 0 ? Math.round((divApprovedCount / totalTransactions) * 100) : 0;
 
     let excelTemplate = `
       <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
@@ -704,7 +1051,7 @@ export default function DatabaseView({
           <x:ExcelWorkbook>
             <x:ExcelWorksheets>
               <x:ExcelWorksheet>
-                <x:Name>Rekap Backcharge</x:Name>
+                <x:Name>Rekap Backcharge ASSA</x:Name>
                 <x:WorksheetOptions>
                   <x:DisplayGridlines/>
                 </x:WorksheetOptions>
@@ -714,70 +1061,199 @@ export default function DatabaseView({
         </xml>
         <![endif]-->
         <style>
-          table { border-collapse: collapse; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 11px; }
-          .header { background-color: #1e3a8a; color: white; font-weight: bold; font-size: 12px; }
-          th, td { border: 1px solid #cbd5e1; padding: 10px; text-align: left; }
-          .title { font-size: 16px; font-weight: bold; color: #1e3a8a; text-align: center; }
-          .subtitle { font-size: 11px; color: #475569; text-align: center; margin-bottom: 20px; }
-          .number { mso-number-format: "\\#\\,\\#\\#0"; text-align: right; font-weight: bold; }
+          table { border-collapse: collapse; font-family: 'Segoe UI', Arial, sans-serif; font-size: 10px; }
+          
+          /* Typography */
+          .title-text { font-size: 16px; font-weight: bold; color: #1e3a8a; text-align: left; }
+          .subtitle-text { font-size: 10px; color: #475569; text-align: left; }
+          
+          /* KPI Cards */
+          .kpi-title { background-color: #0f172a; color: #ffffff; font-weight: bold; font-size: 10px; text-align: center; border: 1px solid #1e293b; padding: 6px; }
+          .kpi-value-blue { background-color: #f8fafc; color: #1e40af; font-weight: bold; font-size: 15px; text-align: center; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; padding: 8px; }
+          .kpi-value-green { background-color: #f8fafc; color: #15803d; font-weight: bold; font-size: 15px; text-align: center; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; padding: 8px; }
+          .kpi-value-red { background-color: #f8fafc; color: #b91c1c; font-weight: bold; font-size: 15px; text-align: center; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; padding: 8px; }
+          .kpi-value-orange { background-color: #f8fafc; color: #c2410c; font-weight: bold; font-size: 15px; text-align: center; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; padding: 8px; }
+          .kpi-desc { background-color: #f1f5f9; color: #64748b; font-size: 9px; text-align: center; border: 1px solid #cbd5e1; padding: 4px; }
+          
+          /* Table Formatting */
+          .header-row th { background-color: #1e3a8a; color: #ffffff; font-weight: bold; font-size: 11px; border: 1px solid #0f172a; padding: 12px 6px; text-align: center; }
+          td { border: 1px solid #cbd5e1; padding: 8px 6px; text-align: left; vertical-align: middle; }
+          
+          /* Zebra striping */
+          .row-even { background-color: #f8fafc; }
+          .row-odd { background-color: #ffffff; }
+          
+          /* Cell formatting alignments and formats */
+          .text-center { text-align: center; }
+          .text-right { text-align: right; }
+          .font-mono { font-family: 'Consolas', 'Courier New', monospace; }
+          
+          /* Excel formatting structures */
+          .force-text { mso-number-format: "\\@"; }
+          .currency-format { mso-number-format: "IDR\\ #\\,\\#\\#0"; text-align: right; font-weight: bold; }
+          .number-format { mso-number-format: "\\#\\,\\#\\#0"; text-align: right; }
+          
+          /* Status pill styling in Excel */
+          .status-lunas { background-color: #dcfce7; color: #15803d; font-weight: bold; text-align: center; }
+          .status-belum-bayar { background-color: #fee2e2; color: #b91c1c; font-weight: bold; text-align: center; }
+          
+          .status-approved { background-color: #ecfdf5; color: #047857; font-weight: bold; text-align: center; }
+          .status-pending { background-color: #fffbeb; color: #b45309; font-weight: bold; text-align: center; }
+          .status-rejected { background-color: #fef2f2; color: #b91c1c; font-weight: bold; text-align: center; }
+          
+          .status-handover-done { background-color: #eff6ff; color: #1d4ed8; font-weight: bold; text-align: center; }
+          .status-handover-pending { background-color: #f8fafc; color: #64748b; text-align: center; }
+          
+          .total-row { background-color: #e2e8f0; font-weight: bold; border-top: 2px double #0f172a; border-bottom: 2px double #0f172a; }
         </style>
       </head>
       <body>
         <table>
+          <!-- TITLE HEADER BLOCK -->
           <tr>
-            <td colspan="15" class="title">REKAPITULASI DATA BACKCHARGE - PT ADI SARANA ARMADA, TBK</td>
+            <td colspan="22" class="title-text" style="border: none;">PT ADI SARANA ARMADA, TBK (ASSA)</td>
           </tr>
           <tr>
-            <td colspan="15" class="subtitle">Unduh Tanggal: ${new Date().toLocaleDateString('id-ID')} | Total Item: ${filteredTransactions.length}</td>
+            <td colspan="22" class="title-text" style="font-size: 14px; color: #475569; border: none;">LAPORAN EXECUTIVE REKAPITULASI DATA BACKCHARGE</td>
           </tr>
-          <tr><td colspan="15"></td></tr>
+          <tr>
+            <td colspan="22" class="subtitle-text" style="border: none; padding-bottom: 15px;">
+              Diekspor Oleh: <strong>${currentUser.full_name} (${currentUser.role})</strong> | Tanggal Unduh: ${new Date().toLocaleString('id-ID')} | Total Item: <strong>${totalTransactions}</strong>
+            </td>
+          </tr>
+          <tr><td colspan="22" style="border: none; height: 10px;"></td></tr>
+
+          <!-- EXECUTIVE SUMMARY METRIC CARDS -->
+          <tr>
+            <!-- CARD 1: TOTAL BACKCHARGE PORTFOLIO -->
+            <td colspan="5" class="kpi-title">TOTAL PORTFOLIO BACKCHARGE</td>
+            <td style="border: none;"></td>
+            <!-- CARD 2: RECOVERY/LUNAS RATE -->
+            <td colspan="5" class="kpi-title">STATUS PEMBAYARAN (LUNAS)</td>
+            <td style="border: none;"></td>
+            <!-- CARD 3: OUTSTANDING PORTFOLIO -->
+            <td colspan="5" class="kpi-title">STATUS OUTSTANDING (BELUM BAYAR)</td>
+            <td style="border: none;"></td>
+            <!-- CARD 4: DIVISION APPROVAL -->
+            <td colspan="4" class="kpi-title">APPROVAL STATUS (DIVISI HEAD)</td>
+          </tr>
+          <tr>
+            <!-- CARD 1 -->
+            <td colspan="5" class="kpi-value-blue" style="mso-number-format: 'IDR\\ #\\,\\#\\#0';">${totalValue}</td>
+            <td style="border: none;"></td>
+            <!-- CARD 2 -->
+            <td colspan="5" class="kpi-value-green" style="mso-number-format: 'IDR\\ #\\,\\#\\#0';">${totalLunasValue}</td>
+            <td style="border: none;"></td>
+            <!-- CARD 3 -->
+            <td colspan="5" class="kpi-value-red" style="mso-number-format: 'IDR\\ #\\,\\#\\#0';">${totalBelumBayarValue}</td>
+            <td style="border: none;"></td>
+            <!-- CARD 4 -->
+            <td colspan="4" class="kpi-value-orange">${divApprovedCount} / ${totalTransactions}</td>
+          </tr>
+          <tr>
+            <!-- CARD 1 -->
+            <td colspan="5" class="kpi-desc">Dari Akumulasi <strong>${totalTransactions} Kasus</strong> Backcharge</td>
+            <td style="border: none;"></td>
+            <!-- CARD 2 -->
+            <td colspan="5" class="kpi-desc">Tingkat Kolektabilitas: <strong>${pctLunasValue}%</strong> (${totalLunasCount} Kasus)</td>
+            <td style="border: none;"></td>
+            <!-- CARD 3 -->
+            <td colspan="5" class="kpi-desc">Total Kasus Outstanding: <strong>${totalBelumBayarCount} Item</strong></td>
+            <td style="border: none;"></td>
+            <!-- CARD 4 -->
+            <td colspan="4" class="kpi-desc">Persetujuan Akhir: <strong>${pctDivApproved}% Disetujui</strong></td>
+          </tr>
+          
+          <!-- SPACING -->
+          <tr><td colspan="22" style="border: none; height: 15px;"></td></tr>
+
+          <!-- TABLE HEADER ROW -->
           <thead>
-            <tr class="header">
-              <th>ID Transaksi</th>
-              <th>Tanggal BAK</th>
-              <th>Kategori</th>
-              <th>Cabang Kota</th>
-              <th>No BAK</th>
-              <th>No Surat Tilang</th>
-              <th>No SPK</th>
-              <th>No SAP</th>
-              <th>Nama Customer</th>
-              <th>No Polisi</th>
-              <th>Nilai Backcharge (Rp)</th>
-              <th>Status SAP</th>
-              <th>Status Serah Terima</th>
-              <th>No Invoice</th>
-              <th>Status Payment</th>
-              <th>Tanggal Input</th>
+            <tr class="header-row">
+              <th style="width: 40px;">No</th>
+              <th style="width: 110px;">ID Transaksi</th>
+              <th style="width: 90px;">Tanggal BAK</th>
+              <th style="width: 100px;">Kategori</th>
+              <th style="width: 90px;">Cabang Kota</th>
+              <th style="width: 120px;">No BAK</th>
+              <th style="width: 110px;">No Surat Tilang</th>
+              <th style="width: 120px;">No SPK</th>
+              <th style="width: 120px;">No SAP</th>
+              <th style="width: 180px;">Nama Customer</th>
+              <th style="width: 90px;">No Polisi</th>
+              <th style="width: 120px;">Nilai Backcharge</th>
+              <th style="width: 80px;">Status SAP</th>
+              <th style="width: 110px;">Serah Terima</th>
+              <th style="width: 110px;">No Invoice</th>
+              <th style="width: 90px;">Status Bayar</th>
+              <th style="width: 130px;">Nama PIC</th>
+              <th style="width: 180px;">Alasan/Keterangan Backcharge</th>
+              <th style="width: 110px;">Appr. ASO/Sales</th>
+              <th style="width: 110px;">Appr. Regional</th>
+              <th style="width: 110px;">Appr. Divisi</th>
+              <th style="width: 130px;">Tanggal Diinput</th>
             </tr>
           </thead>
           <tbody>
     `;
 
-    filteredTransactions.forEach(t => {
+    filteredTransactions.forEach((t, index) => {
+      const isEven = index % 2 === 0;
+      const rowClass = isEven ? 'row-even' : 'row-odd';
+
+      // Safe evaluation of statuses
+      const pStatus = t.status_payment === 'Lunas' ? 'status-lunas' : 'status-belum-bayar';
+      
+      const appASO = t.status_approval === 'Disetujui' ? 'status-approved' : 
+                     t.status_approval === 'Ditolak' ? 'status-rejected' : 'status-pending';
+                     
+      const appReg = t.regional_approval_status === 'Disetujui' ? 'status-approved' : 
+                     t.regional_approval_status === 'Ditolak' ? 'status-rejected' : 'status-pending';
+                     
+      const appDiv = t.division_approval_status === 'Disetujui' ? 'status-approved' : 
+                     t.division_approval_status === 'Ditolak' ? 'status-rejected' : 'status-pending';
+                     
+      const hStatus = t.status_handover === 'Diterima Admin' || t.status_handover === 'Diserahkan ke Admin' 
+                      ? 'status-handover-done' : 'status-handover-pending';
+
+      const brokerName = t.nama_bro || t.bro_name || '-';
+      const reasonText = t.alasan || '-';
+
       excelTemplate += `
-        <tr>
-          <td style="font-weight: bold;">${t.id}</td>
-          <td>${formatDateOnly(t.tanggal)}</td>
+        <tr class="${rowClass}">
+          <td class="text-center number-format">${index + 1}</td>
+          <td class="force-text" style="font-weight: bold; color: #1e3a8a;">${t.id}</td>
+          <td class="text-center">${formatDateOnly(t.tanggal)}</td>
           <td>${t.category}</td>
-          <td>${t.branch}</td>
-          <td>${t.no_bak || '-'}</td>
-          <td>${t.no_tilang || '-'}</td>
-          <td>${t.no_spk || '-'}</td>
-          <td>${t.no_sap || '-'}</td>
-          <td>${t.customer_name}</td>
-          <td style="font-family: monospace;">${t.license_plate || '-'}</td>
-          <td class="number">${t.value}</td>
-          <td>${t.status_sap || '-'}</td>
-          <td>${t.status_handover}</td>
-          <td>${t.no_invoice || '-'}</td>
-          <td style="font-weight: bold;">${t.status_payment}</td>
-          <td>${new Date(t.created_at).toLocaleString('id-ID')}</td>
+          <td class="text-center" style="font-weight: 500;">${t.branch}</td>
+          <td class="force-text">${t.no_bak || '-'}</td>
+          <td class="force-text">${t.no_tilang || '-'}</td>
+          <td class="force-text">${t.no_spk || '-'}</td>
+          <td class="force-text">${t.no_sap || '-'}</td>
+          <td style="font-weight: 500;">${t.customer_name}</td>
+          <td class="font-mono text-center force-text" style="font-weight: bold;">${t.license_plate || '-'}</td>
+          <td class="currency-format">${t.value}</td>
+          <td class="text-center force-text" style="font-weight: 500;">${t.status_sap || '-'}</td>
+          <td class="${hStatus}">${t.status_handover}</td>
+          <td class="force-text">${t.no_invoice || '-'}</td>
+          <td class="${pStatus}">${t.status_payment}</td>
+          <td>${brokerName}</td>
+          <td>${reasonText}</td>
+          <td class="${appASO}">${t.status_approval || 'Belum Approval'}</td>
+          <td class="${appReg}">${t.regional_approval_status || 'Belum Approval'}</td>
+          <td class="${appDiv}">${t.division_approval_status || 'Belum Approval'}</td>
+          <td class="text-center subtitle-text">${new Date(t.created_at).toLocaleString('id-ID')}</td>
         </tr>
       `;
     });
 
+    // FOOTER RECAP ROW (GRAND TOTAL)
     excelTemplate += `
+            <tr class="total-row">
+              <td colspan="11" style="text-align: right; padding: 10px; font-size: 11px;">GRAND TOTAL REKAPITULASI:</td>
+              <td class="currency-format" style="font-size: 11px;">${totalValue}</td>
+              <td colspan="10" style="background-color: #e2e8f0;"></td>
+            </tr>
           </tbody>
         </table>
       </body>
@@ -823,7 +1299,7 @@ export default function DatabaseView({
         {formSuccess && (
           <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs rounded-xl font-medium flex items-center space-x-2 animate-bounce">
             <Check className="w-4 h-4 flex-shrink-0" />
-            <span>Denda denda sukses disimpan & ditransmisikan!</span>
+            <span>Data Backcharge sukses disimpan & ditransmisikan!</span>
           </div>
         )}
 
@@ -835,7 +1311,7 @@ export default function DatabaseView({
         )}
 
         <form onSubmit={handleFormSubmit} className="space-y-4">
-          {currentUser.branch === 'Nasional' ? (
+          {currentUser.branch === 'Nasional' || currentUser.role === 'Administrator' || currentUser.role === 'Division Head' ? (
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota</label>
               <select 
@@ -844,6 +1320,19 @@ export default function DatabaseView({
                 className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {BRANCH_LIST.map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+          ) : userBranchList && userBranchList.length > 0 ? (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota</label>
+              <select 
+                value={branch} 
+                onChange={(e) => setBranch(e.target.value)}
+                className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {BRANCH_LIST.filter(b => userBranchList.some(ub => ub.toLowerCase() === b.toLowerCase())).map(b => (
                   <option key={b} value={b}>{b}</option>
                 ))}
               </select>
@@ -872,6 +1361,8 @@ export default function DatabaseView({
               <option value="Ekspedisi">Ekspedisi</option>
               <option value="ETLE">ETLE</option>
               <option value="TPL">TPL</option>
+              <option value="Unclaimable Insurance">Unclaimable Insurance</option>
+              <option value="Dokumen Kendaraan">Dokumen Kendaraan</option>
             </select>
           </div>
 
@@ -912,12 +1403,14 @@ export default function DatabaseView({
           )}
 
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">No. SPK (Surat Perintah Kerja)</label>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              {category === 'TPL' ? 'No. Dokumen' : 'No. SPK (Surat Perintah Kerja)'}
+            </label>
             <input 
               type="text" 
               value={noSpk}
               onChange={(e) => setNoSpk(e.target.value)}
-              placeholder="SPK-MAINT-492" 
+              placeholder={category === 'TPL' ? 'Masukkan No. Dokumen' : '500101010'} 
               className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
             />
           </div>
@@ -999,15 +1492,15 @@ export default function DatabaseView({
               <span>
                 Menampilkan data terfilter dari Dashboard:{' '}
                 <strong className="font-extrabold uppercase text-indigo-950">
-                  {activeAlertFilter === 'due' && 'Jatuh Tempo Dalam 7 Hari (SLA > 15 Hari)'}
-                  {activeAlertFilter === 'pending' && 'Pending > 3 Hari'}
-                  {activeAlertFilter === 'high_value' && 'Lead Time OS > 30 Hari'}
+                  {activeAlertFilter === 'due' && 'Jatuh Tempo 15 Hari'}
+                  {activeAlertFilter === 'pending' && 'Jatuh Tempo 7 Hari'}
+                  {activeAlertFilter === 'high_value' && 'Jatuh Tempo 30 Hari'}
                   {activeDashboardFilter?.category && `Kategori: ${activeDashboardFilter.category}`}
-                  {activeDashboardFilter?.stage && `Tahap: ${activeDashboardFilter.stage === '1_handover' ? 'Fisik di ASO' : activeDashboardFilter.stage === '2_confirm' ? 'Berkas di Admin' : activeDashboardFilter.stage === '3_sap' ? 'Approval' : activeDashboardFilter.stage === '4_invoice' ? 'Cetak Invoice' : 'Kolektif Bayar'}`}
+                  {activeDashboardFilter?.stage && `Tahap: ${activeDashboardFilter.stage === '1_handover' ? 'Fisik di ASO' : activeDashboardFilter.stage === '2_confirm' ? 'Berkas di Admin' : activeDashboardFilter.stage === '3_sap_l1' ? 'Belum Approve L1' : activeDashboardFilter.stage === '3_sap_rh' ? 'Belum Approve Regional Head' : activeDashboardFilter.stage === '3_sap_dh' ? 'Belum Approve Division Head' : activeDashboardFilter.stage === '4_invoice' ? 'Belum Cetak Invoice' : 'Kolektif Bayar'}`}
                   {activeDashboardFilter?.branch && `Cabang: ${activeDashboardFilter.branch}`}
                   {activeDashboardFilter?.statusPayment && `Status Bayar: ${activeDashboardFilter.statusPayment}`}
                   {activeDashboardFilter?.statusConfirm && `Status Konfirmasi: ${activeDashboardFilter.statusConfirm}`}
-                  {activeDashboardFilter?.alert && `Alert: ${activeDashboardFilter.alert === 'due' ? 'Jatuh Tempo 7 Hari' : activeDashboardFilter.alert === 'pending' ? 'Pending > 3 Hari' : 'Lead Time OS > 30 Hari'}`}
+                  {activeDashboardFilter?.alert && `Alert: ${activeDashboardFilter.alert === 'due' ? 'Jatuh Tempo 15 Hari' : activeDashboardFilter.alert === 'pending' ? 'Jatuh Tempo 7 Hari' : 'Jatuh Tempo 30 Hari'}`}
                 </strong>
               </span>
             </div>
@@ -1020,6 +1513,7 @@ export default function DatabaseView({
                 setSelectedBranch(isNasional ? '' : currentUser.branch);
                 setSelectedStage('');
                 setSelectedPaymentStatus('');
+                setSelectedConfirmStatus('');
               }}
               className="flex items-center gap-1.5 bg-white hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl text-[10px] font-black border border-indigo-200 transition-all cursor-pointer shadow-sm"
             >
@@ -1057,6 +1551,8 @@ export default function DatabaseView({
               <option value="Ekspedisi">Ekspedisi</option>
               <option value="ETLE">ETLE</option>
               <option value="TPL">TPL</option>
+              <option value="Unclaimable Insurance">Unclaimable Insurance</option>
+              <option value="Dokumen Kendaraan">Dokumen Kendaraan</option>
             </select>
 
             {isNasional && (
@@ -1082,7 +1578,7 @@ export default function DatabaseView({
               <option value="2_admin">2. Berkas di Admin / Menunggu Approval</option>
               <option value="3_sap">3. Menunggu Approval (Sales Head / Kacab)</option>
               <option value="4_invoice">4. Menunggu Cetak &amp; Kirim Invoice</option>
-              <option value="5_payment">5. Menunggu Pelunasan Denda</option>
+              <option value="5_payment">5. Menunggu Pelunasan Backcharge</option>
               <option value="6_done">6. Selesai (Lunas)</option>
             </select>
 
@@ -1138,6 +1634,18 @@ export default function DatabaseView({
             </div>
           </div>
  
+          {isSuperAdmin && (
+            <button 
+              type="button"
+              onClick={() => setShowBulkImportModal(true)}
+              className="flex items-center justify-center space-x-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-bold px-5 py-2.5 rounded-full shadow-sm transition-all flex-shrink-0 cursor-pointer self-stretch sm:self-auto"
+              title="Import Data secara Massal via Excel/CSV"
+            >
+              <Upload className="w-4 h-4 text-blue-600" />
+              <span>Import Massal</span>
+            </button>
+          )}
+
           <button 
             onClick={handleExportExcel}
             className="flex items-center justify-center space-x-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800 text-xs font-bold px-5 py-2.5 rounded-full shadow-sm transition-all flex-shrink-0 cursor-pointer self-stretch sm:self-auto"
@@ -1233,7 +1741,7 @@ export default function DatabaseView({
                   <th className="p-3 whitespace-nowrap text-slate-500">TGL BAK</th>
                   <th className="p-3">Kategori</th>
                   <th className="p-3">Customer</th>
-                  <th className="p-3">Denda (Rp)</th>
+                  <th className="p-3">Backcharge (Rp)</th>
                   <th className="p-3">Fisik Berkas</th>
                   <th className="p-3">Invoice</th>
                   <th className="p-3">Pembayaran</th>
@@ -1346,8 +1854,8 @@ export default function DatabaseView({
                     );
                     if (t.status_payment === 'Lunas') {
                       paymentBadge = (
-                        <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-emerald-100 text-emerald-700">
-                          Lunas
+                        <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-emerald-100 text-emerald-700 whitespace-nowrap">
+                          {t.payment_date ? `Lunas (${t.payment_date})` : 'Lunas'}
                         </span>
                       );
                     } else if (t.status_confirm === 'Ditolak / Negosiasi Ulang') {
@@ -1481,7 +1989,7 @@ export default function DatabaseView({
                 ))}
               </select>
               <span className="text-slate-400 font-medium">
-                | Menampilkan {totalItems > 0 ? (activePage - 1) * pageSize + 1 : 0} - {Math.min(activePage * pageSize, totalItems)} dari {totalItems} data denda
+                | Menampilkan {totalItems > 0 ? (activePage - 1) * pageSize + 1 : 0} - {Math.min(activePage * pageSize, totalItems)} dari {totalItems} data Backcharge
               </span>
             </div>
 
@@ -1569,7 +2077,7 @@ export default function DatabaseView({
               )}
 
               {/* Cabang */}
-              {currentUser.role === 'Administrator' ? (
+              {currentUser.branch === 'Nasional' || currentUser.role === 'Administrator' || currentUser.role === 'Division Head' ? (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota</label>
                   <select 
@@ -1578,6 +2086,19 @@ export default function DatabaseView({
                     className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {BRANCH_LIST.map(b => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : userBranchList && userBranchList.length > 0 ? (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota</label>
+                  <select 
+                    value={editBranch} 
+                    onChange={(e) => setEditBranch(e.target.value)}
+                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {BRANCH_LIST.filter(b => userBranchList.some(ub => ub.toLowerCase() === b.toLowerCase())).map(b => (
                       <option key={b} value={b}>{b}</option>
                     ))}
                   </select>
@@ -1607,6 +2128,8 @@ export default function DatabaseView({
                   <option value="Ekspedisi">Ekspedisi</option>
                   <option value="ETLE">ETLE</option>
                   <option value="TPL">TPL</option>
+                  <option value="Unclaimable Insurance">Unclaimable Insurance</option>
+                  <option value="Dokumen Kendaraan">Dokumen Kendaraan</option>
                 </select>
               </div>
 
@@ -1651,12 +2174,12 @@ export default function DatabaseView({
 
               {/* No. SPK */}
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">No. SPK (Surat Perintah Kerja)</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{editCategory === 'TPL' ? 'No. Dokumen' : 'No. SPK (Surat Perintah Kerja)'}</label>
                 <input 
                   type="text" 
                   value={editNoSpk}
                   onChange={(e) => setEditNoSpk(e.target.value)}
-                  placeholder="SPK-MAINT-492" 
+                  placeholder="500101010" 
                   className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold"
                 />
               </div>
@@ -2081,9 +2604,9 @@ export default function DatabaseView({
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
                     <span>Status Approval Backcharge</span>
                     <span className="text-[8px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-extrabold">
-                      {isSalesHeadUser && !isSuperAdmin ? 'Wewenang Sales Head (OR, Ekspedisi, ETLE)' :
+                      {isSalesHeadUser && !isSuperAdmin ? 'Wewenang Sales Head (OR, Ekspedisi, ETLE, UI, Dok)' :
                        isKacabUser && !isSuperAdmin ? 'Wewenang Kacab (Maintenance & TPL)' :
-                       'Wewenang Kacab & Sales Head'}
+                       'Wewenang RH & DH & Kacab & Sales Head'}
                     </span>
                   </label>
                   <select 
@@ -2096,9 +2619,9 @@ export default function DatabaseView({
                     <option value="Ditolak">❌ Tidak Disetujui (Not Approved)</option>
                   </select>
                   <p className="text-[9px] text-slate-400 mt-1 font-medium">
-                    {isSalesHeadUser && !isSuperAdmin && '* Pilihan ini hanya akan memproses denda kategori Own Risk, Ekspedisi, & ETLE.'}
-                    {isKacabUser && !isSuperAdmin && '* Pilihan ini hanya akan memproses denda kategori Maintenance & TPL.'}
-                    {isSuperAdmin && '* Role Kepala Cabang (Kacab) memproses denda Maintenance & TPL. Role Sales Head (SH) memproses denda Own Risk, Ekspedisi & ETLE.'}
+                    {isSalesHeadUser && !isSuperAdmin && '* Pilihan ini hanya akan memproses Backcharge kategori Own Risk, Ekspedisi, ETLE, Unclaimable Insurance, & Dokumen Kendaraan.'}
+                    {isKacabUser && !isSuperAdmin && '* Pilihan ini hanya akan memproses Backcharge kategori Maintenance (<=7.5jt) & TPL (<=5jt).'}
+                    {isSuperAdmin && '* Memproses sesuai wewenang role SH/Kacab/RH/DH dan limit nominal yang berlaku.'}
                   </p>
                 </div>
               )}
@@ -2145,6 +2668,229 @@ export default function DatabaseView({
                   <>
                     <Check className="w-3.5 h-3.5" />
                     <span>Terapkan Ke {selectedTxIds.length} Transaksi</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* BULK IMPORT MODAL FOR ADMINISTRATOR */}
+      {showBulkImportModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[99] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 my-8 flex flex-col max-h-[90vh]">
+            
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-3xl sticky top-0 z-10 flex-shrink-0">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-pulse"></span>
+                  Import Massal Data Backcharge
+                </h3>
+                <p className="text-[10px] text-slate-400 font-bold mt-1">Impor data dalam jumlah banyak secara massal menggunakan template spreadsheet Microsoft Excel yang disediakan.</p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => {
+                  setShowBulkImportModal(false);
+                  setBulkImportList([]);
+                  setBulkImportError(null);
+                }}
+                className="p-1.5 hover:bg-slate-200 text-slate-400 hover:text-slate-600 rounded-xl transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-slate-700">
+              
+              {/* Template Download and Upload Action Card */}
+              <div className="bg-slate-50 border border-slate-100 rounded-3xl p-6 text-center space-y-4 max-w-xl mx-auto my-4 shadow-sm">
+                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto shadow-md shadow-blue-500/10">
+                  <FileText className="w-6 h-6" />
+                </div>
+                
+                <div className="space-y-1.5">
+                  <h4 className="text-sm font-extrabold text-slate-800">
+                    Sistem Import Massal berformat Excel
+                  </h4>
+                  <p className="text-[11px] text-slate-500 font-medium max-w-sm mx-auto leading-relaxed">
+                    Silakan unduh template Excel terlebih dahulu, isi data transaksi sesuai format kolom yang telah ditentukan, lalu unggah kembali filenya di bawah ini.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                  {/* Download Template Button */}
+                  <button
+                    type="button"
+                    onClick={downloadTemplate}
+                    className="w-full sm:w-auto px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-slate-950/5 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4 text-amber-400" />
+                    <span>Unduh Template Excel (.xlsx)</span>
+                  </button>
+
+                  {/* Upload File Button */}
+                  <label className="w-full sm:w-auto px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-500/10 cursor-pointer">
+                    <Upload className="w-4 h-4" />
+                    <span>Unggah File Excel</span>
+                    <input 
+                      type="file" 
+                      accept=".xlsx,.xls" 
+                      onChange={handleBulkFileChange}
+                      className="hidden" 
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Error Parsed State */}
+              {bulkImportError && (
+                <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs rounded-xl font-medium flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{bulkImportError}</span>
+                </div>
+              )}
+
+              {/* Parsed List Preview */}
+              {bulkImportList.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                      <span>Pratinjau Data Hasil Parse</span>
+                      <span className="text-[10px] bg-blue-100 text-blue-700 font-extrabold px-2 py-0.5 rounded-full">
+                        {bulkImportList.length} Baris Data Ditemukan
+                      </span>
+                    </h4>
+                    <button 
+                      type="button"
+                      onClick={() => setBulkImportList([])}
+                      className="text-red-500 hover:text-red-700 text-[10px] font-bold hover:underline"
+                    >
+                      Hapus Semua Data
+                    </button>
+                  </div>
+
+                  {/* Summary Metric Badges */}
+                  <div className="grid grid-cols-3 gap-3 bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                    <div className="text-center">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">Total Baris</div>
+                      <div className="text-base font-extrabold text-slate-800">{bulkImportList.length}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">Valid</div>
+                      <div className="text-base font-extrabold text-emerald-600">
+                        {bulkImportList.filter(item => !item.errors || item.errors.length === 0).length}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">Error</div>
+                      <div className="text-base font-extrabold text-red-600">
+                        {bulkImportList.filter(item => item.errors && item.errors.length > 0).length}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Table View */}
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-[300px] overflow-y-auto bg-white">
+                    <table className="w-full text-left text-[11px] border-collapse">
+                      <thead className="bg-slate-50 text-slate-400 font-black uppercase tracking-wider text-[9px] border-b border-slate-200 sticky top-0 z-10">
+                        <tr>
+                          <th className="p-3 text-center w-12">No</th>
+                          <th className="p-3">Tanggal</th>
+                          <th className="p-3">Kategori</th>
+                          <th className="p-3">Cabang</th>
+                          <th className="p-3">Customer</th>
+                          <th className="p-3">No Polisi</th>
+                          <th className="p-3 text-right">Nilai Backcharge</th>
+                          <th className="p-3 text-center">Status Data</th>
+                          <th className="p-3 text-center w-16">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {bulkImportList.map((item, idx) => {
+                          const isInvalid = item.errors && item.errors.length > 0;
+                          return (
+                            <tr key={idx} className={`${isInvalid ? 'bg-red-50/40 hover:bg-red-50/60' : 'hover:bg-slate-50/50'} transition-all`}>
+                              <td className="p-3 text-center text-slate-400 font-bold">{idx + 1}</td>
+                              <td className="p-3 font-semibold text-slate-800">{item.tanggal}</td>
+                              <td className="p-3">
+                                <span className="bg-slate-100 text-slate-700 font-extrabold text-[9px] px-2 py-0.5 rounded uppercase">
+                                  {item.category}
+                                </span>
+                              </td>
+                              <td className="p-3 font-semibold">{item.branch}</td>
+                              <td className="p-3 font-bold text-slate-800">{item.customer_name || <em className="text-red-400 font-bold">Kosong</em>}</td>
+                              <td className="p-3 font-bold text-slate-600">{item.license_plate}</td>
+                              <td className="p-3 text-right font-extrabold text-blue-700">{formatRupiah(item.value)}</td>
+                              <td className="p-3 text-center">
+                                {isInvalid ? (
+                                  <div className="text-[10px] text-red-600 font-bold flex flex-col items-center">
+                                    {item.errors.map((e: string, i: number) => (
+                                      <span key={i} className="bg-red-100 text-red-700 font-extrabold text-[8px] px-1.5 py-0.5 rounded uppercase my-0.5 whitespace-nowrap">
+                                        {e}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="bg-emerald-100 text-emerald-700 font-extrabold text-[9px] px-2 py-0.5 rounded uppercase">
+                                    Valid
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => removeBulkImportRow(idx)}
+                                  className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
+                                  title="Hapus baris ini"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                </div>
+              )}
+
+            </div>
+
+            {/* Footer */}
+            <div className="p-5 border-t border-slate-100 flex justify-end space-x-2 bg-slate-50 rounded-b-3xl sticky bottom-0 z-10 flex-shrink-0">
+              <button 
+                type="button"
+                onClick={() => {
+                  setShowBulkImportModal(false);
+                  setBulkImportList([]);
+                  setBulkImportError(null);
+                }}
+                className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
+              >
+                Tutup
+              </button>
+              <button 
+                type="button"
+                onClick={executeBulkImport}
+                disabled={isProcessingImport || bulkImportList.length === 0 || bulkImportList.some(item => item.errors && item.errors.length > 0)}
+                className="px-5 py-2.5 text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all flex items-center gap-1.5 shadow-lg shadow-blue-500/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isProcessingImport ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Mengimpor {bulkImportList.length} Data...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Mulai Import Massal ({bulkImportList.length} Baris)</span>
                   </>
                 )}
               </button>

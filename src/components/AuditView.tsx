@@ -55,13 +55,13 @@ export default function AuditView({ logs, profiles = [] }: AuditViewProps) {
             type="text" 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari log ID, pelaku denda, nama, jabatan, cabang, rincian..." 
+            placeholder="Cari log ID, pelaku Backcharge, nama, jabatan, cabang, rincian..." 
             className="w-full text-xs border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           />
         </div>
         <div className="text-[10px] text-slate-400 font-bold bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl flex items-center space-x-1.5 flex-shrink-0">
           <Info className="w-3.5 h-3.5 text-blue-500" />
-          <span>Maksimal 300 aktivitas log denda mutakhir</span>
+          <span>Maksimal 300 aktivitas log Backcharge mutakhir</span>
         </div>
       </div>
 

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Key, Mail, Layers, CheckCircle, Clock, AlertTriangle, BarChart3, 
   Download, FileSpreadsheet, RefreshCw, LogOut, Bell, Shield, Users, Landmark, UserCheck
 } from 'lucide-react';
 
-import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter } from './types';
+import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry } from './types';
 import { supabase, isSupabaseConfigured, mockDb } from './supabaseClient';
 
 import AuthScreen from './components/AuthScreen';
@@ -13,6 +14,7 @@ import DatabaseView from './components/DatabaseView';
 import DetailModal from './components/DetailModal';
 import UserManagement from './components/UserManagement';
 import AuditView from './components/AuditView';
+import FeedbackView from './components/FeedbackView';
 
 // Helper functions to pack and unpack extra fields into/from no_bak text field as fallback for Supabase databases without schema updates
 function packExtraFields(tx: any): string {
@@ -33,6 +35,21 @@ function packExtraFields(tx: any): string {
   if (tx.approved_by) packed += `||APPROVED_BY:${tx.approved_by}`;
   if (tx.approved_at) packed += `||APPROVED_AT:${tx.approved_at}`;
   if (tx.approval_note) packed += `||APPROVAL_NOTE:${tx.approval_note}`;
+  
+  if (tx.approval_attachment_1_url) packed += `||APP_ATT1:${tx.approval_attachment_1_url}`;
+  if (tx.approval_attachment_2_url) packed += `||APP_ATT2:${tx.approval_attachment_2_url}`;
+  if (tx.approval_attachment_3_url) packed += `||APP_ATT3:${tx.approval_attachment_3_url}`;
+
+  if (tx.regional_approval_status) packed += `||REG_STATUS:${tx.regional_approval_status}`;
+  if (tx.regional_approved_by) packed += `||REG_BY:${tx.regional_approved_by}`;
+  if (tx.regional_approved_at) packed += `||REG_AT:${tx.regional_approved_at}`;
+  if (tx.regional_approval_note) packed += `||REG_NOTE:${tx.regional_approval_note}`;
+
+  if (tx.division_approval_status) packed += `||DIV_STATUS:${tx.division_approval_status}`;
+  if (tx.division_approved_by) packed += `||DIV_BY:${tx.division_approved_by}`;
+  if (tx.division_approved_at) packed += `||DIV_AT:${tx.division_approved_at}`;
+  if (tx.division_approval_note) packed += `||DIV_NOTE:${tx.division_approval_note}`;
+
   return packed;
 }
 
@@ -48,6 +65,20 @@ function unpackExtraFields(item: any): any {
   let approved_by = item.approved_by || null;
   let approved_at = item.approved_at || null;
   let approval_note = item.approval_note || null;
+
+  let approval_attachment_1_url = item.approval_attachment_1_url || null;
+  let approval_attachment_2_url = item.approval_attachment_2_url || null;
+  let approval_attachment_3_url = item.approval_attachment_3_url || null;
+
+  let regional_approval_status = item.regional_approval_status || 'Belum Approval';
+  let regional_approved_by = item.regional_approved_by || null;
+  let regional_approved_at = item.regional_approved_at || null;
+  let regional_approval_note = item.regional_approval_note || null;
+
+  let division_approval_status = item.division_approval_status || 'Belum Approval';
+  let division_approved_by = item.division_approved_by || null;
+  let division_approved_at = item.division_approved_at || null;
+  let division_approval_note = item.division_approval_note || null;
 
   if (no_bak && no_bak.includes('||')) {
     const parts = no_bak.split('||');
@@ -74,6 +105,28 @@ function unpackExtraFields(item: any): any {
         approved_at = part.substring(12);
       } else if (part.startsWith('APPROVAL_NOTE:')) {
         approval_note = part.substring(14);
+      } else if (part.startsWith('APP_ATT1:')) {
+        approval_attachment_1_url = part.substring(9);
+      } else if (part.startsWith('APP_ATT2:')) {
+        approval_attachment_2_url = part.substring(9);
+      } else if (part.startsWith('APP_ATT3:')) {
+        approval_attachment_3_url = part.substring(9);
+      } else if (part.startsWith('REG_STATUS:')) {
+        regional_approval_status = part.substring(11);
+      } else if (part.startsWith('REG_BY:')) {
+        regional_approved_by = part.substring(7);
+      } else if (part.startsWith('REG_AT:')) {
+        regional_approved_at = part.substring(7);
+      } else if (part.startsWith('REG_NOTE:')) {
+        regional_approval_note = part.substring(9);
+      } else if (part.startsWith('DIV_STATUS:')) {
+        division_approval_status = part.substring(11);
+      } else if (part.startsWith('DIV_BY:')) {
+        division_approved_by = part.substring(7);
+      } else if (part.startsWith('DIV_AT:')) {
+        division_approved_at = part.substring(7);
+      } else if (part.startsWith('DIV_NOTE:')) {
+        division_approval_note = part.substring(9);
       }
     });
   }
@@ -92,7 +145,18 @@ function unpackExtraFields(item: any): any {
     status_approval,
     approved_by,
     approved_at,
-    approval_note
+    approval_note,
+    approval_attachment_1_url,
+    approval_attachment_2_url,
+    approval_attachment_3_url,
+    regional_approval_status,
+    regional_approved_by,
+    regional_approved_at,
+    regional_approval_note,
+    division_approval_status,
+    division_approved_by,
+    division_approved_at,
+    division_approval_note
   };
 }
 
@@ -121,7 +185,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
           branch: t.branch,
           type: 'UPLOAD_BAK',
           typeLabel: 'Upload BAK',
-          description: `Dokumen Belum Lengkap: Silakan unggah berkas BAK untuk denda ${t.customer_name} (${t.id}).`,
+          description: `Dokumen Belum Lengkap: Silakan unggah berkas BAK untuk Backcharge ${t.customer_name} (${t.id}).`,
           created_at: t.created_at || new Date().toISOString(),
           read: readIds.includes(id)
         });
@@ -138,18 +202,64 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
           branch: t.branch,
           type: 'HANDOVER_PENDING',
           typeLabel: 'Pending Serah Terima',
-          description: `Menunggu Serah Terima: Berkas denda ${t.id} (${t.customer_name}) belum diserahkan ke Admin.`,
+          description: `Menunggu Serah Terima: Berkas Backcharge ${t.id} (${t.customer_name}) belum diserahkan ke Admin.`,
           created_at: t.created_at || new Date().toISOString(),
           read: readIds.includes(id)
         });
       }
     }
+    const val = t.value || 0;
+    const isRegionalHead = user.role ? user.role.startsWith('Regional Head') : false;
+    const isDivisionHead = user.role === 'Division Head';
+    const isMaintenance = t.category === 'Maintenance';
+    const isRegionalHeadReq = isMaintenance 
+      ? (val > 7500000 && val <= 15000000) 
+      : (val > 5000000 && val <= 15000000);
+
+    const tier1Approved = t.status_approval === 'Disetujui';
+    const tier2Approved = !isRegionalHeadReq || t.regional_approval_status === 'Disetujui';
+
+    if ((isRegionalHead || user.role === 'Administrator') && isRegionalHeadReq && tier1Approved && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval')) {
+      const id = `notif-rh-approval-${t.id}`;
+      list.push({
+        id,
+        transaction_id: t.id,
+        customer_name: t.customer_name,
+        category: t.category,
+        branch: t.branch,
+        type: 'APPROVAL_RH',
+        typeLabel: 'Approval Regional Head',
+        description: `Approval Backcharge: Backcharge ${t.category} ${t.id} (${t.customer_name}) membutuhkan persetujuan Regional Head.`,
+        created_at: t.created_at || new Date().toISOString(),
+        read: readIds.includes(id)
+      });
+    }
+
+    if ((isDivisionHead || user.role === 'Administrator') && val > 15000000 && tier1Approved && tier2Approved && (!t.division_approval_status || t.division_approval_status === 'Belum Approval')) {
+      const id = `notif-dh-approval-${t.id}`;
+      list.push({
+        id,
+        transaction_id: t.id,
+        customer_name: t.customer_name,
+        category: t.category,
+        branch: t.branch,
+        type: 'APPROVAL_DH',
+        typeLabel: 'Approval Division Head',
+        description: `Approval Backcharge: Backcharge ${t.category} ${t.id} (${t.customer_name}) membutuhkan persetujuan Division Head.`,
+        created_at: t.created_at || new Date().toISOString(),
+        read: readIds.includes(id)
+      });
+    }
+
 
     // 2. Kepala Cabang Role Tasks
     const isKacab = user.role === 'Kepala Cabang' || (user.role as string) === 'kacab' || user.role === 'Administrator' || isBro;
     if (isKacab) {
       // Task A: Approval for Maintenance & TPL
-      if ((t.category === 'Maintenance' || t.category === 'TPL') && (!t.status_approval || t.status_approval === 'Belum Approval')) {
+      const val = t.value || 0;
+      const isMaintenance = t.category === 'Maintenance';
+      const isTPL = t.category === 'TPL';
+      if ((isMaintenance || isTPL) && (!t.status_approval || t.status_approval === 'Belum Approval')) {
         const id = `notif-kacab-approval-${t.id}`;
         list.push({
           id,
@@ -159,7 +269,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
           branch: t.branch,
           type: 'APPROVAL_KACAB',
           typeLabel: 'Approval Kacab',
-          description: `Approval Backcharge (Kacab): Denda ${t.category} ${t.id} (${t.customer_name}) membutuhkan persetujuan Kepala Cabang.`,
+          description: `Approval Backcharge (Kacab): Backcharge ${t.category} ${t.id} (${t.customer_name}) membutuhkan persetujuan Kepala Cabang.`,
           created_at: t.created_at || new Date().toISOString(),
           read: readIds.includes(id)
         });
@@ -169,8 +279,9 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
     // 3. Sales Head Role Tasks
     const isSH = user.role === 'Sales Head' || (user.role as string) === 'Sales / Sales Head' || user.role === 'Administrator' || isBro;
     if (isSH) {
-      // Task A: Approval for Own Risk, Ekspedisi, ETLE
-      if ((t.category === 'Own Risk' || t.category === 'Ekspedisi' || t.category === 'ETLE') && (!t.status_approval || t.status_approval === 'Belum Approval')) {
+      // Task A: Approval for Own Risk, Ekspedisi, ETLE, etc.
+      const val = t.value || 0;
+      if ((t.category === 'Own Risk' || t.category === 'Ekspedisi' || t.category === 'ETLE' || t.category === 'Unclaimable Insurance' || t.category === 'Dokumen Kendaraan') && (!t.status_approval || t.status_approval === 'Belum Approval')) {
         const id = `notif-sh-approval-${t.id}`;
         list.push({
           id,
@@ -180,7 +291,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
           branch: t.branch,
           type: 'APPROVAL_SH',
           typeLabel: 'Approval Sales Head',
-          description: `Approval Backcharge (Sales Head): Denda ${t.category} ${t.id} (${t.customer_name}) membutuhkan persetujuan Sales Head.`,
+          description: `Approval Backcharge (Sales Head): Backcharge ${t.category} ${t.id} (${t.customer_name}) membutuhkan persetujuan Sales Head.`,
           created_at: t.created_at || new Date().toISOString(),
           read: readIds.includes(id)
         });
@@ -188,7 +299,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
     }
 
     // 4. Admin Role Tasks
-    if (user.role === 'Admin' || user.role === 'Administrator' || isBro) {
+    if (user.role === 'Admin' || user.role === 'Admin Head' || user.role === 'Administrator' || isBro) {
       // Task A: Terima Berkas Fisik yang Diserahkan ASO
       if (t.status_handover === 'Diserahkan ke Admin') {
         const id = `notif-admin-handover-accept-${t.id}`;
@@ -322,7 +433,7 @@ function getNotificationBadge(notif: AppNotification) {
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
-  const [currentTab, setCurrentTab] = useState<'dashboard' | 'database' | 'audit' | 'users'>('dashboard');
+  const [currentTab, setCurrentTab] = useState<'dashboard' | 'database' | 'audit' | 'users' | 'complaints'>('dashboard');
   const [activeAlertFilter, setActiveAlertFilter] = useState<'due' | 'pending' | 'high_value' | ''>('');
   const [activeDashboardFilter, setActiveDashboardFilter] = useState<DashboardFilter | null>(null);
   
@@ -346,6 +457,14 @@ export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>(() => {
     try {
       const cached = localStorage.getItem('backcharge_cache_profs');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [inquiries, setInquiries] = useState<ContactInquiry[]>(() => {
+    try {
+      const cached = localStorage.getItem('bc_contact_inquiries');
       return cached ? JSON.parse(cached) : [];
     } catch {
       return [];
@@ -410,10 +529,10 @@ export default function App() {
         
         // Apply branch filter if not national
         if (currentUser && currentUser.branch !== 'Nasional') {
-          if (currentUser.branch.includes(',')) {
+          if (currentUser.branch && currentUser.branch.includes(',')) {
             const userBranches = currentUser.branch.split(',').map(s => s.trim());
             query = query.in('branch', userBranches);
-          } else {
+          } else if (currentUser.branch) {
             query = query.eq('branch', currentUser.branch);
           }
         }
@@ -445,6 +564,9 @@ export default function App() {
           setProfiles((profsData as Profile[]) || []);
           try { localStorage.setItem('backcharge_cache_profs', JSON.stringify(profsData || [])); } catch {}
         }
+
+        // 4. Fetch contact inquiries
+        setInquiries(mockDb.getContactInquiries());
       } catch (err: any) {
         addToast(`Gagal menyinkronkan data: ${err.message}`, 'error');
       } finally {
@@ -455,14 +577,15 @@ export default function App() {
       setTimeout(() => {
         let bcs = mockDb.getBackcharges();
         if (currentUser && currentUser.branch !== 'Nasional') {
-          const userBranches = currentUser.branch.split(',').map(s => s.trim());
-          bcs = bcs.filter(t => userBranches.includes(t.branch) || t.branch === currentUser.branch);
+          const userBranches = currentUser.branch ? currentUser.branch.split(',').map(s => s.trim()) : [];
+          bcs = bcs.filter(t => userBranches.includes(t.branch) || (currentUser.branch && t.branch === currentUser.branch));
         }
         
         const unpackedData = bcs.map(unpackExtraFields);
         setTransactions(unpackedData as Backcharge[]);
         setLogs(mockDb.getLogs());
         setProfiles(mockDb.getProfiles());
+        setInquiries(mockDb.getContactInquiries());
         setLoading(false);
       }, 300);
     }
@@ -501,7 +624,7 @@ export default function App() {
             // Generate descriptive notifications
             if (payload.eventType === 'INSERT') {
               if (isRelevantBranch) {
-                addToast(`Denda Baru: ${newRecord.id} - ${newRecord.customer_name}`, 'info');
+                addToast(`Backcharge Baru: ${newRecord.id} - ${newRecord.customer_name}`, 'info');
               }
             } else if (payload.eventType === 'UPDATE') {
               if (isRelevantBranch) {
@@ -549,7 +672,7 @@ export default function App() {
     setCurrentUser(null);
     localStorage.removeItem('backcharge_session_profile');
     setShowLogoutConfirm(false);
-    addToast("Berhasil logout dari sistem denda.", "info");
+    addToast("Berhasil logout dari sistem Backcharge.", "info");
   };
 
   // 1. ADD NEW TRANSACTION WORKFLOW
@@ -616,7 +739,11 @@ export default function App() {
         'customer_name', 'license_plate', 'value', 'status_sap', 'status_confirm',
         'status_handover', 'no_invoice', 'status_payment', 'created_by', 'created_at',
         'updated_at', 'file_bak_url', 'file_handover_aso_sales_url',
-        'file_handover_sales_admin_url', 'tanggal', 'tanggal_handover', 'nama_bro', 'upload_dok_pendukung', 'alasan'
+        'file_handover_sales_admin_url', 'tanggal', 'tanggal_handover', 'nama_bro', 'upload_dok_pendukung', 'alasan',
+        'status_approval', 'approved_by', 'approved_at', 'approval_note',
+        'approval_attachment_1_url', 'approval_attachment_2_url', 'approval_attachment_3_url',
+        'regional_approval_status', 'regional_approved_by', 'regional_approved_at', 'regional_approval_note',
+        'division_approval_status', 'division_approved_by', 'division_approved_at', 'division_approval_note'
       ];
       const cleaned: any = {};
       for (const key of DB_COLUMNS) {
@@ -629,8 +756,7 @@ export default function App() {
 
     if (isSupabaseConfigured && supabase) {
       let cleanedInsertObj = cleanSupabasePayload({
-        ...txObj,
-        no_bak: packExtraFields(txObj)
+        ...txObj
       });
       let success = false;
       let retries = 0;
@@ -657,21 +783,142 @@ export default function App() {
       }
 
       if (success) {
-        addToast(`Transaksi denda ${newId} berhasil disimpan!`, 'success');
+        addToast(`Transaksi Backcharge ${newId} berhasil disimpan!`, 'success');
         fetchData();
       } else {
         let errMsg = lastError?.message || '';
         if (errMsg.toLowerCase().includes('schema cache') || errMsg.toLowerCase().includes('could not find')) {
           errMsg += ' (Tips: Silakan jalankan perintah sql `NOTIFY pgrst, \'reload schema\';` di SQL Editor Supabase Anda untuk memuat ulang cache skema Supabase)';
         }
-        addToast(`Server gagal menyimpan denda: ${errMsg}`, 'error');
+        addToast(`Server gagal menyimpan Backcharge: ${errMsg}`, 'error');
         throw lastError;
       }
     } else {
       // Mock Offline insertion
       mockDb.saveBackcharge(txObj, creatorEmail);
       
-      addToast(`Denda denda ${newId} sukses disimpan offline!`, 'success');
+      addToast(`Data Backcharge ${newId} sukses disimpan offline!`, 'success');
+      fetchData();
+    }
+  };
+
+  // 1b. BULK ADD TRANSACTIONS WORKFLOW (ADMIN ONLY)
+  const handleBulkAddTransactions = async (newTxs: Omit<Backcharge, 'id' | 'created_by' | 'created_at' | 'updated_at'>[]) => {
+    if (!currentUser || newTxs.length === 0) return;
+
+    const year = new Date().getFullYear();
+    let allIds: string[] = [];
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.from('backcharges').select('id');
+        if (!error && data) {
+          allIds = data.map((item: any) => item.id);
+        }
+      } catch (e) {
+        console.error("Error fetching all IDs from database:", e);
+      }
+    } else {
+      allIds = mockDb.getBackcharges().map(item => item.id);
+    }
+
+    const currentYearPrefix = `BC-${year}-`;
+    const existingNums = allIds
+      .filter(id => id && id.startsWith(currentYearPrefix))
+      .map(id => {
+        const parts = id.split('-');
+        const numPart = parts[parts.length - 1];
+        const parsed = parseInt(numPart, 10);
+        return isNaN(parsed) ? 0 : parsed;
+      });
+
+    let maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 0;
+    const creatorEmail = currentUser.email;
+
+    const preparedTxs: Backcharge[] = [];
+    const usedIds = new Set(allIds);
+
+    for (const newTx of newTxs) {
+      let nextNum = maxNum + 1;
+      let formatCount = String(nextNum).padStart(4, '0');
+      let newId = `BC-${year}-${formatCount}`;
+
+      while (usedIds.has(newId)) {
+        nextNum++;
+        formatCount = String(nextNum).padStart(4, '0');
+        newId = `BC-${year}-${formatCount}`;
+      }
+
+      usedIds.add(newId);
+      maxNum = nextNum; // update maxNum for next iteration
+
+      const txObj: Backcharge = {
+        ...newTx,
+        id: newId,
+        created_by: creatorEmail,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        nama_bro: newTx.nama_bro || newTx.bro_name || '-',
+        bro_name: newTx.nama_bro || newTx.bro_name || '-',
+        alasan: newTx.alasan || newTx.dok_pendukung_alasan || '-',
+        dok_pendukung_alasan: newTx.alasan || newTx.dok_pendukung_alasan || '-',
+        upload_dok_pendukung: newTx.upload_dok_pendukung || null
+      };
+
+      preparedTxs.push(txObj);
+    }
+
+    const cleanSupabasePayload = (payload: any) => {
+      const DB_COLUMNS = [
+        'id', 'category', 'branch', 'no_bak', 'no_spk', 'no_sap', 'no_tilang',
+        'customer_name', 'license_plate', 'value', 'status_sap', 'status_confirm',
+        'status_handover', 'no_invoice', 'status_payment', 'created_by', 'created_at',
+        'updated_at', 'file_bak_url', 'file_handover_aso_sales_url',
+        'file_handover_sales_admin_url', 'tanggal', 'tanggal_handover', 'nama_bro', 'upload_dok_pendukung', 'alasan',
+        'status_approval', 'approved_by', 'approved_at', 'approval_note',
+        'approval_attachment_1_url', 'approval_attachment_2_url', 'approval_attachment_3_url',
+        'regional_approval_status', 'regional_approved_by', 'regional_approved_at', 'regional_approval_note',
+        'division_approval_status', 'division_approved_by', 'division_approved_at', 'division_approval_note'
+      ];
+      const cleaned: any = {};
+      for (const key of DB_COLUMNS) {
+        if (key in payload) {
+          cleaned[key] = payload[key];
+        }
+      }
+      return cleaned;
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      const cleanedPayloads = preparedTxs.map(tx => cleanSupabasePayload(tx));
+      try {
+        const { error } = await supabase.from('backcharges').insert(cleanedPayloads);
+        if (error) throw error;
+        
+        try {
+          const logPayload = {
+            transaction_id: 'SYSTEM',
+            performed_by: creatorEmail,
+            action_description: `Melakukan import data secara massal sebanyak ${newTxs.length} data Backcharge`,
+            timestamp: new Date().toISOString()
+          };
+          await supabase.from('activity_logs').insert([logPayload]);
+        } catch (logErr) {
+          console.error("Gagal menyimpan log aktivitas bulk:", logErr);
+        }
+
+        addToast(`Berhasil mengimpor ${newTxs.length} data Backcharge secara massal!`, 'success');
+        fetchData();
+      } catch (err: any) {
+        console.error("Bulk insertion failed:", err);
+        addToast(`Gagal melakukan impor massal: ${err.message}`, 'error');
+        throw err;
+      }
+    } else {
+      for (const tx of preparedTxs) {
+        mockDb.saveBackcharge(tx, creatorEmail);
+      }
+      addToast(`Berhasil mengimpor ${newTxs.length} data Backcharge secara offline!`, 'success');
       fetchData();
     }
   };
@@ -695,7 +942,11 @@ export default function App() {
         'customer_name', 'license_plate', 'value', 'status_sap', 'status_confirm',
         'status_handover', 'no_invoice', 'status_payment', 'created_by', 'created_at',
         'updated_at', 'file_bak_url', 'file_handover_aso_sales_url',
-        'file_handover_sales_admin_url', 'tanggal', 'tanggal_handover', 'nama_bro', 'upload_dok_pendukung', 'alasan'
+        'file_handover_sales_admin_url', 'tanggal', 'tanggal_handover', 'nama_bro', 'upload_dok_pendukung', 'alasan',
+        'status_approval', 'approved_by', 'approved_at', 'approval_note',
+        'approval_attachment_1_url', 'approval_attachment_2_url', 'approval_attachment_3_url',
+        'regional_approval_status', 'regional_approved_by', 'regional_approved_at', 'regional_approval_note',
+        'division_approval_status', 'division_approved_by', 'division_approved_at', 'division_approval_note'
       ];
       const cleaned: any = {};
       for (const key of DB_COLUMNS) {
@@ -709,7 +960,6 @@ export default function App() {
     if (isSupabaseConfigured && supabase) {
       let cleanedUpdateObj = cleanSupabasePayload({
         ...updates,
-        no_bak: packExtraFields(updatedTx),
         updated_at: new Date().toISOString()
       });
       let success = false;
@@ -792,15 +1042,15 @@ export default function App() {
 
         if (error) throw error;
 
-        addToast(`Denda ${id} berhasil dihapus permanen!`, 'success');
+        addToast(`Backcharge ${id} berhasil dihapus permanen!`, 'success');
         fetchData();
       } catch (err: any) {
-        addToast(`Server gagal menghapus denda: ${err.message}`, 'error');
+        addToast(`Server gagal menghapus Backcharge: ${err.message}`, 'error');
       }
     } else {
       mockDb.deleteBackcharge(id);
       setTransactions(prev => prev.filter(t => t.id !== id));
-      addToast(`Denda ${id} berhasil dihapus offline!`, 'success');
+      addToast(`Backcharge ${id} berhasil dihapus offline!`, 'success');
     }
   };
 
@@ -945,6 +1195,28 @@ export default function App() {
     }
   };
 
+  // 6. CONTACT & FEEDBACK INQUIRIES WORKFLOW
+  const handleAddInquiry = (newInquiry: ContactInquiry) => {
+    mockDb.saveContactInquiry(newInquiry);
+    mockDb.addLog(newInquiry.id, currentUser?.email || 'Guest / Customer', `Mengirim keluhan / masukan baru dengan subjek "${newInquiry.subject}"`);
+    setInquiries(mockDb.getContactInquiries());
+    setLogs(mockDb.getLogs());
+  };
+
+  const handleUpdateInquiry = (updatedInquiry: ContactInquiry) => {
+    mockDb.saveContactInquiry(updatedInquiry);
+    mockDb.addLog(updatedInquiry.id, currentUser?.email || 'System / Tim Terkait', `Memberikan tanggapan feedback pada inquiry ${updatedInquiry.id}`);
+    setInquiries(mockDb.getContactInquiries());
+    setLogs(mockDb.getLogs());
+  };
+
+  const handleDeleteInquiry = (id: string) => {
+    mockDb.deleteContactInquiry(id);
+    mockDb.addLog(id, currentUser?.email || 'System / Tim Terkait', `Menghapus data laporan/inquiry ${id}`);
+    setInquiries(mockDb.getContactInquiries());
+    setLogs(mockDb.getLogs());
+  };
+
   const handleNotificationClick = (notif: AppNotification) => {
     setReadNotifIds(prev => {
       const updated = [...prev, notif.id];
@@ -965,10 +1237,11 @@ export default function App() {
 
   // Header texts
   const tabHeaders = {
-    dashboard: { title: 'Dashboard', subtitle: 'Memantau status dan performa denda secara real-time.' },
-    database: { title: 'Data Backcharge', subtitle: 'Pencatatan transaksi, tracking progres denda, dan audit berkas.' },
+    dashboard: { title: 'Dashboard', subtitle: 'Memantau status dan performa Backcharge secara real-time.' },
+    database: { title: 'Data Backcharge', subtitle: 'Pencatatan transaksi, tracking progres Backcharge, dan audit berkas.' },
     audit: { title: 'Audit Trail Aktivitas', subtitle: 'Mutasi log penyerahan berkas fisik secara transparan seluruh cabang.' },
-    users: { title: 'Manajemen Staf & Pengguna', subtitle: 'Hak akses otoritas dan wilayah denda nasional.' }
+    users: { title: 'Manajemen Staf & Pengguna', subtitle: 'Hak akses otoritas dan wilayah Backcharge nasional.' },
+    complaints: { title: 'Hub Keluhan & Masukan', subtitle: 'Penyampaian aspirasi, keluhan atau masukan serta monitoring tindak lanjut feedback.' }
   };
 
   return (
@@ -1001,13 +1274,17 @@ export default function App() {
           sidebarHover ? 'w-64' : 'w-20'
         }`}
       >
-        <div className="p-4 group-hover:p-6 border-b border-slate-800 flex items-center justify-center overflow-hidden h-16 flex-shrink-0">
+        <div className="p-4 border-b border-slate-800 flex items-center justify-center overflow-hidden h-16 flex-shrink-0">
           <div className="flex items-center space-x-3 w-full justify-start pl-1">
-            <div className="p-1.5 bg-blue-600 text-white rounded-lg shadow-md flex-shrink-0">
-              <Shield className="w-5 h-5 animate-pulse" />
+            <div className="bg-white p-1 rounded-xl flex-shrink-0 w-9 h-9 flex items-center justify-center shadow-md">
+              <img 
+                src="https://lh3.googleusercontent.com/d/1YdVze2aNGvUIe5J1Ig2_J0MUPGrs2U_q" 
+                alt="ASSA" 
+                className="w-7 h-7 object-contain"
+              />
             </div>
             <div className={`transition-all duration-300 ${sidebarHover ? 'opacity-100 max-w-xs' : 'opacity-0 max-w-0 overflow-hidden'}`}>
-              <h1 className="text-sm font-extrabold text-white leading-none truncate">BC Nasional</h1>
+              <h1 className="text-sm font-extrabold text-white leading-none truncate">Backcharge Nasional</h1>
               <p className="text-[9px] text-slate-500 font-extrabold tracking-wide mt-0.5 uppercase">Workflow system</p>
             </div>
           </div>
@@ -1047,6 +1324,16 @@ export default function App() {
           >
             <Layers className="w-5 h-5 flex-shrink-0" />
             <span className={`transition-all duration-200 ${sidebarHover ? 'opacity-100' : 'opacity-0 hidden'}`}>Data Backcharge</span>
+          </button>
+
+          <button 
+            onClick={() => setCurrentTab('complaints')} 
+            className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl text-xs font-bold transition-all justify-start ${
+              currentTab === 'complaints' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white text-slate-400'
+            }`}
+          >
+            <Mail className="w-5 h-5 flex-shrink-0" />
+            <span className={`transition-all duration-200 ${sidebarHover ? 'opacity-100' : 'opacity-0 hidden'}`}>Keluhan & Masukan</span>
           </button>
 
           {/* ADMIN ONLY TABS */}
@@ -1091,7 +1378,7 @@ export default function App() {
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 text-slate-400 shadow-2xl flex justify-around py-3 z-40">
         <button 
           onClick={() => setCurrentTab('dashboard')} 
-          className={`flex flex-col items-center space-y-1 text-[10px] font-bold w-1/4 transition-colors ${
+          className={`flex flex-col items-center space-y-1 text-[10px] font-bold flex-1 transition-colors ${
             currentTab === 'dashboard' ? 'text-blue-500' : 'text-slate-400'
           }`}
         >
@@ -1100,19 +1387,28 @@ export default function App() {
         </button>
         <button 
           onClick={() => setCurrentTab('database')} 
-          className={`flex flex-col items-center space-y-1 text-[10px] font-bold w-1/4 transition-colors ${
+          className={`flex flex-col items-center space-y-1 text-[10px] font-bold flex-1 transition-colors ${
             currentTab === 'database' ? 'text-blue-500' : 'text-slate-400'
           }`}
         >
           <Layers className="w-5 h-5" />
           <span>Database</span>
         </button>
+        <button 
+          onClick={() => setCurrentTab('complaints')} 
+          className={`flex flex-col items-center space-y-1 text-[10px] font-bold flex-1 transition-colors ${
+            currentTab === 'complaints' ? 'text-blue-500' : 'text-slate-400'
+          }`}
+        >
+          <Mail className="w-5 h-5" />
+          <span>Keluhan</span>
+        </button>
         
         {currentUser.role === 'Administrator' && (
           <>
             <button 
               onClick={() => setCurrentTab('audit')} 
-              className={`flex flex-col items-center space-y-1 text-[10px] font-bold w-1/4 transition-colors ${
+              className={`flex flex-col items-center space-y-1 text-[10px] font-bold flex-1 transition-colors ${
                 currentTab === 'audit' ? 'text-blue-500' : 'text-slate-400'
               }`}
             >
@@ -1121,7 +1417,7 @@ export default function App() {
             </button>
             <button 
               onClick={() => setCurrentTab('users')} 
-              className={`flex flex-col items-center space-y-1 text-[10px] font-bold w-1/4 transition-colors ${
+              className={`flex flex-col items-center space-y-1 text-[10px] font-bold flex-1 transition-colors ${
                 currentTab === 'users' ? 'text-blue-500' : 'text-slate-400'
               }`}
             >
@@ -1138,8 +1434,12 @@ export default function App() {
         {/* Top Header status bar */}
         <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-4 flex items-center justify-between sticky top-0 z-30 shadow-sm flex-shrink-0">
           <div className="flex items-center space-x-3">
-            <div className="p-1.5 bg-blue-600 text-white rounded-lg shadow-sm md:hidden">
-              <Shield className="w-5 h-5" />
+            <div className="bg-white p-1 rounded-lg shadow-sm md:hidden w-8 h-8 flex items-center justify-center border border-slate-200">
+              <img 
+                src="https://lh3.googleusercontent.com/d/1YdVze2aNGvUIe5J1Ig2_J0MUPGrs2U_q" 
+                alt="ASSA" 
+                className="w-6 h-6 object-contain"
+              />
             </div>
             <div>
               <h2 className="text-sm md:text-lg font-extrabold text-slate-900 leading-none">
@@ -1171,9 +1471,26 @@ export default function App() {
                 title="Antrean Tugas"
               >
                 <Bell className="w-4 h-4" />
-                {notifications.some(n => !n.read) && (
-                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
-                )}
+                <AnimatePresence>
+                  {notifications.some(n => !n.read) && (
+                    <motion.div 
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: [1, 1.5, 1], opacity: 1 }}
+                      transition={{ 
+                        duration: 0.5, 
+                        repeat: Infinity,
+                        repeatType: "reverse",
+                        repeatDelay: 1.5
+                      }}
+                      className="absolute top-1 right-1"
+                    >
+                      <span className="flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                      </span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </button>
 
               {/* Notification Dropdown Box */}
@@ -1277,6 +1594,7 @@ export default function App() {
               currentUser={currentUser}
               isLoading={loading}
               onAddTransaction={handleAddTransaction}
+              onBulkAddTransactions={handleBulkAddTransactions}
               onSelectTransaction={setSelectedTransactionId}
               onDeleteTransaction={handleDeleteTransaction}
               onUpdateTransaction={handleUpdateTransaction}
@@ -1287,6 +1605,7 @@ export default function App() {
               }}
               activeDashboardFilter={activeDashboardFilter}
               onClearDashboardFilter={() => setActiveDashboardFilter(null)}
+              addToast={addToast}
             />
           )}
 
@@ -1301,6 +1620,17 @@ export default function App() {
               onAddUser={handleAddUser}
               onUpdateUser={handleUpdateUser}
               onDeleteUser={handleDeleteUser}
+            />
+          )}
+
+          {currentTab === 'complaints' && (
+            <FeedbackView 
+              inquiries={inquiries}
+              currentUser={currentUser}
+              onAddInquiry={handleAddInquiry}
+              onUpdateInquiry={handleUpdateInquiry}
+              onDeleteInquiry={handleDeleteInquiry}
+              addToast={addToast}
             />
           )}
         </main>

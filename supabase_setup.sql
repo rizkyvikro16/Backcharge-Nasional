@@ -49,7 +49,14 @@ CREATE TABLE IF NOT EXISTS public.backcharges (
     updated_at timestamp with time zone DEFAULT now(),
     file_bak_url text,
     file_handover_aso_sales_url text,
-    file_handover_sales_admin_url text
+    file_handover_sales_admin_url text,
+    status_approval text,
+    approved_by text,
+    approved_at text,
+    approval_note text,
+    approval_attachment_1_url text,
+    approval_attachment_2_url text,
+    approval_attachment_3_url text
 );
 
 -- 3. PEMBUATAN TABEL ACTIVITY LOGS (LOG AKTIVITAS SISTEM)

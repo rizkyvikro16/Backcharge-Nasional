@@ -28,7 +28,8 @@ export type UserRole =
   | 'Regional Head'
   | 'Regional Head West' 
   | 'Regional Head Central' 
-  | 'Regional Head East';
+  | 'Regional Head East'
+  | 'Admin Head';
 
 export const REGIONAL_HEAD_ROLES: UserRole[] = [
   'Regional Head West',
@@ -51,7 +52,7 @@ export interface Profile {
   password?: string;
 }
 
-export type BackchargeCategory = 'Own Risk' | 'Maintenance' | 'Ekspedisi' | 'ETLE' | 'TPL';
+export type BackchargeCategory = 'Own Risk' | 'Maintenance' | 'Ekspedisi' | 'ETLE' | 'TPL' | 'Unclaimable Insurance' | 'Dokumen Kendaraan';
 
 export interface Backcharge {
   id: string; // BC-2026-0001
@@ -71,8 +72,22 @@ export interface Backcharge {
   approved_by?: string | null;
   approved_at?: string | null;
   approval_note?: string | null;
+  approval_attachment_1_url?: string | null;
+  approval_attachment_2_url?: string | null;
+  approval_attachment_3_url?: string | null;
+
+  regional_approval_status?: string;
+  regional_approved_by?: string | null;
+  regional_approved_at?: string | null;
+  regional_approval_note?: string | null;
+
+  division_approval_status?: string;
+  division_approved_by?: string | null;
+  division_approved_at?: string | null;
+  division_approval_note?: string | null;
   no_invoice: string;
   status_payment: string; // 'Belum Bayar' | 'Lunas'
+  payment_date?: string | null;
   created_by: string; // Email of creator
   created_at: string;
   updated_at: string;
@@ -119,4 +134,18 @@ export interface DashboardFilter {
   statusConfirm?: string;
   alert?: 'due' | 'pending' | 'high_value' | '';
 }
+
+export interface ContactInquiry {
+  id: string;
+  full_name: string;
+  email: string;
+  subject: string;
+  message: string;
+  status: 'Unread' | 'Replied' | 'Under Review';
+  created_at: string;
+  feedback?: string;
+  feedback_by?: string;
+  feedback_at?: string;
+}
+
 

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Backcharge, ActivityLog, Profile } from './types';
+import { Backcharge, ActivityLog, Profile, ContactInquiry } from './types';
 
 // Read Supabase environment variables from import.meta.env
 const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL || '';
@@ -172,10 +172,33 @@ if (!localStorage.getItem('bc_activity_logs')) {
   localStorage.setItem('bc_activity_logs', JSON.stringify(initialLogs));
 }
 
+if (!localStorage.getItem('bc_contact_inquiries')) {
+  localStorage.setItem('bc_contact_inquiries', JSON.stringify([]));
+} else {
+  // Clean up any existing instances of CI-2026-0001 or CI-2026-0002 from existing local storage
+  try {
+    const existing = JSON.parse(localStorage.getItem('bc_contact_inquiries') || '[]');
+    if (Array.isArray(existing)) {
+      const filtered = existing.filter((item: any) => item.id !== 'CI-2026-0001' && item.id !== 'CI-2026-0002');
+      localStorage.setItem('bc_contact_inquiries', JSON.stringify(filtered));
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
 // Helper mock functions
 export const mockDb = {
   getProfiles: (): Profile[] => {
-    return JSON.parse(localStorage.getItem('bc_profiles') || '[]');
+    try {
+      const data = localStorage.getItem('bc_profiles');
+      if (!data) return INITIAL_PROFILES;
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : INITIAL_PROFILES;
+    } catch (e) {
+      console.error("Corrupted Profiles in LocalStorage:", e);
+      return INITIAL_PROFILES;
+    }
   },
   
   saveProfile: (p: Profile) => {
@@ -202,7 +225,15 @@ export const mockDb = {
   },
 
   getBackcharges: (): Backcharge[] => {
-    return JSON.parse(localStorage.getItem('bc_backcharges') || '[]');
+    try {
+      const data = localStorage.getItem('bc_backcharges');
+      if (!data) return [];
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.error("Corrupted Backcharges in LocalStorage:", e);
+      return [];
+    }
   },
 
   saveBackcharge: (b: Backcharge, performedByEmail: string) => {
@@ -252,7 +283,15 @@ export const mockDb = {
   },
 
   getLogs: (): ActivityLog[] => {
-    return JSON.parse(localStorage.getItem('bc_activity_logs') || '[]');
+    try {
+      const data = localStorage.getItem('bc_activity_logs');
+      if (!data) return [];
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.error("Corrupted Activity Logs in LocalStorage:", e);
+      return [];
+    }
   },
 
   addLog: (transactionId: string, performedBy: string, description: string) => {
@@ -266,5 +305,34 @@ export const mockDb = {
     };
     logs.unshift(newLog);
     localStorage.setItem('bc_activity_logs', JSON.stringify(logs));
+  },
+
+  getContactInquiries: (): ContactInquiry[] => {
+    try {
+      const data = localStorage.getItem('bc_contact_inquiries');
+      if (!data) return [];
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.error("Corrupted Contact Inquiries in LocalStorage:", e);
+      return [];
+    }
+  },
+
+  saveContactInquiry: (ci: ContactInquiry) => {
+    const inquiries = mockDb.getContactInquiries();
+    const idx = inquiries.findIndex(item => item.id === ci.id);
+    if (idx !== -1) {
+      inquiries[idx] = { ...ci };
+    } else {
+      inquiries.unshift(ci);
+    }
+    localStorage.setItem('bc_contact_inquiries', JSON.stringify(inquiries));
+  },
+
+  deleteContactInquiry: (id: string) => {
+    const inquiries = mockDb.getContactInquiries();
+    const filtered = inquiries.filter(item => item.id !== id);
+    localStorage.setItem('bc_contact_inquiries', JSON.stringify(filtered));
   }
 };

@@ -85,6 +85,13 @@ export const checkServiceAccountStatus = async (): Promise<boolean> => {
   try {
     const response = await fetch('/api/health');
     if (!response.ok) return false;
+    
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      console.warn('Respons status akun layanan bukan JSON:', contentType);
+      return false;
+    }
+    
     const data = await response.json();
     return !!data.serviceAccountConnected;
   } catch (err) {
