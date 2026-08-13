@@ -39,9 +39,9 @@ export default function FeedbackView({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Contact & Professional Inquiries Editable Data
-  const [contactEmail, setContactEmail] = useState(() => localStorage.getItem('bc_contact_email') || '2908.riko@gmail.com');
-  const [contactPhone, setContactPhone] = useState(() => localStorage.getItem('bc_contact_phone') || '+62 88214445164');
-  const [contactLocation, setContactLocation] = useState(() => localStorage.getItem('bc_contact_location') || 'Jakarta, Indonesia');
+  const [contactEmail, setContactEmail] = useState(() => localStorage.getItem('bc_contact_email') || 'risky.irianto@assarent.co.id');
+  const [contactPhone, setContactPhone] = useState(() => localStorage.getItem('bc_contact_phone') || '+62 87736074712');
+  const [contactLocation, setContactLocation] = useState(() => localStorage.getItem('bc_contact_location') || 'Head Office');
   const [isEditingContact, setIsEditingContact] = useState(false);
   const [editEmail, setEditEmail] = useState(contactEmail);
   const [editPhone, setEditPhone] = useState(contactPhone);
