@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Key, Mail } from 'lucide-react';
-import { Profile } from '../types';
+import { Key, Mail, User, MapPin, UserCheck, Eye, EyeOff } from 'lucide-react';
+import { Profile, UserRole, BRANCH_LIST } from '../types';
 import { supabase, isSupabaseConfigured, mockDb } from '../supabaseClient';
 
 interface AuthScreenProps {
@@ -8,15 +8,41 @@ interface AuthScreenProps {
 }
 
 export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
+  // Navigation State
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+
+  // Login Form States
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // Register Form States
+  const [regFullName, setRegFullName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regRole, setRegRole] = useState<UserRole>('ASO / Staff');
+  const [regBranch, setRegBranch] = useState('Jakarta');
+  const [regPassword, setRegPassword] = useState('');
+
+  // UI Utilities
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+
+  // Available roles requested for self-registration form
+  const availableRoles: { value: UserRole; label: string }[] = [
+    { value: 'ASO / Staff', label: 'ASO / Staff' },
+    { value: 'Admin', label: 'Admin' },
+    { value: 'BRO', label: 'BRO' },
+    { value: 'Sales Head', label: 'Sales Head' },
+    { value: 'Admin Head', label: 'Admin Head' },
+    { value: 'Kepala Cabang', label: 'Kepala Cabang' },
+  ];
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     setLoading(true);
 
     const emailTrim = email.trim().toLowerCase();
@@ -106,6 +132,112 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
     }
   };
 
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    setLoading(true);
+
+    const emailTrim = regEmail.trim().toLowerCase();
+    const fullNameTrim = regFullName.trim();
+    const passwordTrim = regPassword.trim();
+
+    // 1. Validation
+    if (!fullNameTrim) {
+      setError('Nama Lengkap wajib diisi!');
+      setLoading(false);
+      return;
+    }
+    if (!emailTrim) {
+      setError('Email Perusahaan wajib diisi!');
+      setLoading(false);
+      return;
+    }
+    if (!emailTrim.includes('@')) {
+      setError('Format email tidak valid! Harap masukkan email yang benar.');
+      setLoading(false);
+      return;
+    }
+    if (!passwordTrim) {
+      setError('Password wajib diisi!');
+      setLoading(false);
+      return;
+    }
+    if (passwordTrim.length < 6) {
+      setError('Password minimal harus berisi 6 karakter demi keamanan akun.');
+      setLoading(false);
+      return;
+    }
+
+    const newProfile: Profile = {
+      id: 'USR-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+      email: emailTrim,
+      full_name: fullNameTrim,
+      role: regRole,
+      branch: regBranch,
+      password: passwordTrim,
+      created_at: new Date().toISOString()
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        // Insert into backend profiles table
+        const { error: dbError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              id: newProfile.id,
+              email: newProfile.email,
+              full_name: newProfile.full_name,
+              role: newProfile.role,
+              branch: newProfile.branch,
+              password: newProfile.password,
+              created_at: newProfile.created_at
+            }
+          ]);
+
+        if (dbError) {
+          throw new Error('Email sudah terdaftar atau gagal menyimpan profil: ' + dbError.message);
+        }
+
+        // Keep local storage synchronized
+        mockDb.saveProfile(newProfile);
+
+        setSuccess(`Registrasi akun untuk "${fullNameTrim}" berhasil! Silakan masuk di tab Masuk.`);
+        setEmail(emailTrim);
+        setPassword(passwordTrim);
+        setRegFullName('');
+        setRegEmail('');
+        setRegPassword('');
+        setActiveTab('login');
+      } catch (err: any) {
+        setError(err.message || 'Gagal mendaftarkan akun baru.');
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // Local storage offline registration
+      setTimeout(() => {
+        const profiles = mockDb.getProfiles();
+        const exists = profiles.find(p => p.email.toLowerCase() === emailTrim);
+        if (exists) {
+          setError('Email ini sudah terdaftar di dalam sistem!');
+          setLoading(false);
+          return;
+        }
+
+        mockDb.saveProfile(newProfile);
+        setSuccess(`Registrasi berhasil! Akun "${fullNameTrim}" siap digunakan. Silakan masuk.`);
+        setEmail(emailTrim);
+        setPassword(passwordTrim);
+        setRegFullName('');
+        setRegEmail('');
+        setRegPassword('');
+        setActiveTab('login');
+        setLoading(false);
+      }, 600);
+    }
+  };
 
   return (
     <div 
@@ -120,84 +252,247 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
       <div className="absolute top-0 left-0 w-96 h-96 bg-blue-600/20 rounded-full blur-[128px] pointer-events-none"></div>
       <div className="absolute bottom-0 right-0 w-96 h-96 bg-emerald-600/10 rounded-full blur-[128px] pointer-events-none"></div>
 
-      <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-2xl z-10 relative">
-        <div className="text-center mb-8">
-          <div className="mb-6 flex justify-center">
+      <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-2xl z-10 relative transition-all duration-300">
+        <div className="text-center mb-6">
+          <div className="mb-4 flex justify-center">
             <img 
               src="https://lh3.googleusercontent.com/d/1YdVze2aNGvUIe5J1Ig2_J0MUPGrs2U_q" 
               alt="ASSA Logo" 
               loading="lazy"
               decoding="async"
-              className="h-16 object-contain"
+              className="h-14 object-contain"
             />
           </div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Login Sistem Backcharge</h2>
-          <p className="text-xs text-slate-500 mt-1 font-medium">PT ADI SARANA ARMADA TBK</p>
+          <h2 className="text-xl font-black text-slate-900 tracking-tight">Sistem Backcharge Nasional</h2>
+          <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase tracking-wider">PT ADI SARANA ARMADA TBK</p>
+        </div>
+
+        {/* Tab Switcher */}
+        <div className="flex p-1 bg-slate-100 rounded-2xl mb-6 border border-slate-200">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('login');
+              setError(null);
+            }}
+            className={`flex-1 text-center py-2.5 text-xs font-extrabold rounded-xl transition-all ${
+              activeTab === 'login'
+                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            Masuk Aplikasi
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('register');
+              setError(null);
+            }}
+            className={`flex-1 text-center py-2.5 text-xs font-extrabold rounded-xl transition-all ${
+              activeTab === 'register'
+                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            Daftar Akun Baru
+          </button>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl font-medium">
-            ⚠️ {error}
+          <div className="mb-4 p-3 bg-red-50 border border-red-100 text-red-600 text-xs rounded-xl font-medium animate-pulse flex items-start gap-2">
+            <span className="flex-shrink-0">⚠️</span>
+            <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1 tracking-wider">Email Perusahaan</label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                <Mail className="w-4 h-4" />
-              </span>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@company.id"
-                className="w-full text-xs text-slate-900 border border-slate-200 rounded-xl pl-9 pr-4 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-medium"
-              />
-            </div>
+        {success && (
+          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs rounded-xl font-semibold flex items-start gap-2">
+            <span className="flex-shrink-0">✨</span>
+            <span>{success}</span>
           </div>
+        )}
 
-          <div>
-            <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1 tracking-wider">Password</label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                <Key className="w-4 h-4" />
-              </span>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full text-xs text-slate-900 border border-slate-200 rounded-xl pl-9 pr-4 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-medium"
-              />
+        {/* TAB 1: LOGIN FORM */}
+        {activeTab === 'login' && (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Email Perusahaan</label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <Mail className="w-4 h-4" />
+                </span>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="nama@company.id"
+                  className="w-full text-xs text-slate-900 border border-slate-200 rounded-xl pl-9 pr-4 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-semibold"
+                />
+              </div>
             </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-slate-900 hover:bg-black disabled:opacity-50 text-white text-xs font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center space-x-2"
-          >
-            <span>{loading ? 'Menghubungkan...' : 'Masuk Aplikasi'}</span>
-          </button>
-          
-          <button
-            type="button"
-            onClick={() => setShowForgotPasswordModal(true)}
-            className="w-full text-center text-[10px] font-bold text-slate-500 hover:text-slate-900 transition-colors pt-2"
-          >
-            Lupa Password?
-          </button>
-        </form>
+            <div>
+              <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Password</label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <Key className="w-4 h-4" />
+                </span>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full text-xs text-slate-900 border border-slate-200 rounded-xl pl-9 pr-10 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-semibold"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-slate-950 hover:bg-black disabled:opacity-50 text-white text-xs font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center space-x-2"
+            >
+              <span>{loading ? 'Menghubungkan...' : 'Masuk Aplikasi'}</span>
+            </button>
+            
+            <button
+              type="button"
+              onClick={() => setShowForgotPasswordModal(true)}
+              className="w-full text-center text-[10px] font-extrabold text-slate-400 hover:text-slate-900 transition-colors pt-1"
+            >
+              Lupa Password?
+            </button>
+          </form>
+        )}
+
+        {/* TAB 2: REGISTER FORM */}
+        {activeTab === 'register' && (
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div>
+              <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Nama Lengkap</label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <User className="w-4 h-4" />
+                </span>
+                <input
+                  type="text"
+                  required
+                  value={regFullName}
+                  onChange={(e) => setRegFullName(e.target.value)}
+                  placeholder="Nama Lengkap Karyawan"
+                  className="w-full text-xs text-slate-900 border border-slate-200 rounded-xl pl-9 pr-4 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-semibold"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Email Perusahaan</label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <Mail className="w-4 h-4" />
+                </span>
+                <input
+                  type="email"
+                  required
+                  value={regEmail}
+                  onChange={(e) => setRegEmail(e.target.value)}
+                  placeholder="nama.karyawan@assarent.co.id"
+                  className="w-full text-xs text-slate-900 border border-slate-200 rounded-xl pl-9 pr-4 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-semibold"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Role Otoritas</label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400 pointer-events-none">
+                    <UserCheck className="w-3.5 h-3.5" />
+                  </span>
+                  <select
+                    value={regRole}
+                    onChange={(e) => setRegRole(e.target.value as UserRole)}
+                    className="w-full text-[11px] text-slate-900 border border-slate-200 rounded-xl pl-8 pr-2 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-bold appearance-none cursor-pointer"
+                  >
+                    {availableRoles.map((role) => (
+                      <option key={role.value} value={role.value}>
+                        {role.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Cabang Kantor</label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400 pointer-events-none">
+                    <MapPin className="w-3.5 h-3.5" />
+                  </span>
+                  <select
+                    value={regBranch}
+                    onChange={(e) => setRegBranch(e.target.value)}
+                    className="w-full text-[11px] text-slate-900 border border-slate-200 rounded-xl pl-8 pr-2 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-bold appearance-none cursor-pointer"
+                  >
+                    {BRANCH_LIST.map((branch) => (
+                      <option key={branch} value={branch}>
+                        {branch}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Password Baru</label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <Key className="w-4 h-4" />
+                </span>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={regPassword}
+                  onChange={(e) => setRegPassword(e.target.value)}
+                  placeholder="Pilih password kuat"
+                  className="w-full text-xs text-slate-900 border border-slate-200 rounded-xl pl-9 pr-10 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-semibold"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-slate-950 hover:bg-black disabled:opacity-50 text-white text-xs font-bold py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center space-x-2"
+            >
+              <span>{loading ? 'Mendaftarkan Akun...' : 'Daftar Akun Baru'}</span>
+            </button>
+          </form>
+        )}
       </div>
 
       {/* Forgot Password Modal */}
       {showForgotPasswordModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-200">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold text-slate-900 mb-2">Lupa Password?</h3>
             <p className="text-xs text-slate-600 mb-6 leading-relaxed">
               Hubungi Administrator untuk mereset password.<br/><br/>
@@ -215,3 +510,4 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
     </div>
   );
 }
+
