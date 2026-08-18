@@ -459,8 +459,8 @@ export default function FeedbackView({
 
       </div>
 
-      {/* SECTION 2: INBOUND CONTACT INQUIRIES LIST (WITH FEEDBACK MODULE) - ONLY FOR ADMINISTRATOR */}
-      {currentUser?.role === 'Administrator' && (
+      {/* SECTION 2: INBOUND CONTACT INQUIRIES LIST (WITH FEEDBACK MODULE) - VISIBLE TO ALL ROLES */}
+      {currentUser && (
         <div className="border border-slate-200 rounded-3xl bg-white overflow-hidden shadow-sm">
           
           {/* Section Header */}

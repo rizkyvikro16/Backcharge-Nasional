@@ -565,8 +565,18 @@ export default function App() {
           try { localStorage.setItem('backcharge_cache_profs', JSON.stringify(profsData || [])); } catch {}
         }
 
-        // 4. Fetch contact inquiries
-        setInquiries(mockDb.getContactInquiries());
+        // 4. Fetch contact inquiries (with graceful fallback to mock database if not created yet)
+        try {
+          const { data: ciData, error: ciError } = await supabase
+            .from('contact_inquiries')
+            .select('*')
+            .order('created_at', { ascending: false });
+          if (ciError) throw ciError;
+          setInquiries((ciData as ContactInquiry[]) || []);
+        } catch (ciErr) {
+          console.warn("Could not fetch contact inquiries from Supabase. Using local storage fallback.", ciErr);
+          setInquiries(mockDb.getContactInquiries());
+        }
       } catch (err: any) {
         addToast(`Gagal menyinkronkan data: ${err.message}`, 'error');
       } finally {
@@ -1074,11 +1084,15 @@ export default function App() {
         if (error) throw error;
         
         // Log explicitly
-        await supabase.from('activity_logs').insert([{
-          transaction_id: 'SYSTEM',
-          performed_by: currentUser.email,
-          action_description: `Menambahkan staf pengguna baru: ${fullName} (${email}) - ${role}`
-        }]);
+        try {
+          await supabase.from('activity_logs').insert([{
+            transaction_id: 'SYSTEM',
+            performed_by: currentUser.email,
+            action_description: `Menambahkan staf pengguna baru: ${fullName} (${email}) - ${role}`
+          }]);
+        } catch (logErr) {
+          console.warn("Could not insert activity log due to database permission restriction", logErr);
+        }
 
         addToast(`Staf ${fullName} sukses didaftarkan!`, 'success');
         fetchData();
@@ -1196,25 +1210,120 @@ export default function App() {
   };
 
   // 6. CONTACT & FEEDBACK INQUIRIES WORKFLOW
-  const handleAddInquiry = (newInquiry: ContactInquiry) => {
-    mockDb.saveContactInquiry(newInquiry);
-    mockDb.addLog(newInquiry.id, currentUser?.email || 'Guest / Customer', `Mengirim keluhan / masukan baru dengan subjek "${newInquiry.subject}"`);
-    setInquiries(mockDb.getContactInquiries());
-    setLogs(mockDb.getLogs());
+  const handleAddInquiry = async (newInquiry: ContactInquiry) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.from('contact_inquiries').insert([newInquiry]);
+        if (error) throw error;
+        
+        // Log explicitly on Supabase (safely wrapped in try-catch so it won't block the main insert)
+        try {
+          await supabase.from('activity_logs').insert([{
+            transaction_id: newInquiry.id,
+            performed_by: currentUser?.email || 'Guest / Customer',
+            action_description: `Mengirim keluhan / masukan baru dengan subjek "${newInquiry.subject}"`
+          }]);
+        } catch (logErr) {
+          console.warn("Could not insert activity log due to database permission restriction", logErr);
+        }
+
+        addToast(`Aduan/masukan Anda berhasil terkirim ke database Cloud!`, 'success');
+        fetchData();
+      } catch (err: any) {
+        console.error("Gagal menyimpan inquiry ke Supabase, fallback ke offline:", err);
+        mockDb.saveContactInquiry(newInquiry);
+        mockDb.addLog(newInquiry.id, currentUser?.email || 'Guest / Customer', `Mengirim keluhan / masukan baru dengan subjek "${newInquiry.subject}"`);
+        setInquiries(mockDb.getContactInquiries());
+        setLogs(mockDb.getLogs());
+        addToast(`Aduan disimpan offline karena gangguan server.`, 'info');
+      }
+    } else {
+      mockDb.saveContactInquiry(newInquiry);
+      mockDb.addLog(newInquiry.id, currentUser?.email || 'Guest / Customer', `Mengirim keluhan / masukan baru dengan subjek "${newInquiry.subject}"`);
+      setInquiries(mockDb.getContactInquiries());
+      setLogs(mockDb.getLogs());
+    }
   };
 
-  const handleUpdateInquiry = (updatedInquiry: ContactInquiry) => {
-    mockDb.saveContactInquiry(updatedInquiry);
-    mockDb.addLog(updatedInquiry.id, currentUser?.email || 'System / Tim Terkait', `Memberikan tanggapan feedback pada inquiry ${updatedInquiry.id}`);
-    setInquiries(mockDb.getContactInquiries());
-    setLogs(mockDb.getLogs());
+  const handleUpdateInquiry = async (updatedInquiry: ContactInquiry) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase
+          .from('contact_inquiries')
+          .update({
+            status: updatedInquiry.status,
+            feedback: updatedInquiry.feedback,
+            feedback_by: updatedInquiry.feedback_by,
+            feedback_at: updatedInquiry.feedback_at
+          })
+          .eq('id', updatedInquiry.id);
+
+        if (error) throw error;
+
+        // Log explicitly on Supabase (safely wrapped in try-catch so it won't block the main update)
+        try {
+          await supabase.from('activity_logs').insert([{
+            transaction_id: updatedInquiry.id,
+            performed_by: currentUser?.email || 'System / Tim Terkait',
+            action_description: `Memberikan tanggapan feedback pada aduan ${updatedInquiry.id}`
+          }]);
+        } catch (logErr) {
+          console.warn("Could not insert activity log due to database permission restriction", logErr);
+        }
+
+        addToast(`Tanggapan feedback sukses disimpan ke cloud!`, 'success');
+        fetchData();
+      } catch (err: any) {
+        console.error("Gagal mengupdate inquiry di Supabase:", err);
+        mockDb.saveContactInquiry(updatedInquiry);
+        mockDb.addLog(updatedInquiry.id, currentUser?.email || 'System / Tim Terkait', `Memberikan tanggapan feedback pada inquiry ${updatedInquiry.id}`);
+        setInquiries(mockDb.getContactInquiries());
+        setLogs(mockDb.getLogs());
+      }
+    } else {
+      mockDb.saveContactInquiry(updatedInquiry);
+      mockDb.addLog(updatedInquiry.id, currentUser?.email || 'System / Tim Terkait', `Memberikan tanggapan feedback pada inquiry ${updatedInquiry.id}`);
+      setInquiries(mockDb.getContactInquiries());
+      setLogs(mockDb.getLogs());
+    }
   };
 
-  const handleDeleteInquiry = (id: string) => {
-    mockDb.deleteContactInquiry(id);
-    mockDb.addLog(id, currentUser?.email || 'System / Tim Terkait', `Menghapus data laporan/inquiry ${id}`);
-    setInquiries(mockDb.getContactInquiries());
-    setLogs(mockDb.getLogs());
+  const handleDeleteInquiry = async (id: string) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase
+          .from('contact_inquiries')
+          .delete()
+          .eq('id', id);
+
+        if (error) throw error;
+
+        // Log explicitly on Supabase (safely wrapped in try-catch so it won't block the main delete)
+        try {
+          await supabase.from('activity_logs').insert([{
+            transaction_id: id,
+            performed_by: currentUser?.email || 'System / Tim Terkait',
+            action_description: `Menghapus data laporan/inquiry ${id}`
+          }]);
+        } catch (logErr) {
+          console.warn("Could not insert activity log due to database permission restriction", logErr);
+        }
+
+        addToast(`Aduan berhasil dihapus dari cloud!`, 'success');
+        fetchData();
+      } catch (err: any) {
+        console.error("Gagal menghapus inquiry dari Supabase:", err);
+        mockDb.deleteContactInquiry(id);
+        mockDb.addLog(id, currentUser?.email || 'System / Tim Terkait', `Menghapus data laporan/inquiry ${id}`);
+        setInquiries(mockDb.getContactInquiries());
+        setLogs(mockDb.getLogs());
+      }
+    } else {
+      mockDb.deleteContactInquiry(id);
+      mockDb.addLog(id, currentUser?.email || 'System / Tim Terkait', `Menghapus data laporan/inquiry ${id}`);
+      setInquiries(mockDb.getContactInquiries());
+      setLogs(mockDb.getLogs());
+    }
   };
 
   const handleNotificationClick = (notif: AppNotification) => {
