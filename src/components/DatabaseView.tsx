@@ -262,15 +262,21 @@ export default function DatabaseView({
 
   const downloadTemplate = () => {
     const headers = [
-      ["Tanggal", "Kategori", "Cabang", "Nama Customer", "No Polisi", "Nilai Backcharge", "No BAK", "No SPK", "No SAP", "No Tilang", "PIC", "Alasan"]
+      ["Tanggal", "Kategori", "Cabang", "Nama Customer", "No Polisi", "Nilai Backcharge", "No BAK", "No SPK", "No SAP", "No Tilang", "PIC", "Alasan", "Tahap Proses", "No Invoice", "Status Bayar", "Status SAP (Bill/Not Bill/NA)"]
     ];
     const sampleData = [
-      ["12/08/2026", "Own Risk", "Jakarta", "PT Maju Bersama", "B 1234 ABC", "150000", "BAK-001", "SPK-001", "SAP-001", "-", "John Doe", "Klaim Own Risk"]
+      ["12/08/2026", "Own Risk", "Jakarta", "PT Maju Bersama", "B 1234 ABC", "150000", "BAK-001", "SPK-001", "SAP-001", "-", "John Doe", "Klaim Own Risk", "Berkas di ASO", "-", "Belum Bayar", "Bill"],
+      ["12/08/2026", "Own Risk", "Jakarta", "PT Prima Sentosa", "B 5678 XYZ", "250000", "BAK-002", "SPK-002", "SAP-002", "-", "Jane Smith", "Klaim Own Risk", "Berkas di Admin", "-", "Belum Bayar", "Not Bill"],
+      ["13/08/2026", "ETLE", "Surabaya", "PT Sukses Abadi", "L 9988 AA", "500000", "-", "-", "SAP-003", "TILANG-001", "John Doe", "Pelanggaran Lampu Merah", "Belum appr SH/Kacab", "-", "Belum Bayar", "N/A"],
+      ["14/08/2026", "Maintenance", "Bandung", "PT Sejahtera", "D 4321 EF", "8000000", "BAK-003", "SPK-003", "SAP-004", "-", "Jane Smith", "Ganti Oli Mesin", "Belum appr Regional Head", "-", "Belum Bayar", "Bill"],
+      ["15/08/2026", "Maintenance", "Medan", "PT Karya Jaya", "BK 7777 SS", "16000000", "BAK-004", "SPK-004", "SAP-005", "-", "John Doe", "Klaim Transmisi Pecah", "Belum appr Division Head", "-", "Belum Bayar", "Bill"],
+      ["16/08/2026", "TPL", "Semarang", "PT Sinar Terang", "H 1122 YU", "1200000", "BAK-005", "SPK-005", "SAP-006", "-", "Jane Smith", "Kerusakan Kendaraan Pihak Ketiga", "Belum Invoice", "-", "Belum Bayar", "Not Bill"],
+      ["17/08/2026", "Own Risk", "Jakarta", "PT Berkah Selalu", "B 8888 OK", "150000", "BAK-006", "SPK-006", "SAP-007", "-", "John Doe", "Klaim Own Risk", "Kolektif Bayar", "INV-2026-001", "Lunas", "Bill"]
     ];
     const worksheet = XLSX.utils.aoa_to_sheet([...headers, ...sampleData]);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Template Backcharge");
-    worksheet['!cols'] = Array(12).fill({ wch: 18 });
+    worksheet['!cols'] = Array(16).fill({ wch: 22 });
     XLSX.writeFile(workbook, "template_import_backcharge.xlsx");
   };
 
@@ -316,8 +322,8 @@ export default function DatabaseView({
           const row = jsonData[i];
           if (!row || row.length === 0) continue;
           
-          // Pad array to at least 12 elements
-          const parts = Array.from({ length: 12 }, (_, idx) => {
+          // Pad array to at least 16 elements
+          const parts = Array.from({ length: 16 }, (_, idx) => {
             const val = row[idx];
             return val !== undefined && val !== null ? String(val).trim() : '';
           });
@@ -334,6 +340,10 @@ export default function DatabaseView({
           const rawNoTilang = parts[9];
           const rawBroker = parts[10];
           const rawAlasan = parts[11];
+          const rawTahapProses = parts[12];
+          const rawNoInvoice = parts[13];
+          const rawStatusBayar = parts[14];
+          const rawStatusSap = parts[15];
           
           if (!rawCustomer && !rawTanggal && !rawValue) {
             // Skip completely empty row
@@ -422,6 +432,95 @@ export default function DatabaseView({
           // Value parsing
           const cleanValueStr = rawValue.replace(/[^0-9.-]+/g, '');
           const parsedValue = parseFloat(cleanValueStr) || 0;
+
+          // Process the 8 workflow stages into database state fields
+          let status_handover = 'Pending';
+          let status_approval = 'Belum Approval';
+          let regional_approval_status = 'Belum Approval';
+          let division_approval_status = 'Belum Approval';
+          let status_payment = 'Belum Bayar';
+          let no_invoice = '-';
+
+          const cleanTahap = rawTahapProses.toLowerCase().trim();
+
+          if (cleanTahap.includes('berkas di aso') || cleanTahap.includes('input aso')) {
+            status_handover = 'Pending';
+            status_approval = 'Belum Approval';
+          } else if (cleanTahap.includes('berkas di admin')) {
+            status_handover = 'Diserahkan ke Admin';
+            status_approval = 'Belum Approval';
+          } else if (cleanTahap.includes('belum appr sh/kacab') || cleanTahap.includes('belum appr sh') || cleanTahap.includes('sh/kacab')) {
+            status_handover = 'Diserahkan ke Admin';
+            status_approval = 'Belum Approval';
+          } else if (cleanTahap.includes('belum appr regional head') || cleanTahap.includes('regional head') || cleanTahap.includes('regional')) {
+            status_handover = 'Diserahkan ke Admin';
+            status_approval = 'Disetujui';
+            regional_approval_status = 'Belum Approval';
+          } else if (cleanTahap.includes('belum appr division head') || cleanTahap.includes('division head') || cleanTahap.includes('division')) {
+            status_handover = 'Diserahkan ke Admin';
+            status_approval = 'Disetujui';
+            regional_approval_status = 'Disetujui';
+            division_approval_status = 'Belum Approval';
+          } else if (cleanTahap.includes('belum invoice') || cleanTahap.includes('blm invoice')) {
+            status_handover = 'Diserahkan ke Admin';
+            status_approval = 'Disetujui';
+            regional_approval_status = 'Disetujui';
+            division_approval_status = 'Disetujui';
+            no_invoice = '-';
+          } else if (cleanTahap.includes('kolektif bayar') || cleanTahap.includes('bayar') || cleanTahap.includes('lunas')) {
+            status_handover = 'Diserahkan ke Admin';
+            status_approval = 'Disetujui';
+            regional_approval_status = 'Disetujui';
+            division_approval_status = 'Disetujui';
+            no_invoice = rawNoInvoice && rawNoInvoice !== '-' && rawNoInvoice !== '' ? rawNoInvoice : 'INV-MASS-COLLECTIVE';
+          } else {
+            // Default based on values
+            if (rawNoInvoice && rawNoInvoice !== '-' && rawNoInvoice !== '') {
+              status_handover = 'Diserahkan ke Admin';
+              status_approval = 'Disetujui';
+              regional_approval_status = 'Disetujui';
+              division_approval_status = 'Disetujui';
+              no_invoice = rawNoInvoice;
+            }
+          }
+
+          // Override / refine with specific values if provided explicitly in the columns
+          if (rawNoInvoice && rawNoInvoice !== '-' && rawNoInvoice !== '') {
+            no_invoice = rawNoInvoice;
+            status_handover = 'Diserahkan ke Admin';
+            status_approval = 'Disetujui';
+            regional_approval_status = 'Disetujui';
+            division_approval_status = 'Disetujui';
+          }
+
+          const cleanStatusBayar = rawStatusBayar.toLowerCase().trim();
+          if (cleanStatusBayar.includes('lunas') || cleanStatusBayar.includes('paid')) {
+            status_payment = 'Lunas';
+            status_handover = 'Diterima Admin';
+            status_approval = 'Disetujui';
+            regional_approval_status = 'Disetujui';
+            division_approval_status = 'Disetujui';
+            if (no_invoice === '-') {
+              no_invoice = rawNoInvoice && rawNoInvoice !== '-' && rawNoInvoice !== '' ? rawNoInvoice : 'INV-MASS-COLLECTIVE';
+            }
+          } else if (cleanStatusBayar.includes('belum') || cleanStatusBayar.includes('outstanding') || cleanStatusBayar.includes('unpaid')) {
+            status_payment = 'Belum Bayar';
+          }
+          
+          // Parse status_sap (Bill / Not Bill / N/A)
+          let status_sap = 'N/A';
+          if (rawStatusSap) {
+            const cleanSap = rawStatusSap.toLowerCase().trim();
+            if (cleanSap === 'bill') {
+              status_sap = 'Bill';
+            } else if (cleanSap === 'not bill' || cleanSap === 'notbill') {
+              status_sap = 'Not Bill';
+            } else if (cleanSap === 'n/a' || cleanSap === 'na' || cleanSap === '-') {
+              status_sap = 'N/A';
+            } else {
+              status_sap = rawStatusSap;
+            }
+          }
           
           const rowObj = {
             tanggal: formattedDate,
@@ -438,11 +537,14 @@ export default function DatabaseView({
             nama_bro: rawBroker.replace(/["']/g, '').trim() || '-',
             alasan: rawAlasan.replace(/["']/g, '').trim() || '-',
             dok_pendukung_alasan: rawAlasan.replace(/["']/g, '').trim() || '-',
-            status_sap: 'N/A',
+            status_sap,
             status_confirm: 'Telah Dikonfirmasi',
-            status_handover: 'Pending',
-            status_payment: 'Belum Bayar',
-            no_invoice: '-',
+            status_handover,
+            status_approval,
+            regional_approval_status,
+            division_approval_status,
+            status_payment,
+            no_invoice,
             errors: [] as string[]
           };
           
