@@ -353,14 +353,34 @@ export default function Dashboard({
 
 
 
-  // Generate real or fallback trend data for graphs
+  // Generate real trend data for graphs based strictly on actual data
   const getTrendData = () => {
     if (filteredTransactions.length > 0) {
       const trendMap: Record<string, { count: number; value: number; rawDate: Date }> = {};
       filteredTransactions.forEach(t => {
-        if (!t.created_at) return;
-        const dateObj = new Date(t.created_at);
-        if (isNaN(dateObj.getTime())) return;
+        let dateObj: Date | null = null;
+        
+        if (t.tanggal) {
+          if (t.tanggal.includes('/')) {
+            const parts = t.tanggal.split('/');
+            if (parts.length === 3) {
+              const day = parseInt(parts[0], 10);
+              const month = parseInt(parts[1], 10) - 1;
+              const year = parseInt(parts[2], 10);
+              dateObj = new Date(year, month, day);
+            }
+          } else {
+            dateObj = new Date(t.tanggal);
+          }
+        }
+        
+        if ((!dateObj || isNaN(dateObj.getTime())) && t.created_at) {
+          dateObj = new Date(t.created_at);
+        }
+        
+        if (!dateObj || isNaN(dateObj.getTime())) {
+          return;
+        }
         
         // Format as "DD MMM"
         const day = dateObj.getDate().toString().padStart(2, '0');
@@ -385,23 +405,10 @@ export default function Dashboard({
         }))
         .sort((a, b) => a.rawDate.getTime() - b.rawDate.getTime());
       
-      if (sorted.length >= 2) return sorted;
+      return sorted;
     }
     
-    // Exact curve structure matching the mockup visual trends if database is small
-    return [
-      { label: '25 Apr', count: 3, valueInMillions: 1.2 },
-      { label: '28 Apr', count: 7, valueInMillions: 2.8 },
-      { label: '02 Mei', count: 9, valueInMillions: 3.5 },
-      { label: '05 Mei', count: 6, valueInMillions: 2.1 },
-      { label: '09 Mei', count: 8, valueInMillions: 3.2 },
-      { label: '12 Mei', count: 5, valueInMillions: 1.8 },
-      { label: '16 Mei', count: 7, valueInMillions: 2.5 },
-      { label: '20 Mei', count: 4, valueInMillions: 1.5 },
-      { label: '23 Mei', count: 9, valueInMillions: 4.2 },
-      { label: '27 Mei', count: 12, valueInMillions: 5.1 },
-      { label: '31 Mei', count: 8, valueInMillions: 3.0 }
-    ];
+    return [];
   };
 
   const trendData = getTrendData();
@@ -1463,26 +1470,34 @@ export default function Dashboard({
               <p className="text-[10px] text-slate-400">Perbandingan jumlah transaksi per periode.</p>
             </div>
 
-            <div className="h-52 w-full pt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trendData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 'bold' }} stroke="#e2e8f0" />
-                  <YAxis tick={{ fill: '#94a3b8', fontSize: 9 }} stroke="#e2e8f0" allowDecimals={false} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '10px' }}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="count" 
-                    name="Jumlah Transaksi"
-                    stroke="#2563eb" 
-                    strokeWidth={3} 
-                    activeDot={{ r: 6 }} 
-                    dot={{ stroke: '#2563eb', strokeWidth: 1, r: 3, fill: '#fff' }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="h-52 w-full pt-2 flex items-center justify-center">
+              {trendData.length === 0 ? (
+                <div className="text-center p-4 flex flex-col items-center">
+                  <BarChart3 className="w-8 h-8 text-slate-300 mb-1.5" />
+                  <p className="text-[11px] text-slate-400 font-bold">Tidak Ada Data Tren</p>
+                  <p className="text-[9px] text-slate-400">Data masukan belum tersedia pada periode ini.</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 'bold' }} stroke="#e2e8f0" />
+                    <YAxis tick={{ fill: '#94a3b8', fontSize: 9 }} stroke="#e2e8f0" allowDecimals={false} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '10px' }}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="count" 
+                      name="Jumlah Transaksi"
+                      stroke="#2563eb" 
+                      strokeWidth={3} 
+                      activeDot={{ r: 6 }} 
+                      dot={{ stroke: '#2563eb', strokeWidth: 1, r: 3, fill: '#fff' }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
@@ -1496,27 +1511,35 @@ export default function Dashboard({
               <p className="text-[10px] text-slate-400">Perbandingan nilai backcharge per periode.</p>
             </div>
 
-            <div className="h-52 w-full pt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 'bold' }} stroke="#e2e8f0" />
-                  <YAxis tick={{ fill: '#94a3b8', fontSize: 9 }} stroke="#e2e8f0" unit=" Jt" />
-                  <Tooltip 
-                    formatter={(value: any) => [`${value} Juta IDR`, 'Nilai Tagihan']}
-                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '10px' }}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="valueInMillions" 
-                    name="Nilai (Juta IDR)"
-                    stroke="#10b981" 
-                    strokeWidth={3} 
-                    activeDot={{ r: 6 }} 
-                    dot={{ stroke: '#10b981', strokeWidth: 1, r: 3, fill: '#fff' }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="h-52 w-full pt-2 flex items-center justify-center">
+              {trendData.length === 0 ? (
+                <div className="text-center p-4 flex flex-col items-center">
+                  <BarChart3 className="w-8 h-8 text-slate-300 mb-1.5" />
+                  <p className="text-[11px] text-slate-400 font-bold">Tidak Ada Data Tren</p>
+                  <p className="text-[9px] text-slate-400">Data masukan belum tersedia pada periode ini.</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 'bold' }} stroke="#e2e8f0" />
+                    <YAxis tick={{ fill: '#94a3b8', fontSize: 9 }} stroke="#e2e8f0" unit=" Jt" />
+                    <Tooltip 
+                      formatter={(value: any) => [`${value} Juta IDR`, 'Nilai Tagihan']}
+                      contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '10px' }}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="valueInMillions" 
+                      name="Nilai (Juta IDR)"
+                      stroke="#10b981" 
+                      strokeWidth={3} 
+                      activeDot={{ r: 6 }} 
+                      dot={{ stroke: '#10b981', strokeWidth: 1, r: 3, fill: '#fff' }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 

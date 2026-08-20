@@ -524,23 +524,45 @@ export default function App() {
     
     if (isSupabaseConfigured && supabase) {
       try {
-        // 1. Fetch backcharges
-        let query = supabase.from('backcharges').select('*').order('created_at', { ascending: false });
+        // 1. Fetch backcharges (paginated chunks to load all data beyond the default 1000-row limit)
+        let allBcData: any[] = [];
+        let start = 0;
+        const chunkSize = 1000;
+        let hasMore = true;
         
-        // Apply branch filter if not national
-        if (currentUser && currentUser.branch !== 'Nasional') {
-          if (currentUser.branch && currentUser.branch.includes(',')) {
-            const userBranches = currentUser.branch.split(',').map(s => s.trim());
-            query = query.in('branch', userBranches);
-          } else if (currentUser.branch) {
-            query = query.eq('branch', currentUser.branch);
+        while (hasMore) {
+          let query = supabase
+            .from('backcharges')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .range(start, start + chunkSize - 1);
+          
+          // Apply branch filter if not national
+          if (currentUser && currentUser.branch !== 'Nasional') {
+            if (currentUser.branch && currentUser.branch.includes(',')) {
+              const userBranches = currentUser.branch.split(',').map(s => s.trim());
+              query = query.in('branch', userBranches);
+            } else if (currentUser.branch) {
+              query = query.eq('branch', currentUser.branch);
+            }
+          }
+          
+          const { data: chunkData, error: bcError } = await query;
+          if (bcError) throw bcError;
+          
+          if (chunkData && chunkData.length > 0) {
+            allBcData = [...allBcData, ...chunkData];
+            if (chunkData.length < chunkSize) {
+              hasMore = false;
+            } else {
+              start += chunkSize;
+            }
+          } else {
+            hasMore = false;
           }
         }
         
-        const { data: bcData, error: bcError } = await query;
-        if (bcError) throw bcError;
-        
-        const unpackedData = ((bcData as any[]) || []).map(unpackExtraFields);
+        const unpackedData = allBcData.map(unpackExtraFields);
         setTransactions(unpackedData as Backcharge[]);
         try { localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedData)); } catch {}
 
@@ -821,10 +843,31 @@ export default function App() {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('backcharges').select('id');
-        if (!error && data) {
-          allIds = data.map((item: any) => item.id);
+        let dbIds: string[] = [];
+        let start = 0;
+        const chunkSize = 1000;
+        let hasMore = true;
+        
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from('backcharges')
+            .select('id')
+            .range(start, start + chunkSize - 1);
+            
+          if (error) throw error;
+          
+          if (data && data.length > 0) {
+            dbIds = [...dbIds, ...data.map((item: any) => item.id)];
+            if (data.length < chunkSize) {
+              hasMore = false;
+            } else {
+              start += chunkSize;
+            }
+          } else {
+            hasMore = false;
+          }
         }
+        allIds = dbIds;
       } catch (e) {
         console.error("Error fetching all IDs from database:", e);
       }
@@ -902,8 +945,13 @@ export default function App() {
     if (isSupabaseConfigured && supabase) {
       const cleanedPayloads = preparedTxs.map(tx => cleanSupabasePayload(tx));
       try {
-        const { error } = await supabase.from('backcharges').insert(cleanedPayloads);
-        if (error) throw error;
+        // Insert in safe sequential batches of 500 rows to ensure zero gateway timeouts or size errors
+        const batchSize = 500;
+        for (let i = 0; i < cleanedPayloads.length; i += batchSize) {
+          const batch = cleanedPayloads.slice(i, i + batchSize);
+          const { error } = await supabase.from('backcharges').insert(batch);
+          if (error) throw error;
+        }
         
         try {
           const logPayload = {

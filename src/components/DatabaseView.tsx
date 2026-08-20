@@ -2867,13 +2867,32 @@ export default function DatabaseView({
                         {bulkImportList.length} Baris Data Ditemukan
                       </span>
                     </h4>
-                    <button 
-                      type="button"
-                      onClick={() => setBulkImportList([])}
-                      className="text-red-500 hover:text-red-700 text-[10px] font-bold hover:underline"
-                    >
-                      Hapus Semua Data
-                    </button>
+                    <div className="flex items-center gap-4">
+                      {bulkImportList.some(item => item.errors && item.errors.length > 0) && (
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const updated = bulkImportList.filter(item => !item.errors || item.errors.length === 0);
+                            setBulkImportList(updated);
+                            if (addToast) {
+                              const deletedCount = bulkImportList.length - updated.length;
+                              addToast(`Berhasil menghapus ${deletedCount} baris data yang error.`, 'success');
+                            }
+                          }}
+                          className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-[10px] font-extrabold px-2.5 py-1 rounded-lg flex items-center gap-1 transition-all cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Hapus Semua Data Error</span>
+                        </button>
+                      )}
+                      <button 
+                        type="button"
+                        onClick={() => setBulkImportList([])}
+                        className="text-slate-500 hover:text-slate-700 text-[10px] font-bold hover:underline cursor-pointer"
+                      >
+                        Hapus Semua Data
+                      </button>
+                    </div>
                   </div>
 
                   {/* Summary Metric Badges */}
