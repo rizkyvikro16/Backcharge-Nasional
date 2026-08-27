@@ -42,7 +42,7 @@ export default function DatabaseView({
   
   // Role permissions
   const userRole = currentUser.role as string;
-  const isAsoUser = userRole === 'ASO / Staff';
+  const isAsoUser = userRole === 'ASO / Staff' || userRole === 'Maintenance Center';
   const isSalesHeadUser = userRole === 'Sales Head' || userRole === 'Sales / Sales Head';
   const isKacabUser = userRole === 'Kepala Cabang' || userRole === 'kacab';
   const isBroUser = userRole === 'BRO';
@@ -177,7 +177,7 @@ export default function DatabaseView({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Check role permission for writing
-  const canWrite = currentUser.role === 'ASO / Staff' || currentUser.role === 'Administrator';
+  const canWrite = currentUser.role === 'ASO / Staff' || currentUser.role === 'Maintenance Center' || currentUser.role === 'Administrator';
 
   // Upgraded file change handler with automatic Google Drive upload (either Service Account or Client OAuth)
   const handleFileChange = async (
@@ -1344,7 +1344,7 @@ export default function DatabaseView({
           <td class="${appASO}">${t.status_approval || 'Belum Approval'}</td>
           <td class="${appReg}">${t.regional_approval_status || 'Belum Approval'}</td>
           <td class="${appDiv}">${t.division_approval_status || 'Belum Approval'}</td>
-          <td class="text-center subtitle-text">${new Date(t.created_at).toLocaleString('id-ID')}</td>
+          <td class="text-center subtitle-text">${t.created_at ? new Date(t.created_at).toLocaleString('id-ID') : '-'}</td>
         </tr>
       `;
     });

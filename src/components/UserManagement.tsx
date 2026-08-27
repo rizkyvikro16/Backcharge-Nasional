@@ -1,10 +1,6 @@
 import React, { useState } from 'react';
 import { PlusCircle, Edit2, Trash2, ShieldCheck, Mail, MapPin, X, Key, Search, Lock, CheckSquare, Square } from 'lucide-react';
-import { Profile, UserRole, BRANCH_LIST, isRegionalHeadRole } from '../types';
-
-const WEST_BRANCHES = ['Lampung', 'Medan', 'Padang', 'Palembang', 'Pekanbaru'];
-const CENTRAL_BRANCHES = ['Bandung', 'Jakarta', 'Pontianak'];
-const EAST_BRANCHES = ['Bali', 'Balikpapan', 'Banjarmasin', 'Makassar', 'Malang', 'Semarang', 'Solo', 'Surabaya'];
+import { Profile, UserRole, BRANCH_LIST, isRegionalHeadRole, WEST_BRANCHES, CENTRAL_BRANCHES, EAST_BRANCHES } from '../types';
 
 interface UserManagementProps {
   profiles: Profile[];
@@ -58,7 +54,7 @@ export default function UserManagement({
 
   const handleRoleChange = (newRole: UserRole) => {
     setRole(newRole);
-    if (isRegionalHeadRole(newRole)) {
+    if (isRegionalHeadRole(newRole) || newRole === 'Maintenance Center') {
       if (newRole === 'Regional Head West') {
         setBranch(WEST_BRANCHES.join(', '));
       } else if (newRole === 'Regional Head Central') {
@@ -325,6 +321,7 @@ export default function UserManagement({
                   className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="ASO / Staff">ASO / Staff</option>
+                  <option value="Maintenance Center">Maintenance Center</option>
                   <option value="Sales Head">Sales Head</option>
                   <option value="BRO">BRO</option>
                   <option value="Admin">Admin</option>
@@ -339,7 +336,7 @@ export default function UserManagement({
                 </select>
               </div>
 
-              {isRegionalHeadRole(role) ? (
+              {isRegionalHeadRole(role) || role === 'Maintenance Center' ? (
                 <div className="space-y-2 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
                   <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
                     <label className="text-[10px] font-extrabold text-slate-700 uppercase flex items-center gap-1.5">
@@ -373,6 +370,14 @@ export default function UserManagement({
                       </button>
                       <button
                         type="button"
+                        onClick={() => setBranch('Nasional')}
+                        className="text-[9px] font-bold px-2 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded transition-colors"
+                        title="Pilih Seluruh Indonesia / Nasional"
+                      >
+                        Nasional
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setBranch(BRANCH_LIST.join(', '))}
                         className="text-[9px] font-bold px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded transition-colors"
                       >
@@ -383,11 +388,17 @@ export default function UserManagement({
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-44 overflow-y-auto custom-scrollbar p-1">
                     {BRANCH_LIST.map((bName) => {
-                      const isChecked = selectedBranchList.includes(bName);
+                      const isChecked = selectedBranchList.includes(bName) || branch === 'Nasional';
                       return (
                         <label
                           key={bName}
-                          onClick={() => toggleBranchSelection(bName)}
+                          onClick={() => {
+                            if (branch === 'Nasional') {
+                              setBranch(bName);
+                            } else {
+                              toggleBranchSelection(bName);
+                            }
+                          }}
                           className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold cursor-pointer transition-all select-none ${
                             isChecked
                               ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
@@ -405,7 +416,7 @@ export default function UserManagement({
                     })}
                   </div>
                   <p className="text-[10px] text-slate-500 italic mt-1">
-                    * Regional Head dapat memilih banyak cabang sekaligus.
+                    * Regional Head dan Maintenance Center dapat memilih banyak cabang sekaligus atau ketik 'Nasional' untuk nasional.
                   </p>
                 </div>
               ) : (

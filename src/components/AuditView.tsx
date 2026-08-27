@@ -80,7 +80,7 @@ export default function AuditView({ logs, profiles = [] }: AuditViewProps) {
             </thead>
             <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
               {filteredLogs.map((log) => {
-                const profile = profiles.find(p => p.email.toLowerCase() === log.performed_by.toLowerCase());
+                const profile = profiles.find(p => p.email && log.performed_by && p.email.toLowerCase() === log.performed_by.toLowerCase());
                 return (
                   <tr key={log.id} className="hover:bg-slate-50/50 border-b border-slate-100">
                     <td className="p-3 text-slate-400 font-mono">

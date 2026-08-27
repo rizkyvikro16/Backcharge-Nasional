@@ -43,8 +43,15 @@ if (!localStorage.getItem('bc_profiles')) {
 } else {
   // Ensure the new roles exist in localStorage if it was already initialized
   try {
-    const currentProfs = JSON.parse(localStorage.getItem('bc_profiles') || '[]');
+    let currentProfs = JSON.parse(localStorage.getItem('bc_profiles') || '[]');
     let modified = false;
+    
+    // Clean up demo user if present
+    const prevLen = currentProfs.length;
+    currentProfs = currentProfs.filter((p: any) => p.email !== 'maint.ctr@company.id');
+    if (currentProfs.length !== prevLen) {
+      modified = true;
+    }
     
     currentProfs.forEach((prof: any) => {
       if ((prof.role as string) === 'kacab') { prof.role = 'Kepala Cabang'; modified = true; }

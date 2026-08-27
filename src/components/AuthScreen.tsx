@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Key, Mail, User, MapPin, UserCheck, Eye, EyeOff } from 'lucide-react';
-import { Profile, UserRole, BRANCH_LIST } from '../types';
+import { Key, Mail, User, MapPin, UserCheck, Eye, EyeOff, CheckSquare, Square } from 'lucide-react';
+import { Profile, UserRole, BRANCH_LIST, WEST_BRANCHES, CENTRAL_BRANCHES, EAST_BRANCHES, isRegionalHeadRole } from '../types';
 import { supabase, isSupabaseConfigured, mockDb } from '../supabaseClient';
 
 interface AuthScreenProps {
@@ -22,6 +22,38 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
   const [regBranch, setRegBranch] = useState('Jakarta');
   const [regPassword, setRegPassword] = useState('');
 
+  const selectedBranchList = regBranch === 'Nasional' 
+    ? BRANCH_LIST 
+    : regBranch.split(',').map(s => s.trim()).filter(Boolean);
+
+  const toggleRegBranchSelection = (bName: string) => {
+    let currentList = regBranch === 'Nasional' ? [...BRANCH_LIST] : regBranch.split(',').map(s => s.trim()).filter(Boolean);
+    if (currentList.includes(bName)) {
+      currentList = currentList.filter(x => x !== bName);
+    } else {
+      currentList.push(bName);
+    }
+    currentList.sort();
+    setRegBranch(currentList.length > 0 ? currentList.join(', ') : 'Jakarta');
+  };
+
+  const handleRegRoleChange = (newRole: UserRole) => {
+    setRegRole(newRole);
+    if (isRegionalHeadRole(newRole) || newRole === 'Maintenance Center') {
+      if (newRole === 'Regional Head West') {
+        setRegBranch(WEST_BRANCHES.join(', '));
+      } else if (newRole === 'Regional Head Central') {
+        setRegBranch(CENTRAL_BRANCHES.join(', '));
+      } else if (newRole === 'Regional Head East') {
+        setRegBranch(EAST_BRANCHES.join(', '));
+      } else if (!regBranch.includes(',')) {
+        setRegBranch(WEST_BRANCHES.join(', '));
+      }
+    } else if (regBranch.includes(',')) {
+      setRegBranch('Jakarta');
+    }
+  };
+
   // UI Utilities
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +64,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
   // Available roles requested for self-registration form
   const availableRoles: { value: UserRole; label: string }[] = [
     { value: 'ASO / Staff', label: 'ASO / Staff' },
+    { value: 'Maintenance Center', label: 'Maintenance Center' },
     { value: 'Admin', label: 'Admin' },
     { value: 'BRO', label: 'BRO' },
     { value: 'Sales Head', label: 'Sales Head' },
@@ -412,27 +445,110 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Role Otoritas</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400 pointer-events-none">
-                    <UserCheck className="w-3.5 h-3.5" />
-                  </span>
-                  <select
-                    value={regRole}
-                    onChange={(e) => setRegRole(e.target.value as UserRole)}
-                    className="w-full text-[11px] text-slate-900 border border-slate-200 rounded-xl pl-8 pr-2 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-bold appearance-none cursor-pointer"
-                  >
-                    {availableRoles.map((role) => (
-                      <option key={role.value} value={role.value}>
-                        {role.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            <div>
+              <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Role Otoritas</label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400 pointer-events-none">
+                  <UserCheck className="w-3.5 h-3.5" />
+                </span>
+                <select
+                  value={regRole}
+                  onChange={(e) => handleRegRoleChange(e.target.value as UserRole)}
+                  className="w-full text-[11px] text-slate-900 border border-slate-200 rounded-xl pl-8 pr-2 py-3 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-bold appearance-none cursor-pointer"
+                >
+                  {availableRoles.map((role) => (
+                    <option key={role.value} value={role.value}>
+                      {role.label}
+                    </option>
+                  ))}
+                </select>
               </div>
+            </div>
 
+            {isRegionalHeadRole(regRole) || regRole === 'Maintenance Center' ? (
+              <div className="space-y-2 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
+                <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+                  <label className="text-[10px] font-extrabold text-slate-700 uppercase flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Cabang Dikelola ({selectedBranchList.length} Terpilih)</span>
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setRegBranch(WEST_BRANCHES.join(', '))}
+                      className="text-[9px] font-bold px-2 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded transition-colors"
+                      title="Pilih Cabang Wilayah Barat"
+                    >
+                      West
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRegBranch(CENTRAL_BRANCHES.join(', '))}
+                      className="text-[9px] font-bold px-2 py-0.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-800 rounded transition-colors"
+                      title="Pilih Cabang Wilayah Tengah"
+                    >
+                      Central
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRegBranch(EAST_BRANCHES.join(', '))}
+                      className="text-[9px] font-bold px-2 py-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded transition-colors"
+                      title="Pilih Cabang Wilayah Timur"
+                    >
+                      East
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRegBranch('Nasional')}
+                      className="text-[9px] font-bold px-2 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded transition-colors"
+                      title="Pilih Seluruh Indonesia / Nasional"
+                    >
+                      Nasional
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRegBranch(BRANCH_LIST.join(', '))}
+                      className="text-[9px] font-bold px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded transition-colors"
+                    >
+                      Semua
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-40 overflow-y-auto custom-scrollbar p-1">
+                  {BRANCH_LIST.map((bName) => {
+                    const isChecked = selectedBranchList.includes(bName) || regBranch === 'Nasional';
+                    return (
+                      <label
+                        key={bName}
+                        onClick={() => {
+                          if (regBranch === 'Nasional') {
+                            setRegBranch(bName);
+                          } else {
+                            toggleRegBranchSelection(bName);
+                          }
+                        }}
+                        className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold cursor-pointer transition-all select-none ${
+                          isChecked
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {isChecked ? (
+                          <CheckSquare className="w-3.5 h-3.5 text-white shrink-0" />
+                        ) : (
+                          <Square className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        )}
+                        <span className="truncate">{bName}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-500 italic mt-1">
+                  * Maintenance Center dan Regional Head dapat memilih banyak cabang sekaligus atau klik 'Nasional'.
+                </p>
+              </div>
+            ) : (
               <div>
                 <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Cabang Kantor</label>
                 <div className="relative">
@@ -452,7 +568,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
                   </select>
                 </div>
               </div>
-            </div>
+            )}
 
             <div>
               <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 tracking-wider">Password Baru</label>

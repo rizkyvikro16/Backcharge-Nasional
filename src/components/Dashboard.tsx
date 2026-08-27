@@ -696,7 +696,7 @@ export default function Dashboard({
             <td class="${appASO}">${t.status_approval || 'Belum Approval'}</td>
             <td class="${appReg}">${t.regional_approval_status || 'Belum Approval'}</td>
             <td class="${appDiv}">${t.division_approval_status || 'Belum Approval'}</td>
-            <td class="text-center subtitle-text">${new Date(t.created_at).toLocaleString('id-ID')}</td>
+            <td class="text-center subtitle-text">${t.created_at ? new Date(t.created_at).toLocaleString('id-ID') : '-'}</td>
           </tr>
         `;
       });

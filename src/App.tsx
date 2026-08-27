@@ -173,7 +173,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
     if (!branchMatch) return;
 
     // 1. ASO / Staff Role Tasks
-    if (user.role === 'ASO / Staff' || user.role === 'Administrator' || isBro) {
+    if (user.role === 'ASO / Staff' || user.role === 'Maintenance Center' || user.role === 'Administrator' || isBro) {
       // Task A: Upload BAK / Dokumen Pendukung
       if (!t.file_bak_url || t.file_bak_url === 'dummy_pdf_file' || t.file_bak_url === '') {
         const id = `notif-aso-upload-${t.id}`;
@@ -647,29 +647,30 @@ export default function App() {
             // Trigger automatic background sync
             fetchData();
 
-            const newRecord = payload.new as Backcharge;
-            const oldRecord = payload.old as Backcharge;
+            const newRecord = (payload.new || {}) as Partial<Backcharge>;
+            const oldRecord = (payload.old || {}) as Partial<Backcharge>;
 
             const userBranches = currentUser.branch ? currentUser.branch.split(',').map(s => s.trim()) : [];
-            const isRelevantBranch = currentUser.branch === 'Nasional' || newRecord.branch === currentUser.branch || userBranches.includes(newRecord.branch);
+            const recordBranch = newRecord.branch || oldRecord.branch || '';
+            const isRelevantBranch = currentUser.branch === 'Nasional' || (recordBranch && (recordBranch === currentUser.branch || userBranches.includes(recordBranch)));
 
             // Generate descriptive notifications
-            if (payload.eventType === 'INSERT') {
+            if (payload.eventType === 'INSERT' && newRecord.id) {
               if (isRelevantBranch) {
-                addToast(`Backcharge Baru: ${newRecord.id} - ${newRecord.customer_name}`, 'info');
+                addToast(`Backcharge Baru: ${newRecord.id} - ${newRecord.customer_name || 'Pelanggan'}`, 'info');
               }
-            } else if (payload.eventType === 'UPDATE') {
+            } else if (payload.eventType === 'UPDATE' && newRecord.id) {
               if (isRelevantBranch) {
                 let changeMessage = '';
-                if (oldRecord.status_confirm !== newRecord.status_confirm) {
+                if (oldRecord && oldRecord.status_confirm && oldRecord.status_confirm !== newRecord.status_confirm) {
                   changeMessage = `Status konfirmasi diperbarui menjadi "${newRecord.status_confirm}"`;
-                } else if (oldRecord.status_sap !== newRecord.status_sap) {
+                } else if (oldRecord && oldRecord.status_sap && oldRecord.status_sap !== newRecord.status_sap) {
                   changeMessage = `Status SAP diperbarui menjadi "${newRecord.status_sap}"`;
-                } else if (oldRecord.status_handover !== newRecord.status_handover) {
+                } else if (oldRecord && oldRecord.status_handover && oldRecord.status_handover !== newRecord.status_handover) {
                   changeMessage = `Status penyerahan berkas diperbarui menjadi "${newRecord.status_handover}"`;
-                } else if (oldRecord.no_invoice !== newRecord.no_invoice) {
+                } else if (oldRecord && oldRecord.no_invoice !== undefined && oldRecord.no_invoice !== newRecord.no_invoice) {
                   changeMessage = `Nomor Invoice diperbarui menjadi "${newRecord.no_invoice}"`;
-                } else if (oldRecord.status_payment !== newRecord.status_payment) {
+                } else if (oldRecord && oldRecord.status_payment && oldRecord.status_payment !== newRecord.status_payment) {
                   changeMessage = `Status pembayaran diperbarui menjadi "${newRecord.status_payment}"`;
                 }
 

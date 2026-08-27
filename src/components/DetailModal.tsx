@@ -776,7 +776,7 @@ export default function DetailModal({
   const isBro = currentUser.role === 'BRO';
   const isAdmin = currentUser.role === 'Admin' || currentUser.role === 'Administrator';
   const isAdminView = isAdmin || currentUser.role === 'Admin Head';
-  const isAso = currentUser.role === 'ASO / Staff' || currentUser.role === 'Administrator';
+  const isAso = currentUser.role === 'ASO / Staff' || currentUser.role === 'Maintenance Center' || currentUser.role === 'Administrator';
 
   const txValue = transaction.value || 0;
   const isRegionalHeadView = isRegionalHeadRole(currentUser.role as string);

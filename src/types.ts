@@ -29,7 +29,8 @@ export type UserRole =
   | 'Regional Head West' 
   | 'Regional Head Central' 
   | 'Regional Head East'
-  | 'Admin Head';
+  | 'Admin Head'
+  | 'Maintenance Center';
 
 export const REGIONAL_HEAD_ROLES: UserRole[] = [
   'Regional Head West',
@@ -134,6 +135,10 @@ export interface DashboardFilter {
   statusConfirm?: string;
   alert?: 'due' | 'pending' | 'high_value' | '';
 }
+
+export const WEST_BRANCHES = ['Lampung', 'Medan', 'Padang', 'Palembang', 'Pekanbaru'];
+export const CENTRAL_BRANCHES = ['Bandung', 'Jakarta', 'Pontianak'];
+export const EAST_BRANCHES = ['Bali', 'Balikpapan', 'Banjarmasin', 'Makassar', 'Malang', 'Semarang', 'Solo', 'Surabaya'];
 
 export interface ContactInquiry {
   id: string;
