@@ -2,9 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, Download, 
   Upload, FileText, Check, AlertCircle, AlertTriangle, RefreshCw, X, Trash2,
-  Loader2, Edit
+  Loader2, Edit, Info
 } from 'lucide-react';
-import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST } from '../types';
+import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
 import * as XLSX from 'xlsx';
 
@@ -42,7 +42,7 @@ export default function DatabaseView({
   
   // Role permissions
   const userRole = currentUser.role as string;
-  const isAsoUser = userRole === 'ASO / Staff' || userRole === 'Maintenance Center';
+  const isAsoUser = userRole === 'ASO' || userRole === 'Maintenance Center' || userRole === 'ASO Megabranch';
   const isSalesHeadUser = userRole === 'Sales Head' || userRole === 'Sales / Sales Head';
   const isKacabUser = userRole === 'Kepala Cabang' || userRole === 'kacab';
   const isBroUser = userRole === 'BRO';
@@ -58,12 +58,13 @@ export default function DatabaseView({
     currentUser.role === 'Division Head' || 
     (currentUser.role && currentUser.role.startsWith('Regional Head'));
   const userBranchList = currentUser.branch && currentUser.branch !== 'Nasional'
-    ? currentUser.branch.split(',').map(s => s.trim()).filter(Boolean)
+    ? getUserBranches(currentUser.branch)
     : null;
   const availableBranchOptions = userBranchList && userBranchList.length > 0
-    ? BRANCH_LIST.filter(b => userBranchList.some(ub => ub.toLowerCase() === b.toLowerCase()))
-    : BRANCH_LIST;
-  const [selectedBranch, setSelectedBranch] = useState(isNasional ? '' : (currentUser.branch || ''));
+    ? userBranchList
+    : ALL_SYSTEM_BRANCHES;
+  const showBranchFilter = isNasional || (userBranchList && userBranchList.length > 1);
+  const [selectedBranch, setSelectedBranch] = useState(isNasional || (currentUser.branch === 'Megabranch') ? '' : (currentUser.branch || ''));
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [selectedStage, setSelectedStage] = useState('');
@@ -98,14 +99,13 @@ export default function DatabaseView({
   // Form states
   const [category, setCategory] = useState<BackchargeCategory>('Own Risk');
   const [branch, setBranch] = useState(() => {
-    if (currentUser.branch === 'Nasional' || currentUser.role === 'Administrator' || currentUser.role === 'Division Head') {
-      return 'Jakarta';
-    }
     if (userBranchList && userBranchList.length > 0) {
-      const found = BRANCH_LIST.find(b => userBranchList.some(ub => ub.toLowerCase() === b.toLowerCase()));
-      return found || userBranchList[0];
+      return userBranchList[0];
     }
-    return currentUser.branch || 'Jakarta';
+    if (currentUser.branch && currentUser.branch !== 'Nasional' && currentUser.branch !== 'Megabranch') {
+      return currentUser.branch;
+    }
+    return ALL_SYSTEM_BRANCHES[0];
   });
   const [noBak, setNoBak] = useState('');
   const [noSpk, setNoSpk] = useState('');
@@ -176,8 +176,9 @@ export default function DatabaseView({
   const [formSuccess, setFormSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Check role permission for writing
-  const canWrite = currentUser.role === 'ASO / Staff' || currentUser.role === 'Maintenance Center' || currentUser.role === 'Administrator';
+  // Check role permission for writing & editing
+  const isBroOnly = currentUser.role === 'BRO';
+  const canWrite = currentUser.role === 'ASO' || currentUser.role === 'Maintenance Center' || currentUser.role === 'ASO Megabranch' || currentUser.role === 'Administrator' || isBroOnly;
 
   // Upgraded file change handler with automatic Google Drive upload (either Service Account or Client OAuth)
   const handleFileChange = async (
@@ -265,13 +266,13 @@ export default function DatabaseView({
       ["Tanggal", "Kategori", "Cabang", "Nama Customer", "No Polisi", "Nilai Backcharge", "No BAK", "No SPK", "No SAP", "No Tilang", "PIC", "Alasan", "Tahap Proses", "No Invoice", "Status Bayar", "Status SAP (Bill/Not Bill/NA)"]
     ];
     const sampleData = [
-      ["12/08/2026", "Own Risk", "Jakarta", "PT Maju Bersama", "B 1234 ABC", "150000", "BAK-001", "SPK-001", "SAP-001", "-", "John Doe", "Klaim Own Risk", "Berkas di ASO", "-", "Belum Bayar", "Bill"],
-      ["12/08/2026", "Own Risk", "Jakarta", "PT Prima Sentosa", "B 5678 XYZ", "250000", "BAK-002", "SPK-002", "SAP-002", "-", "Jane Smith", "Klaim Own Risk", "Berkas di Admin", "-", "Belum Bayar", "Not Bill"],
+      ["12/08/2026", "Own Risk", "Megabranch", "PT Maju Bersama", "B 1234 ABC", "150000", "BAK-001", "SPK-001", "SAP-001", "-", "John Doe", "Klaim Own Risk", "Berkas di ASO", "-", "Belum Bayar", "Bill"],
+      ["12/08/2026", "Own Risk", "Megabranch", "PT Prima Sentosa", "B 5678 XYZ", "250000", "BAK-002", "SPK-002", "SAP-002", "-", "Jane Smith", "Klaim Own Risk", "Berkas di Admin", "-", "Belum Bayar", "Not Bill"],
       ["13/08/2026", "ETLE", "Surabaya", "PT Sukses Abadi", "L 9988 AA", "500000", "-", "-", "SAP-003", "TILANG-001", "John Doe", "Pelanggaran Lampu Merah", "Belum appr SH/Kacab", "-", "Belum Bayar", "N/A"],
       ["14/08/2026", "Maintenance", "Bandung", "PT Sejahtera", "D 4321 EF", "8000000", "BAK-003", "SPK-003", "SAP-004", "-", "Jane Smith", "Ganti Oli Mesin", "Belum appr Regional Head", "-", "Belum Bayar", "Bill"],
       ["15/08/2026", "Maintenance", "Medan", "PT Karya Jaya", "BK 7777 SS", "16000000", "BAK-004", "SPK-004", "SAP-005", "-", "John Doe", "Klaim Transmisi Pecah", "Belum appr Division Head", "-", "Belum Bayar", "Bill"],
       ["16/08/2026", "TPL", "Semarang", "PT Sinar Terang", "H 1122 YU", "1200000", "BAK-005", "SPK-005", "SAP-006", "-", "Jane Smith", "Kerusakan Kendaraan Pihak Ketiga", "Belum Invoice", "-", "Belum Bayar", "Not Bill"],
-      ["17/08/2026", "Own Risk", "Jakarta", "PT Berkah Selalu", "B 8888 OK", "150000", "BAK-006", "SPK-006", "SAP-007", "-", "John Doe", "Klaim Own Risk", "Kolektif Bayar", "INV-2026-001", "Lunas", "Bill"]
+      ["17/08/2026", "Own Risk", "Megabranch", "PT Berkah Selalu", "B 8888 OK", "150000", "BAK-006", "SPK-006", "SAP-007", "-", "John Doe", "Klaim Own Risk", "Kolektif Bayar", "INV-2026-001", "Lunas", "Bill"]
     ];
     const worksheet = XLSX.utils.aoa_to_sheet([...headers, ...sampleData]);
     const workbook = XLSX.utils.book_new();
@@ -417,13 +418,15 @@ export default function DatabaseView({
           else if (cleanKategori.includes('dokumen') || cleanKategori.includes('stnk') || cleanKategori.includes('kendaraan')) matchedCategory = 'Dokumen Kendaraan';
           
           // Cabang matching
-          let matchedBranch = 'Jakarta';
+          let matchedBranch = MEGABRANCH_LIST[0];
           const cleanCabang = rawCabang.replace(/["']/g, '').trim().toLowerCase();
-          const foundBranch = BRANCH_LIST.find(b => b.toLowerCase() === cleanCabang);
+          const foundBranch = ALL_SYSTEM_BRANCHES.find(b => b.toLowerCase() === cleanCabang);
           if (foundBranch) {
             matchedBranch = foundBranch;
+          } else if (cleanCabang === 'jakarta' || cleanCabang.includes('jakarta') || cleanCabang === 'megabranch') {
+            matchedBranch = MEGABRANCH_LIST[0];
           } else {
-            const partialBranch = BRANCH_LIST.find(b => cleanCabang.includes(b.toLowerCase()) || b.toLowerCase().includes(cleanCabang));
+            const partialBranch = ALL_SYSTEM_BRANCHES.find(b => cleanCabang.includes(b.toLowerCase()) || b.toLowerCase().includes(cleanCabang));
             if (partialBranch) {
               matchedBranch = partialBranch;
             }
@@ -622,7 +625,7 @@ export default function DatabaseView({
     try {
       await onAddTransaction({
         category,
-        branch: currentUser.branch === 'Nasional' ? branch : currentUser.branch,
+        branch: (currentUser.branch === 'Nasional' || currentUser.branch === 'Megabranch' || currentUser.role === 'Administrator' || currentUser.role === 'Division Head' || (userBranchList && userBranchList.length > 0)) ? (branch && branch !== 'Megabranch' ? branch : ALL_SYSTEM_BRANCHES[0]) : (currentUser.branch && currentUser.branch !== 'Megabranch' ? currentUser.branch : ALL_SYSTEM_BRANCHES[0]),
         no_bak: category === 'Own Risk' ? (noBak.trim() || '-') : '-',
         no_spk: noSpk.trim() || '-',
         no_sap: category === 'Own Risk' ? (noSap.trim() || '-') : '-',
@@ -684,7 +687,7 @@ export default function DatabaseView({
   // ==========================================
   const [editingTransaction, setEditingTransaction] = useState<Backcharge | null>(null);
   const [editCategory, setEditCategory] = useState<BackchargeCategory>('Own Risk');
-  const [editBranch, setEditBranch] = useState('Jakarta');
+  const [editBranch, setEditBranch] = useState(ALL_SYSTEM_BRANCHES[0]);
   const [editNoBak, setEditNoBak] = useState('');
   const [editNoSpk, setEditNoSpk] = useState('');
   const [editNoSap, setEditNoSap] = useState('');
@@ -798,7 +801,7 @@ export default function DatabaseView({
     setEditError(null);
     setEditSuccess(false);
 
-    if (!editCustomerName.trim()) {
+    if (!isBroOnly && !editCustomerName.trim()) {
       setEditError('Nama Customer wajib diisi!');
       return;
     }
@@ -807,7 +810,9 @@ export default function DatabaseView({
       return;
     }
 
-    const confirmMsg = `Konfirmasi Revisi Data:\nApakah Anda yakin ingin menyimpan perubahan data Backcharge transaksi ${editingTransaction.id} (${editCustomerName.trim()})?`;
+    const confirmMsg = isBroOnly 
+      ? `Konfirmasi Perubahan Nominal:\nApakah Anda yakin ingin mengubah Nominal Backcharge transaksi ${editingTransaction.id} (${editingTransaction.customer_name}) dari Rp ${(editingTransaction.value || 0).toLocaleString('id-ID')} menjadi Rp ${Number(editValue).toLocaleString('id-ID')}?`
+      : `Konfirmasi Revisi Data:\nApakah Anda yakin ingin menyimpan perubahan data Backcharge transaksi ${editingTransaction.id} (${editCustomerName.trim()})?`;
     if (!window.confirm(confirmMsg)) {
       return;
     }
@@ -815,7 +820,9 @@ export default function DatabaseView({
     setIsEditSubmitting(true);
     try {
       if (onUpdateTransaction) {
-        const updates: Partial<Backcharge> = {
+        const updates: Partial<Backcharge> = isBroOnly ? {
+          value: Number(editValue)
+        } : {
           category: editCategory,
           branch: editBranch,
           no_bak: editCategory === 'Own Risk' ? (editNoBak.trim() || '-') : '-',
@@ -836,7 +843,9 @@ export default function DatabaseView({
           upload_dok_pendukung: editUploadDokPendukung
         };
 
-        const logMsg = `Merevisi data Backcharge ${editingTransaction.id} (${editCustomerName})`;
+        const logMsg = isBroOnly 
+          ? `Merevisi Nominal Backcharge ${editingTransaction.id} (${editingTransaction.customer_name}) dari Rp ${(editingTransaction.value || 0).toLocaleString('id-ID')} menjadi Rp ${Number(editValue).toLocaleString('id-ID')}`
+          : `Merevisi data Backcharge ${editingTransaction.id} (${editCustomerName})`;
         await onUpdateTransaction(editingTransaction.id, updates, logMsg);
         setEditSuccess(true);
         setTimeout(() => {
@@ -866,9 +875,11 @@ export default function DatabaseView({
         t.no_invoice.toLowerCase().includes(searchLower);
 
       const matchesCategory = !selectedCategory || t.category === selectedCategory;
+      const selectedBranchList = selectedBranch ? getUserBranches(selectedBranch).map(b => b.toLowerCase()) : [];
       const matchesBranch = !selectedBranch || 
-        t.branch === selectedBranch || 
-        (selectedBranch.includes(',') && selectedBranch.split(',').map(s => s.trim()).includes(t.branch));
+        (Boolean(t.branch) && selectedBranchList.includes(t.branch.toLowerCase())) ||
+        (Boolean(t.branch) && t.branch.toLowerCase() === selectedBranch.toLowerCase()) || 
+        (selectedBranch.includes(',') && selectedBranch.split(',').map(s => s.trim().toLowerCase()).includes(t.branch ? t.branch.toLowerCase() : ''));
       const matchesPaymentStatus = !selectedPaymentStatus || t.status_payment === selectedPaymentStatus;
       
       let matchesConfirmStatus = true;
@@ -1415,26 +1426,26 @@ export default function DatabaseView({
         <form onSubmit={handleFormSubmit} className="space-y-4">
           {currentUser.branch === 'Nasional' || currentUser.role === 'Administrator' || currentUser.role === 'Division Head' ? (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota / BSO</label>
               <select 
                 value={branch} 
                 onChange={(e) => setBranch(e.target.value)}
                 className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                {BRANCH_LIST.map(b => (
+                {ALL_SYSTEM_BRANCHES.map(b => (
                   <option key={b} value={b}>{b}</option>
                 ))}
               </select>
             </div>
           ) : userBranchList && userBranchList.length > 0 ? (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota / BSO</label>
               <select 
                 value={branch} 
                 onChange={(e) => setBranch(e.target.value)}
                 className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                {BRANCH_LIST.filter(b => userBranchList.some(ub => ub.toLowerCase() === b.toLowerCase())).map(b => (
+                {userBranchList.map(b => (
                   <option key={b} value={b}>{b}</option>
                 ))}
               </select>
@@ -1657,13 +1668,13 @@ export default function DatabaseView({
               <option value="Dokumen Kendaraan">Dokumen Kendaraan</option>
             </select>
 
-            {isNasional && (
+            {showBranchFilter && (
               <select 
                 value={selectedBranch}
                 onChange={(e) => setSelectedBranch(e.target.value)}
                 className="text-xs border border-slate-200 rounded-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-slate-700 cursor-pointer shadow-sm transition-all"
               >
-                <option value="">Semua Cabang</option>
+                <option value="">{currentUser.branch === 'Megabranch' ? 'ALL BSO (Megabranch)' : 'Semua Cabang'}</option>
                 {availableBranchOptions.map(b => (
                   <option key={b} value={b}>{b}</option>
                 ))}
@@ -2178,14 +2189,25 @@ export default function DatabaseView({
                 </div>
               )}
 
+              {isBroOnly && (
+                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-2xl font-medium flex items-start space-x-2.5 shadow-sm">
+                  <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-extrabold block text-amber-900">Akses Role {currentUser.role}:</span>
+                    <span>Anda hanya diizinkan untuk mengubah <strong>Nilai Backcharge (Nominal)</strong> jika terjadi perubahan harga. Field informasi transaksi lainnya dikunci.</span>
+                  </div>
+                </div>
+              )}
+
               {/* Cabang */}
               {currentUser.branch === 'Nasional' || currentUser.role === 'Administrator' || currentUser.role === 'Division Head' ? (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota</label>
                   <select 
                     value={editBranch} 
+                    disabled={isBroOnly}
                     onChange={(e) => setEditBranch(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                   >
                     {BRANCH_LIST.map(b => (
                       <option key={b} value={b}>{b}</option>
@@ -2197,10 +2219,11 @@ export default function DatabaseView({
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota</label>
                   <select 
                     value={editBranch} 
+                    disabled={isBroOnly}
                     onChange={(e) => setEditBranch(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                   >
-                    {BRANCH_LIST.filter(b => userBranchList.some(ub => ub.toLowerCase() === b.toLowerCase())).map(b => (
+                    {ALL_SYSTEM_BRANCHES.filter(b => userBranchList.some(ub => ub.toLowerCase() === b.toLowerCase())).map(b => (
                       <option key={b} value={b}>{b}</option>
                     ))}
                   </select>
@@ -2212,7 +2235,7 @@ export default function DatabaseView({
                     type="text" 
                     disabled 
                     value={editBranch} 
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-100 font-bold text-slate-500" 
+                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-100 font-bold text-slate-500 cursor-not-allowed" 
                   />
                 </div>
               )}
@@ -2222,8 +2245,9 @@ export default function DatabaseView({
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Kategori Backcharge</label>
                 <select 
                   value={editCategory} 
+                  disabled={isBroOnly}
                   onChange={(e) => setEditCategory(e.target.value as BackchargeCategory)}
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 >
                   <option value="Own Risk">Own Risk</option>
                   <option value="Maintenance">Maintenance</option>
@@ -2241,8 +2265,9 @@ export default function DatabaseView({
                 <input 
                   type="date" 
                   value={editTanggal}
+                  disabled={isBroOnly}
                   onChange={(e) => setEditTanggal(e.target.value)}
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-bold bg-slate-50/50"
+                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-bold bg-slate-50/50 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 />
               </div>
 
@@ -2253,9 +2278,10 @@ export default function DatabaseView({
                   <input 
                     type="text" 
                     value={editNoBak}
+                    disabled={isBroOnly}
                     onChange={(e) => setEditNoBak(e.target.value)}
                     placeholder="BAK/2026/XI/102" 
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold"
+                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                   />
                 </div>
               )}
@@ -2267,9 +2293,10 @@ export default function DatabaseView({
                   <input 
                     type="text" 
                     value={editNoTilang}
+                    disabled={isBroOnly}
                     onChange={(e) => setEditNoTilang(e.target.value)}
                     placeholder="TILANG/ETLE/9281" 
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold"
+                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                   />
                 </div>
               )}
@@ -2280,9 +2307,10 @@ export default function DatabaseView({
                 <input 
                   type="text" 
                   value={editNoSpk}
+                  disabled={isBroOnly}
                   onChange={(e) => setEditNoSpk(e.target.value)}
                   placeholder="500101010" 
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold"
+                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 />
               </div>
 
@@ -2293,9 +2321,10 @@ export default function DatabaseView({
                   type="text" 
                   required
                   value={editCustomerName}
+                  disabled={isBroOnly}
                   onChange={(e) => setEditCustomerName(e.target.value)}
                   placeholder="PT Indonesia Gemilang" 
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-bold text-slate-900 bg-slate-50/20"
+                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-bold text-slate-900 bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 />
               </div>
 
@@ -2305,9 +2334,10 @@ export default function DatabaseView({
                 <input 
                   type="text" 
                   value={editLicensePlate}
+                  disabled={isBroOnly}
                   onChange={(e) => setEditLicensePlate(e.target.value)}
                   placeholder="B 1234 ABC" 
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold"
+                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 />
               </div>
 
@@ -2317,22 +2347,32 @@ export default function DatabaseView({
                 <input 
                   type="text" 
                   value={editBroName}
+                  disabled={isBroOnly}
                   onChange={(e) => setEditBroName(e.target.value)}
                   placeholder="Nama BRO..." 
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold"
+                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 />
               </div>
 
               {/* Nilai Backcharge */}
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nilai Backcharge (Rp)</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-[10px] font-extrabold text-slate-700 uppercase">Nilai Backcharge (Rp)</label>
+                  {isBroOnly && (
+                    <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full border border-emerald-300 animate-pulse">
+                      Dapat Diubah oleh BRO
+                    </span>
+                  )}
+                </div>
                 <input 
                   type="number" 
                   required
                   value={editValue}
                   onChange={(e) => setEditValue(e.target.value)}
                   placeholder="Nominal" 
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono font-bold"
+                  className={`w-full text-xs border rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono font-bold ${
+                    isBroOnly ? 'border-amber-400 bg-amber-50/50 ring-2 ring-amber-300 text-amber-950 font-black' : 'border-slate-200 bg-white'
+                  }`}
                 />
               </div>
 
@@ -2341,123 +2381,126 @@ export default function DatabaseView({
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Dokumen Pendukung & Alasan Konfirmasi Dokumen Sah</label>
                 <textarea 
                   value={editDokPendukungAlasan}
+                  disabled={isBroOnly}
                   onChange={(e) => setEditDokPendukungAlasan(e.target.value)}
                   placeholder="Tuliskan detail dokumen pendukung beserta penjelasan mengapa dokumen dianggap sah..." 
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-sans"
+                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-sans disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                   rows={3}
                 />
               </div>
 
               {/* File Uploads */}
-              <div className="border-t border-slate-100 pt-3 space-y-3">
-                <span className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Berkas Lampiran Pendukung (Optional)</span>
-                
-                {/* 1. File BAK */}
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="block text-[10px] font-bold text-slate-500">Scan Berkas Berita Acara (BAK)</label>
-                    {editFileBak && (
-                      <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded uppercase">Eksis</span>
-                    )}
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <input 
-                      type="file" 
-                      accept="application/pdf,image/*"
-                      onChange={(e) => handleEditFileChange(e, setEditFileBak, setEditFileBakName, 'editFileBak')}
-                      className="hidden" 
-                      id="edit-file-bak-input" 
-                    />
-                    <label 
-                      htmlFor="edit-file-bak-input" 
-                      className={`flex-grow border ${uploadingToDrive['editFileBak'] ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 bg-slate-50/50'} border-dashed rounded-xl px-3 py-2.5 text-center cursor-pointer hover:bg-slate-50 hover:border-blue-400 transition-all text-xs font-semibold text-slate-500 flex items-center justify-center space-x-1.5`}
-                    >
-                      {uploadingToDrive['editFileBak'] ? (
-                        <>
-                          <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
-                          <span>Mengupload ke Drive...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-4 h-4 text-blue-500" />
-                          <span className="truncate max-w-[200px]">{editFileBakName || 'Ganti Berkas Scan BAK'}</span>
-                        </>
+              {!isBroOnly && (
+                <div className="border-t border-slate-100 pt-3 space-y-3">
+                  <span className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Berkas Lampiran Pendukung (Optional)</span>
+                  
+                  {/* 1. File BAK */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-[10px] font-bold text-slate-500">Scan Berkas Berita Acara (BAK)</label>
+                      {editFileBak && (
+                        <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded uppercase">Eksis</span>
                       )}
-                    </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input 
+                        type="file" 
+                        accept="application/pdf,image/*"
+                        onChange={(e) => handleEditFileChange(e, setEditFileBak, setEditFileBakName, 'editFileBak')}
+                        className="hidden" 
+                        id="edit-file-bak-input" 
+                      />
+                      <label 
+                        htmlFor="edit-file-bak-input" 
+                        className={`flex-grow border ${uploadingToDrive['editFileBak'] ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 bg-slate-50/50'} border-dashed rounded-xl px-3 py-2.5 text-center cursor-pointer hover:bg-slate-50 hover:border-blue-400 transition-all text-xs font-semibold text-slate-500 flex items-center justify-center space-x-1.5`}
+                      >
+                        {uploadingToDrive['editFileBak'] ? (
+                          <>
+                            <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
+                            <span>Mengupload ke Drive...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-blue-500" />
+                            <span className="truncate max-w-[200px]">{editFileBakName || 'Ganti Berkas Scan BAK'}</span>
+                          </>
+                        )}
+                      </label>
+                    </div>
                   </div>
-                </div>
 
-                {/* 2. File Handover Aso Admin */}
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="block text-[10px] font-bold text-slate-500">Scan Tanda Terima Berkas ASO ke Admin</label>
-                    {editFileHandoverAsoSales && (
-                      <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded uppercase">Eksis</span>
-                    )}
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <input 
-                      type="file" 
-                      accept="application/pdf,image/*"
-                      onChange={(e) => handleEditFileChange(e, setEditFileHandoverAsoSales, setEditFileHandoverAsoSalesName, 'editFileHandoverAsoSales')}
-                      className="hidden" 
-                      id="edit-file-handover-aso-sales-input" 
-                    />
-                    <label 
-                      htmlFor="edit-file-handover-aso-sales-input" 
-                      className={`flex-grow border ${uploadingToDrive['editFileHandoverAsoSales'] ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 bg-slate-50/50'} border-dashed rounded-xl px-3 py-2.5 text-center cursor-pointer hover:bg-slate-50 hover:border-blue-400 transition-all text-xs font-semibold text-slate-500 flex items-center justify-center space-x-1.5`}
-                    >
-                      {uploadingToDrive['editFileHandoverAsoSales'] ? (
-                        <>
-                          <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
-                          <span>Mengupload ke Drive...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-4 h-4 text-blue-500" />
-                          <span className="truncate max-w-[200px]">{editFileHandoverAsoSalesName || 'Ganti Berkas ASO ke Admin'}</span>
-                        </>
+                  {/* 2. File Handover Aso Admin */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-[10px] font-bold text-slate-500">Scan Tanda Terima Berkas ASO ke Admin</label>
+                      {editFileHandoverAsoSales && (
+                        <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded uppercase">Eksis</span>
                       )}
-                    </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input 
+                        type="file" 
+                        accept="application/pdf,image/*"
+                        onChange={(e) => handleEditFileChange(e, setEditFileHandoverAsoSales, setEditFileHandoverAsoSalesName, 'editFileHandoverAsoSales')}
+                        className="hidden" 
+                        id="edit-file-handover-aso-sales-input" 
+                      />
+                      <label 
+                        htmlFor="edit-file-handover-aso-sales-input" 
+                        className={`flex-grow border ${uploadingToDrive['editFileHandoverAsoSales'] ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 bg-slate-50/50'} border-dashed rounded-xl px-3 py-2.5 text-center cursor-pointer hover:bg-slate-50 hover:border-blue-400 transition-all text-xs font-semibold text-slate-500 flex items-center justify-center space-x-1.5`}
+                      >
+                        {uploadingToDrive['editFileHandoverAsoSales'] ? (
+                          <>
+                            <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
+                            <span>Mengupload ke Drive...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-blue-500" />
+                            <span className="truncate max-w-[200px]">{editFileHandoverAsoSalesName || 'Ganti Berkas ASO ke Admin'}</span>
+                          </>
+                        )}
+                      </label>
+                    </div>
                   </div>
-                </div>
 
-                {/* 4. Dokumen Pendukung */}
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="block text-[10px] font-bold text-slate-500">Berkas/Foto Dokumen Pendukung</label>
-                    {editUploadDokPendukung && (
-                      <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded uppercase">Eksis</span>
-                    )}
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <input 
-                      type="file" 
-                      accept="application/pdf,image/*"
-                      onChange={(e) => handleEditFileChange(e, setEditUploadDokPendukung, setEditUploadDokPendukungName, 'editUploadDokPendukung')}
-                      className="hidden" 
-                      id="edit-upload-dok-pendukung-input" 
-                    />
-                    <label 
-                      htmlFor="edit-upload-dok-pendukung-input" 
-                      className={`flex-grow border ${uploadingToDrive['editUploadDokPendukung'] ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 bg-slate-50/50'} border-dashed rounded-xl px-3 py-2.5 text-center cursor-pointer hover:bg-slate-50 hover:border-blue-400 transition-all text-xs font-semibold text-slate-500 flex items-center justify-center space-x-1.5`}
-                    >
-                      {uploadingToDrive['editUploadDokPendukung'] ? (
-                        <>
-                          <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
-                          <span>Mengupload ke Drive...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-4 h-4 text-blue-500" />
-                          <span className="truncate max-w-[200px]">{editUploadDokPendukungName === 'file_dok_pendukung_exist' ? 'Dokumen Pendukung Tersimpan' : (editUploadDokPendukungName || 'Ganti Dokumen Pendukung')}</span>
-                        </>
+                  {/* 4. Dokumen Pendukung */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-[10px] font-bold text-slate-500">Berkas/Foto Dokumen Pendukung</label>
+                      {editUploadDokPendukung && (
+                        <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded uppercase">Eksis</span>
                       )}
-                    </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input 
+                        type="file" 
+                        accept="application/pdf,image/*"
+                        onChange={(e) => handleEditFileChange(e, setEditUploadDokPendukung, setEditUploadDokPendukungName, 'editUploadDokPendukung')}
+                        className="hidden" 
+                        id="edit-upload-dok-pendukung-input" 
+                      />
+                      <label 
+                        htmlFor="edit-upload-dok-pendukung-input" 
+                        className={`flex-grow border ${uploadingToDrive['editUploadDokPendukung'] ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 bg-slate-50/50'} border-dashed rounded-xl px-3 py-2.5 text-center cursor-pointer hover:bg-slate-50 hover:border-blue-400 transition-all text-xs font-semibold text-slate-500 flex items-center justify-center space-x-1.5`}
+                      >
+                        {uploadingToDrive['editUploadDokPendukung'] ? (
+                          <>
+                            <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
+                            <span>Mengupload ke Drive...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-blue-500" />
+                            <span className="truncate max-w-[200px]">{editUploadDokPendukungName === 'file_dok_pendukung_exist' ? 'Dokumen Pendukung Tersimpan' : (editUploadDokPendukungName || 'Ganti Dokumen Pendukung')}</span>
+                          </>
+                        )}
+                      </label>
+                    </div>
                   </div>
-                </div>
 
-              </div>
+                </div>
+              )}
             </form>
 
             {/* Footer Buttons */}

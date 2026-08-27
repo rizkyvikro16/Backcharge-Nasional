@@ -23,17 +23,17 @@ export const supabase = isSupabaseConfigured
 
 const INITIAL_PROFILES: Profile[] = [
   { id: '1', email: 'admin.pusat@company.id', full_name: 'Aris Munandar (HQ Admin)', role: 'Administrator', branch: 'Nasional', created_at: new Date().toISOString() },
-  { id: '2', email: 'aso.jkt@company.id', full_name: 'Hendra Wijaya (ASO Jkt)', role: 'ASO / Staff', branch: 'Jakarta', created_at: new Date().toISOString() },
-  { id: '3', email: 'sales.jkt@company.id', full_name: 'Dewi Lestari (Sales Jkt)', role: 'Sales Head', branch: 'Jakarta', created_at: new Date().toISOString() },
+  { id: '2', email: 'aso.jkt@company.id', full_name: 'Hendra Wijaya (ASO Megabranch)', role: 'ASO Megabranch', branch: 'BSO GSO & AFFCO', created_at: new Date().toISOString() },
+  { id: '3', email: 'sales.jkt@company.id', full_name: 'Dewi Lestari (Sales Megabranch)', role: 'Sales Head', branch: 'BSO Sudirman', created_at: new Date().toISOString() },
   { id: '4', email: 'bro.sby@company.id', full_name: 'Bayu Saputra (BRO Sby)', role: 'BRO', branch: 'Surabaya', created_at: new Date().toISOString() },
   { id: '5', email: 'admin.sby@company.id', full_name: 'Siti Rahma (Admin Sby)', role: 'Admin', branch: 'Surabaya', created_at: new Date().toISOString() },
-  { id: '6', email: 'aso.bdg@company.id', full_name: 'Budi Setiawan (ASO Bdg)', role: 'ASO / Staff', branch: 'Bandung', created_at: new Date().toISOString() },
+  { id: '6', email: 'aso.bdg@company.id', full_name: 'Budi Setiawan (ASO Bdg)', role: 'ASO', branch: 'Bandung', created_at: new Date().toISOString() },
   { id: '7', email: 'sales.mdn@company.id', full_name: 'Rian Pratama (Sales Mdn)', role: 'Sales Head', branch: 'Medan', created_at: new Date().toISOString() },
-  { id: '8', email: 'kacab.jkt@company.id', full_name: 'Agus Salim (Kacab Jkt)', role: 'Kepala Cabang', branch: 'Jakarta', created_at: new Date().toISOString() },
+  { id: '8', email: 'kacab.jkt@company.id', full_name: 'Agus Salim (Kacab Megabranch)', role: 'Kepala Cabang', branch: 'BSO GSO & AFFCO', created_at: new Date().toISOString() },
   { id: '9', email: 'rbu.nas@company.id', full_name: 'Rudy Hartono (Division Head)', role: 'Division Head', branch: 'Nasional', created_at: new Date().toISOString() },
   { id: '10', email: 'rh.west@company.id', full_name: 'Herman Prasetyo (RH West)', role: 'Regional Head West', branch: 'Lampung, Medan, Padang, Palembang, Pekanbaru', created_at: new Date().toISOString() },
-  { id: '11', email: 'aso.ptk@company.id', full_name: 'Eko Prasetyo (ASO Pontianak)', role: 'ASO / Staff', branch: 'Pontianak', created_at: new Date().toISOString() },
-  { id: '12', email: 'rh.central@company.id', full_name: 'Bambang S (RH Central)', role: 'Regional Head Central', branch: 'Bandung, Jakarta, Pontianak', created_at: new Date().toISOString() },
+  { id: '11', email: 'aso.ptk@company.id', full_name: 'Eko Prasetyo (ASO Pontianak)', role: 'ASO Megabranch', branch: 'BSO Pontianak', created_at: new Date().toISOString() },
+  { id: '12', email: 'rh.central@company.id', full_name: 'Bambang S (RH Central)', role: 'Regional Head Central', branch: 'Bandung, BSO GSO & AFFCO, BSO Pontianak', created_at: new Date().toISOString() },
   { id: '13', email: 'rh.east@company.id', full_name: 'Agus K (RH East)', role: 'Regional Head East', branch: 'Bali, Balikpapan, Banjarmasin, Makassar, Malang, Semarang, Solo, Surabaya', created_at: new Date().toISOString() }
 ];
 
@@ -57,6 +57,20 @@ if (!localStorage.getItem('bc_profiles')) {
       if ((prof.role as string) === 'kacab') { prof.role = 'Kepala Cabang'; modified = true; }
       if ((prof.role as string) === 'RBU') { prof.role = 'Division Head'; modified = true; }
       if ((prof.role as string) === 'RH') { prof.role = 'Regional Head'; modified = true; }
+      if ((prof.role as string) === 'ASO / Staff') { prof.role = 'ASO'; modified = true; }
+      if ((prof.role as string) === 'Megabranch') { prof.role = 'ASO Megabranch'; modified = true; }
+      if ((prof.role as string) === 'BRO Megabranch') { prof.role = 'BRO'; modified = true; }
+      if ((prof.role as string) === 'SM Megabranch') { prof.role = 'Sales Head'; modified = true; }
+      if (prof.branch === 'Jakarta') { prof.branch = 'BSO GSO & AFFCO'; modified = true; }
+      if (prof.branch && prof.branch.includes('Jakarta')) {
+        prof.branch = prof.branch.replace(/Jakarta/g, 'BSO GSO & AFFCO');
+        modified = true;
+      }
+      if (prof.branch === 'Pontianak') { prof.branch = 'BSO Pontianak'; modified = true; }
+      if (prof.branch && prof.branch.includes('Pontianak') && !prof.branch.includes('BSO Pontianak')) {
+        prof.branch = prof.branch.replace(/Pontianak/g, 'BSO Pontianak');
+        modified = true;
+      }
     });
 
     INITIAL_PROFILES.slice(7).forEach(p => {
@@ -85,7 +99,7 @@ if (!localStorage.getItem('bc_backcharges')) {
     {
       id: 'BC-2026-0001',
       category: 'Own Risk',
-      branch: 'Jakarta',
+      branch: 'BSO GSO & AFFCO',
       no_bak: 'BAK/2026/06/001',
       no_spk: '-',
       no_sap: 'SAP-OR-101',
@@ -149,7 +163,7 @@ if (!localStorage.getItem('bc_backcharges')) {
     {
       id: 'BC-2026-0004',
       category: 'ETLE',
-      branch: 'Pontianak',
+      branch: 'BSO Pontianak',
       no_bak: 'BAK/2026/07/004',
       no_spk: '-',
       no_sap: '-',
@@ -168,15 +182,49 @@ if (!localStorage.getItem('bc_backcharges')) {
     }
   ];
   localStorage.setItem('bc_backcharges', JSON.stringify(defaultBackcharges));
+} else {
+  // Migrate existing transactions
+  try {
+    let currentTxs = JSON.parse(localStorage.getItem('bc_backcharges') || '[]');
+    let modified = false;
+    currentTxs.forEach((tx: any) => {
+      if (tx.branch === 'Jakarta' || tx.branch === 'Megabranch') {
+        tx.branch = 'BSO GSO & AFFCO';
+        modified = true;
+      }
+      if (tx.branch === 'Pontianak') {
+        tx.branch = 'BSO Pontianak';
+        modified = true;
+      }
+    });
+    if (modified) {
+      localStorage.setItem('bc_backcharges', JSON.stringify(currentTxs));
+    }
+  } catch (e) {}
 }
 
 if (!localStorage.getItem('bc_activity_logs')) {
   const initialLogs: ActivityLog[] = [
-    { id: 1, timestamp: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(), transaction_id: 'BC-2026-0001', performed_by: 'aso.jkt@company.id', action_description: 'Membuat transaksi Backcharge baru kategori Own Risk di cabang Jakarta' },
+    { id: 1, timestamp: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(), transaction_id: 'BC-2026-0001', performed_by: 'aso.jkt@company.id', action_description: 'Membuat transaksi Backcharge baru kategori Own Risk di cabang Megabranch' },
     { id: 2, timestamp: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(), transaction_id: 'BC-2026-0001', performed_by: 'sales.jkt@company.id', action_description: 'Status Konfirmasi berubah dari "Belum Konfirmasi" menjadi "Telah Dikonfirmasi"' },
     { id: 3, timestamp: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(), transaction_id: 'BC-2026-0002', performed_by: 'bro.sby@company.id', action_description: 'Membuat transaksi Backcharge baru kategori Maintenance di cabang Surabaya' }
   ];
   localStorage.setItem('bc_activity_logs', JSON.stringify(initialLogs));
+} else {
+  // Migrate existing activity logs referencing 'Jakarta' to 'Megabranch'
+  try {
+    let currentLogs = JSON.parse(localStorage.getItem('bc_activity_logs') || '[]');
+    let modified = false;
+    currentLogs.forEach((log: any) => {
+      if (log.action_description && log.action_description.includes('cabang Jakarta')) {
+        log.action_description = log.action_description.replace(/cabang Jakarta/g, 'cabang Megabranch');
+        modified = true;
+      }
+    });
+    if (modified) {
+      localStorage.setItem('bc_activity_logs', JSON.stringify(currentLogs));
+    }
+  } catch (e) {}
 }
 
 if (!localStorage.getItem('bc_contact_inquiries')) {

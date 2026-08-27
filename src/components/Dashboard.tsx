@@ -9,7 +9,7 @@ import {
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, BackchargeCategory } from '../types';
+import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, BackchargeCategory } from '../types';
 
 interface DashboardProps {
   transactions: Backcharge[];
@@ -31,7 +31,7 @@ export default function Dashboard({
   onSelectDashboardFilter
 }: DashboardProps) {
   // Role helper
-  const userRole = currentUser?.role || 'ASO / Staff';
+  const userRole = currentUser?.role || 'ASO';
   const isAdmin = userRole === 'Admin' || userRole === 'Admin Head';
 
   // Local/global settings
@@ -117,7 +117,8 @@ export default function Dashboard({
       matchesEndDate = transactionDate <= endDate;
     }
     if (selectedBranchFilter) {
-      matchesBranch = Boolean(t.branch && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase());
+      const allowedBranches = getUserBranches(selectedBranchFilter);
+      matchesBranch = allowedBranches.includes(t.branch) || Boolean(t.branch && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase());
     }
     
     return matchesStartDate && matchesEndDate && matchesBranch;
@@ -145,7 +146,11 @@ export default function Dashboard({
       const transactionDate = t.tanggal || (t.created_at ? t.created_at.split('T')[0] : '');
       if (!transactionDate) return false;
       const matchesDate = transactionDate >= priorStartStr && transactionDate <= priorEndStr;
-      const matchesBranch = selectedBranchFilter ? (Boolean(t.branch) && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase()) : true;
+      let matchesBranch = true;
+      if (selectedBranchFilter) {
+        const allowedBranches = getUserBranches(selectedBranchFilter);
+        matchesBranch = allowedBranches.includes(t.branch) || Boolean(t.branch && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase());
+      }
       return matchesDate && matchesBranch;
     });
     
@@ -162,7 +167,11 @@ export default function Dashboard({
       if (!transactionDate) return false;
       const d = new Date(transactionDate);
       const matchesDate = d >= sixtyDaysAgo && d < thirtyDaysAgo;
-      const matchesBranch = selectedBranchFilter ? (Boolean(t.branch) && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase()) : true;
+      let matchesBranch = true;
+      if (selectedBranchFilter) {
+        const allowedBranches = getUserBranches(selectedBranchFilter);
+        matchesBranch = allowedBranches.includes(t.branch) || Boolean(t.branch && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase());
+      }
       return matchesDate && matchesBranch;
     });
     
@@ -223,16 +232,26 @@ export default function Dashboard({
 
   // Branch mapping - filtered according to user role / branch access
   const userBranches = currentUser?.branch && currentUser?.branch !== 'Nasional'
-    ? currentUser.branch.split(',').map(s => s.trim()).filter(Boolean)
+    ? getUserBranches(currentUser.branch)
     : null;
 
   const availableBranchOptions = userBranches && userBranches.length > 0
-    ? (BRANCH_LIST.filter(b => userBranches.some(ub => ub.toLowerCase() === b.toLowerCase())).length > 0
-        ? BRANCH_LIST.filter(b => userBranches.some(ub => ub.toLowerCase() === b.toLowerCase()))
+    ? (ALL_SYSTEM_BRANCHES.filter(b => userBranches.some(ub => ub.toLowerCase() === b.toLowerCase())).length > 0
+        ? ALL_SYSTEM_BRANCHES.filter(b => userBranches.some(ub => ub.toLowerCase() === b.toLowerCase()))
         : userBranches)
-    : BRANCH_LIST;
+    : ALL_SYSTEM_BRANCHES;
 
   const branchList = availableBranchOptions;
+
+  const [selectedBsoFilter, setSelectedBsoFilter] = useState<string>('Semua BSO');
+  const [bsoSearchInput, setBsoSearchInput] = useState<string>('');
+
+  const isMegabranchContext = 
+    currentUser?.role === 'ASO Megabranch' || 
+    currentUser?.branch === 'Megabranch' || 
+    (currentUser?.branch && currentUser.branch.includes('Megabranch')) ||
+    selectedBranchFilter === 'Megabranch' ||
+    MEGABRANCH_LIST.some(mb => mb.toLowerCase() === selectedBranchFilter.toLowerCase());
 
   const branchStats: Record<string, { total: number; value: number; resolved: number; pending: number }> = {};
   branchList.forEach(b => {
@@ -336,12 +355,20 @@ export default function Dashboard({
   stage3AtAdmin = stage1Input - stage2InAso;
 
   // 4. Alert & Warning Dynamic Metrics
+  const nowMs = Date.now();
+  const getTxAgeDays = (t: Backcharge) => {
+    const dStr = t.created_at || t.tanggal;
+    if (!dStr) return 0;
+    const ms = Date.parse(dStr);
+    return isNaN(ms) ? 0 : Math.max(0, Math.floor((nowMs - ms) / (1000 * 60 * 60 * 24)));
+  };
+
   // Unpaid cases where creation date is > 15 days ago (SLA Warning)
-  const dueSoonCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && (new Date().getTime() - new Date(t.created_at).getTime()) > 15 * 24 * 3600 * 1000).length;
-  // Unpaid cases pending confirmation or action for > 3 days
-  const pendingOldCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && (new Date().getTime() - new Date(t.created_at).getTime()) > 7 * 24 * 3600 * 1000).length;
+  const dueSoonCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && getTxAgeDays(t) > 15).length;
+  // Unpaid cases pending confirmation or action for > 7 days
+  const pendingOldCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && getTxAgeDays(t) > 7).length;
   // Unpaid OS cases with lead time > 30 days
-  const over30DaysOsCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && Math.floor((new Date().getTime() - new Date(t.created_at).getTime()) / (1000 * 60 * 60 * 24)) > 30).length;
+  const over30DaysOsCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && getTxAgeDays(t) > 30).length;
 
   const formatRupiah = (num: number) => {
     return new Intl.NumberFormat('id-ID', {
@@ -417,7 +444,7 @@ export default function Dashboard({
   const topHighestValueTransactions = [...filteredTransactions]
     .map(t => ({
       ...t,
-      leadTimeDays: Math.floor((new Date().getTime() - new Date(t.created_at).getTime()) / (1000 * 60 * 60 * 24))
+      leadTimeDays: getTxAgeDays(t)
     }))
     .sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0))
     .slice(0, 5);
@@ -883,11 +910,13 @@ export default function Dashboard({
               <option value="">
                 {currentUser?.branch === 'Nasional' || !currentUser?.branch
                   ? 'Semua Cabang (Nasional)'
+                  : currentUser?.branch === 'Megabranch' || currentUser?.role === 'ASO Megabranch'
+                  ? 'Semua BSO Megabranch (8 BSO)'
                   : `Semua Cabang Otoritas (${availableBranchOptions.length} Cabang)`}
               </option>
               {availableBranchOptions.map((b) => (
                 <option key={b} value={b}>
-                  Cabang {b}
+                  {`Cabang ${b}`}
                 </option>
               ))}
             </select>
@@ -1455,6 +1484,8 @@ export default function Dashboard({
         )}
 
       </div>
+
+
 
       {/* 5. INSIGHTS & REAL TREND GRAPHS ROW (7. INSIGHT & TREND) */}
       {!isCleanExecutive && !isAdmin && (

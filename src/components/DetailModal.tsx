@@ -260,29 +260,29 @@ export default function DetailModal({
 
     if (kat === 'Own Risk') {
       stepsArr.push(
-        { label: "Buat BAK & Input SAP", pic: "ASO / Staff", completed: step1, active: !stepHandover },
-        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO / Staff", completed: stepHandover, active: !stepHandover },
+        { label: "Buat BAK & Input SAP", pic: "ASO", completed: step1, active: !stepHandover },
+        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO", completed: stepHandover, active: !stepHandover },
         { label: "Update SAP (Bill/No)", pic: "Sales Head", completed: stepSap, active: stepHandover && !stepSap },
         { label: "Approval Backcharge", pic: "Sales Head", completed: stepApproval, active: stepHandover && stepSap && !stepApproval }
       );
     } else if (kat === 'Ekspedisi') {
       stepsArr.push(
-        { label: "Buat Order Ekspedisi", pic: "ASO / Staff", completed: step1, active: !stepHandover },
-        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO / Staff", completed: stepHandover, active: !stepHandover },
+        { label: "Buat Order Ekspedisi", pic: "ASO", completed: step1, active: !stepHandover },
+        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO", completed: stepHandover, active: !stepHandover },
         { label: "Verifikasi Berkas & Dokumen", pic: "BRO / Admin", completed: stepHandover, active: stepHandover && !stepApproval },
         { label: "Approval Backcharge", pic: "Sales Head", completed: stepApproval, active: stepHandover && !stepApproval }
       );
     } else if (kat === 'ETLE') {
       stepsArr.push(
         { label: "Inisiasi Berkas (VRO)", pic: "VRO", completed: step1, active: !stepHandover },
-        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO / Staff", completed: stepHandover, active: !stepHandover },
+        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO", completed: stepHandover, active: !stepHandover },
         { label: "Verifikasi Berkas & Dokumen", pic: "BRO / Admin", completed: stepHandover, active: stepHandover && !stepApproval },
         { label: "Approval Backcharge", pic: "Sales Head", completed: stepApproval, active: stepHandover && !stepApproval }
       );
     } else {
       stepsArr.push(
         { label: "Inisiasi Berkas (SA)", pic: "SA", completed: step1, active: !stepHandover },
-        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO / Staff", completed: stepHandover, active: !stepHandover },
+        { label: "Serah Terima Berkas (ASO ke Admin)", pic: "ASO", completed: stepHandover, active: !stepHandover },
         { label: "Verifikasi Berkas & Dokumen", pic: "BRO / Admin", completed: stepHandover, active: stepHandover && !stepApproval },
         { label: "Approval Backcharge", pic: approvalPic, completed: stepApproval, active: stepHandover && !stepApproval }
       );
@@ -776,7 +776,7 @@ export default function DetailModal({
   const isBro = currentUser.role === 'BRO';
   const isAdmin = currentUser.role === 'Admin' || currentUser.role === 'Administrator';
   const isAdminView = isAdmin || currentUser.role === 'Admin Head';
-  const isAso = currentUser.role === 'ASO / Staff' || currentUser.role === 'Maintenance Center' || currentUser.role === 'Administrator';
+  const isAso = currentUser.role === 'ASO' || currentUser.role === 'Maintenance Center' || currentUser.role === 'ASO Megabranch' || currentUser.role === 'Administrator';
 
   const txValue = transaction.value || 0;
   const isRegionalHeadView = isRegionalHeadRole(currentUser.role as string);

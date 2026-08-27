@@ -5,7 +5,7 @@ import {
   Download, FileSpreadsheet, RefreshCw, LogOut, Bell, Shield, Users, Landmark, UserCheck
 } from 'lucide-react';
 
-import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry } from './types';
+import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches } from './types';
 import { supabase, isSupabaseConfigured, mockDb } from './supabaseClient';
 
 import AuthScreen from './components/AuthScreen';
@@ -168,12 +168,12 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
 
   transactionsList.forEach(t => {
     // Determine branch match
-    const userBranches = user.branch ? user.branch.split(',').map(s => s.trim()) : [];
-    const branchMatch = user.branch === 'Nasional' || userBranches.includes(t.branch) || t.branch === user.branch;
+    const userBranches = getUserBranches(user.branch);
+    const branchMatch = userBranches.includes(t.branch);
     if (!branchMatch) return;
 
-    // 1. ASO / Staff Role Tasks
-    if (user.role === 'ASO / Staff' || user.role === 'Maintenance Center' || user.role === 'Administrator' || isBro) {
+    // 1. ASO Role Tasks
+    if (user.role === 'ASO' || user.role === 'Maintenance Center' || user.role === 'ASO Megabranch' || user.role === 'Administrator' || isBro) {
       // Task A: Upload BAK / Dokumen Pendukung
       if (!t.file_bak_url || t.file_bak_url === 'dummy_pdf_file' || t.file_bak_url === '') {
         const id = `notif-aso-upload-${t.id}`;
@@ -539,11 +539,9 @@ export default function App() {
           
           // Apply branch filter if not national
           if (currentUser && currentUser.branch !== 'Nasional') {
-            if (currentUser.branch && currentUser.branch.includes(',')) {
-              const userBranches = currentUser.branch.split(',').map(s => s.trim());
+            const userBranches = getUserBranches(currentUser.branch);
+            if (userBranches.length > 0) {
               query = query.in('branch', userBranches);
-            } else if (currentUser.branch) {
-              query = query.eq('branch', currentUser.branch);
             }
           }
           
@@ -609,8 +607,8 @@ export default function App() {
       setTimeout(() => {
         let bcs = mockDb.getBackcharges();
         if (currentUser && currentUser.branch !== 'Nasional') {
-          const userBranches = currentUser.branch ? currentUser.branch.split(',').map(s => s.trim()) : [];
-          bcs = bcs.filter(t => userBranches.includes(t.branch) || (currentUser.branch && t.branch === currentUser.branch));
+          const userBranches = getUserBranches(currentUser.branch);
+          bcs = bcs.filter(t => userBranches.includes(t.branch));
         }
         
         const unpackedData = bcs.map(unpackExtraFields);
@@ -1533,83 +1531,83 @@ export default function App() {
       </aside>
 
       {/* 3. MOBILE BOTTOM FIXED BAR (ACCESSIBILITY FOR MOBILE PHONES) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 text-slate-400 shadow-2xl flex justify-around py-3 z-40">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 text-slate-400 shadow-2xl flex justify-around py-2.5 px-1 z-40 safe-bottom">
         <button 
           onClick={() => setCurrentTab('dashboard')} 
-          className={`flex flex-col items-center space-y-1 text-[10px] font-bold flex-1 transition-colors ${
-            currentTab === 'dashboard' ? 'text-blue-500' : 'text-slate-400'
+          className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
+            currentTab === 'dashboard' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <BarChart3 className="w-5 h-5" />
-          <span>Dashboard</span>
+          <BarChart3 className="w-5 h-5 flex-shrink-0" />
+          <span className="truncate max-w-[64px]">Dashboard</span>
         </button>
         <button 
           onClick={() => setCurrentTab('database')} 
-          className={`flex flex-col items-center space-y-1 text-[10px] font-bold flex-1 transition-colors ${
-            currentTab === 'database' ? 'text-blue-500' : 'text-slate-400'
+          className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
+            currentTab === 'database' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Layers className="w-5 h-5" />
-          <span>Database</span>
+          <Layers className="w-5 h-5 flex-shrink-0" />
+          <span className="truncate max-w-[64px]">Database</span>
         </button>
         <button 
           onClick={() => setCurrentTab('complaints')} 
-          className={`flex flex-col items-center space-y-1 text-[10px] font-bold flex-1 transition-colors ${
-            currentTab === 'complaints' ? 'text-blue-500' : 'text-slate-400'
+          className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
+            currentTab === 'complaints' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Mail className="w-5 h-5" />
-          <span>Keluhan</span>
+          <Mail className="w-5 h-5 flex-shrink-0" />
+          <span className="truncate max-w-[64px]">Keluhan</span>
         </button>
         
         {currentUser.role === 'Administrator' && (
           <>
             <button 
               onClick={() => setCurrentTab('audit')} 
-              className={`flex flex-col items-center space-y-1 text-[10px] font-bold flex-1 transition-colors ${
-                currentTab === 'audit' ? 'text-blue-500' : 'text-slate-400'
+              className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
+                currentTab === 'audit' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Clock className="w-5 h-5" />
-              <span>Audit</span>
+              <Clock className="w-5 h-5 flex-shrink-0" />
+              <span className="truncate max-w-[64px]">Audit</span>
             </button>
             <button 
               onClick={() => setCurrentTab('users')} 
-              className={`flex flex-col items-center space-y-1 text-[10px] font-bold flex-1 transition-colors ${
-                currentTab === 'users' ? 'text-blue-500' : 'text-slate-400'
+              className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
+                currentTab === 'users' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Users className="w-5 h-5" />
-              <span>User</span>
+              <Users className="w-5 h-5 flex-shrink-0" />
+              <span className="truncate max-w-[64px]">User</span>
             </button>
           </>
         )}
       </nav>
 
       {/* 4. MAIN CONTAINER CONTENT */}
-      <div className="flex-grow flex flex-col min-w-0 overflow-y-auto">
+      <div className="flex-grow flex flex-col min-w-0 overflow-y-auto max-w-full">
         
         {/* Top Header status bar */}
-        <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-4 flex items-center justify-between sticky top-0 z-30 shadow-sm flex-shrink-0">
-          <div className="flex items-center space-x-3">
-            <div className="bg-white p-1 rounded-lg shadow-sm md:hidden w-8 h-8 flex items-center justify-center border border-slate-200">
+        <header className="bg-white border-b border-slate-200 px-3 md:px-6 py-3.5 flex items-center justify-between sticky top-0 z-30 shadow-sm flex-shrink-0">
+          <div className="flex items-center space-x-2.5 min-w-0 pr-2">
+            <div className="bg-white p-1 rounded-lg shadow-sm md:hidden w-8 h-8 flex-shrink-0 flex items-center justify-center border border-slate-200">
               <img 
                 src="https://lh3.googleusercontent.com/d/1YdVze2aNGvUIe5J1Ig2_J0MUPGrs2U_q" 
                 alt="ASSA" 
                 className="w-6 h-6 object-contain"
               />
             </div>
-            <div>
-              <h2 className="text-sm md:text-lg font-extrabold text-slate-900 leading-none">
+            <div className="min-w-0">
+              <h2 className="text-sm md:text-lg font-extrabold text-slate-900 leading-tight truncate">
                 {tabHeaders[currentTab].title}
               </h2>
-              <p className="text-[9px] md:text-xs text-slate-400 font-bold mt-1 leading-none">
+              <p className="text-[9px] md:text-xs text-slate-400 font-medium truncate">
                 {tabHeaders[currentTab].subtitle}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 relative">
+          <div className="flex items-center space-x-1.5 md:space-x-2 relative flex-shrink-0">
             
             {/* Sync Global Button */}
             <button 
@@ -1653,14 +1651,14 @@ export default function App() {
 
               {/* Notification Dropdown Box */}
               {showNotifDropdown && (
-                <div className="absolute right-0 mt-2 w-72 md:w-80 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in slide-in-from-top-2">
+                <div className="fixed sm:absolute right-2 sm:right-0 top-14 sm:top-auto sm:mt-2 w-[calc(100vw-1rem)] sm:w-80 max-w-[340px] bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 animate-in fade-in slide-in-from-top-2">
                   <div className="px-4 py-2 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
-                    <div>
-                      <span className="text-xs font-black text-slate-800 block">Antrean Tugas</span>
-                      <span className="text-[9px] text-slate-500 font-semibold">{currentUser?.role} • {currentUser?.branch}</span>
+                    <div className="min-w-0 pr-2">
+                      <span className="text-xs font-black text-slate-800 block truncate">Antrean Tugas</span>
+                      <span className="text-[9px] text-slate-500 font-semibold truncate block">{currentUser?.role} • {currentUser?.branch}</span>
                     </div>
-                    <span className="text-[9px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-extrabold">
-                      {notifications.length} Tugas Pending
+                    <span className="text-[9px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-extrabold flex-shrink-0">
+                      {notifications.length} Pending
                     </span>
                   </div>
                   
@@ -1685,7 +1683,7 @@ export default function App() {
                             </div>
                             <span className="text-[9px] text-slate-600 bg-slate-200/60 border border-slate-200 px-1.5 py-0.5 rounded font-bold uppercase">{n.branch}</span>
                           </div>
-                          <p className="text-[10px] text-slate-600 font-medium leading-snug">{n.description}</p>
+                          <p className="text-[10px] text-slate-600 font-medium leading-snug break-words">{n.description}</p>
                           <div className="flex justify-between items-center text-[8px] text-slate-400 font-mono pt-0.5">
                             <span className="font-sans font-bold text-slate-500 truncate max-w-[150px]">{n.customer_name}</span>
                             <span>{new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
@@ -1717,7 +1715,7 @@ export default function App() {
         </header>
 
         {/* 5. JENDELA AREA TAB KONTEN */}
-        <main className="p-4 md:p-6 flex-grow space-y-6 pb-24 md:pb-6">
+        <main className="p-3 sm:p-4 md:p-6 flex-grow space-y-6 pb-28 md:pb-6 max-w-full">
           {loading && (
             <div className="p-4 bg-blue-50 border border-blue-100 text-blue-700 text-xs rounded-xl flex items-center space-x-2 animate-pulse justify-center">
               <RefreshCw className="w-4 h-4 animate-spin" />

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PlusCircle, Edit2, Trash2, ShieldCheck, Mail, MapPin, X, Key, Search, Lock, CheckSquare, Square } from 'lucide-react';
-import { Profile, UserRole, BRANCH_LIST, isRegionalHeadRole, WEST_BRANCHES, CENTRAL_BRANCHES, EAST_BRANCHES } from '../types';
+import { Profile, UserRole, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, isRegionalHeadRole, WEST_BRANCHES, CENTRAL_BRANCHES, EAST_BRANCHES } from '../types';
 
 interface UserManagementProps {
   profiles: Profile[];
@@ -25,9 +25,11 @@ export default function UserManagement({
   // Form states
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<UserRole>('ASO / Staff');
-  const [branch, setBranch] = useState('Jakarta');
+  const [role, setRole] = useState<UserRole>('ASO');
+  const [branch, setBranch] = useState(ALL_SYSTEM_BRANCHES[0]);
   const [password, setPassword] = useState('');
+  const [branchSearch, setBranchSearch] = useState('');
+  const [branchTab, setBranchTab] = useState<'all' | 'reguler' | 'megabranch'>('all');
 
   const filteredProfiles = profiles.filter(p => {
     const q = search.toLowerCase();
@@ -38,34 +40,44 @@ export default function UserManagement({
   });
 
   const selectedBranchList = branch === 'Nasional'
-    ? ['Nasional']
-    : branch.split(',').map(s => s.trim()).filter(Boolean);
+    ? ALL_SYSTEM_BRANCHES
+    : branch ? branch.split(',').map(s => s.trim()).filter(Boolean) : [];
 
   const toggleBranchSelection = (bName: string) => {
-    let currentList = selectedBranchList.filter(x => x !== 'Nasional');
+    let currentList = branch === 'Nasional'
+      ? ALL_SYSTEM_BRANCHES.filter(x => x !== bName)
+      : branch.split(',').map(s => s.trim()).filter(Boolean);
+
     if (currentList.includes(bName)) {
       currentList = currentList.filter(x => x !== bName);
     } else {
       currentList.push(bName);
     }
     currentList.sort();
-    setBranch(currentList.length > 0 ? currentList.join(', ') : 'Jakarta');
+    setBranch(currentList.join(', '));
   };
 
   const handleRoleChange = (newRole: UserRole) => {
     setRole(newRole);
-    if (isRegionalHeadRole(newRole) || newRole === 'Maintenance Center') {
+    if (newRole === 'ASO Megabranch') {
+      setBranch(MEGABRANCH_LIST.join(', '));
+      setBranchTab('megabranch');
+    } else if (isRegionalHeadRole(newRole) || newRole === 'Maintenance Center') {
       if (newRole === 'Regional Head West') {
         setBranch(WEST_BRANCHES.join(', '));
       } else if (newRole === 'Regional Head Central') {
         setBranch(CENTRAL_BRANCHES.join(', '));
       } else if (newRole === 'Regional Head East') {
         setBranch(EAST_BRANCHES.join(', '));
-      } else if (!branch.includes(',')) {
+      } else {
         setBranch(WEST_BRANCHES.join(', '));
       }
-    } else if (branch.includes(',')) {
-      setBranch('Jakarta');
+      setBranchTab('all');
+    } else if (newRole === 'Administrator' || newRole === 'Division Head') {
+      setBranch('Nasional');
+      setBranchTab('all');
+    } else if (branch === 'Nasional' || branch.includes(',')) {
+      setBranch(ALL_SYSTEM_BRANCHES[0]);
     }
   };
 
@@ -75,20 +87,30 @@ export default function UserManagement({
       setErrorMessage('Email dan Nama Lengkap wajib diisi!');
       return;
     }
+    if (!branch || branch.trim() === '') {
+      setErrorMessage('Wajib mencentang minimal 1 (satu) cabang kantor untuk staf ini!');
+      return;
+    }
     onAddUser(email.trim().toLowerCase(), fullName.trim(), role, branch, password.trim() || undefined);
     
     // Reset states
     setEmail('');
     setFullName('');
-    setRole('ASO / Staff');
-    setBranch('Jakarta');
+    setRole('ASO');
+    setBranch(ALL_SYSTEM_BRANCHES[0]);
     setPassword('');
+    setBranchSearch('');
+    setBranchTab('all');
     setShowForm(null);
   };
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser) return;
+    if (!branch || branch.trim() === '') {
+      setErrorMessage('Wajib mencentang minimal 1 (satu) cabang kantor untuk staf ini!');
+      return;
+    }
     
     const updates: Partial<Profile> = {
       email: email.trim().toLowerCase(),
@@ -107,15 +129,19 @@ export default function UserManagement({
     setEmail('');
     setFullName('');
     setPassword('');
+    setBranchSearch('');
+    setBranchTab('all');
     setShowForm(null);
   };
 
   const openAddForm = () => {
     setEmail('');
     setFullName('');
-    setRole('ASO / Staff');
-    setBranch('Jakarta');
+    setRole('ASO');
+    setBranch(ALL_SYSTEM_BRANCHES[0]);
     setPassword('');
+    setBranchSearch('');
+    setBranchTab('all');
     setShowForm('add');
   };
 
@@ -126,6 +152,8 @@ export default function UserManagement({
     setRole(p.role);
     setBranch(p.branch);
     setPassword(p.password || '');
+    setBranchSearch('');
+    setBranchTab(p.role === 'ASO Megabranch' ? 'megabranch' : 'all');
     setShowForm('edit');
   };
 
@@ -253,199 +281,282 @@ export default function UserManagement({
 
       {/* POPUP MODAL: ADD / EDIT USER */}
       {showForm && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl border border-slate-100">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
-                <ShieldCheck className="w-4 h-4 text-blue-600" />
-                <span>{showForm === 'add' ? 'Tambah Pengguna Baru' : `Edit Staf: ${selectedUser?.email}`}</span>
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[88vh] sm:max-h-[90vh] shadow-2xl border border-slate-100 flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 bg-slate-50/70 shrink-0">
+              <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center space-x-2">
+                <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+                <span className="truncate">{showForm === 'add' ? 'Tambah Pengguna Baru' : `Edit Staf: ${selectedUser?.email}`}</span>
               </h3>
-              <button onClick={() => setShowForm(null)} className="text-slate-400 hover:text-slate-600">
+              <button 
+                type="button"
+                onClick={() => setShowForm(null)} 
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-200 transition-colors"
+                title="Tutup formulir"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={showForm === 'add' ? handleAddSubmit : handleEditSubmit} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Email Perusahaan</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                    <Mail className="w-3.5 h-3.5" />
-                  </span>
-                  <input 
-                    type="email" 
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="staf@company.id"
-                    className="w-full text-xs border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  />
+            {/* Modal Body Form */}
+            <form onSubmit={showForm === 'add' ? handleAddSubmit : handleEditSubmit} className="flex flex-col flex-1 min-h-0">
+              <div className="p-4 sm:p-5 overflow-y-auto custom-scrollbar space-y-3.5 flex-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1 tracking-wider">Email Perusahaan</label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400">
+                        <Mail className="w-3.5 h-3.5" />
+                      </span>
+                      <input 
+                        type="email" 
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="staf@company.id"
+                        className="w-full text-xs border border-slate-200 rounded-xl pl-8 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1 tracking-wider">Nama Lengkap</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Aris Munandar"
+                      className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nama Lengkap</label>
-                <input 
-                  type="text" 
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Aris Munandar"
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                  {showForm === 'add' ? 'Password Akun' : 'Ubah Password'}
-                </label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                    <Key className="w-3.5 h-3.5" />
-                  </span>
-                  <input 
-                    type="password" 
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={showForm === 'add' ? 'Masukkan password baru' : 'Kosongkan jika tidak ingin diubah'}
-                    className="w-full text-xs border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white font-mono"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Otoritas Peran / Role</label>
-                <select 
-                  value={role}
-                  onChange={(e) => handleRoleChange(e.target.value as UserRole)}
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="ASO / Staff">ASO / Staff</option>
-                  <option value="Maintenance Center">Maintenance Center</option>
-                  <option value="Sales Head">Sales Head</option>
-                  <option value="BRO">BRO</option>
-                  <option value="Admin">Admin</option>
-                  <option value="Admin Head">Admin Head</option>
-                  <option value="Administrator">Administrator</option>
-                  <option value="Kepala Cabang">Kepala Cabang</option>
-                  <option value="Division Head">Division Head</option>
-                  <option value="Regional Head West">Regional Head West</option>
-                  <option value="Regional Head Central">Regional Head Central</option>
-                  <option value="Regional Head East">Regional Head East</option>
-                  <option value="Regional Head">Regional Head (General)</option>
-                </select>
-              </div>
-
-              {isRegionalHeadRole(role) || role === 'Maintenance Center' ? (
-                <div className="space-y-2 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
-                  <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
-                    <label className="text-[10px] font-extrabold text-slate-700 uppercase flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Cabang Dikelola ({selectedBranchList.length} Terpilih)</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1 tracking-wider">
+                      {showForm === 'add' ? 'Password Akun' : 'Ubah Password'}
                     </label>
-                    <div className="flex items-center gap-1">
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400">
+                        <Key className="w-3.5 h-3.5" />
+                      </span>
+                      <input 
+                        type="password" 
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder={showForm === 'add' ? 'Password baru' : 'Kosongkan jika tetap'}
+                        className="w-full text-xs border border-slate-200 rounded-xl pl-8 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1 tracking-wider">Otoritas Peran / Role</label>
+                    <select 
+                      value={role}
+                      onChange={(e) => handleRoleChange(e.target.value as UserRole)}
+                      className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    >
+                      <option value="ASO">ASO</option>
+                      <option value="Maintenance Center">Maintenance Center</option>
+                      <option value="ASO Megabranch">ASO Megabranch</option>
+                      <option value="Sales Head">Sales Head</option>
+                      <option value="BRO">BRO</option>
+                      <option value="Admin">Admin</option>
+                      <option value="Admin Head">Admin Head</option>
+                      <option value="Administrator">Administrator</option>
+                      <option value="Kepala Cabang">Kepala Cabang</option>
+                      <option value="Division Head">Division Head</option>
+                      <option value="Regional Head West">Regional Head West</option>
+                      <option value="Regional Head Central">Regional Head Central</option>
+                      <option value="Regional Head East">Regional Head East</option>
+                      <option value="Regional Head">Regional Head (General)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* BRANCH SELECTION VIA CHECKBOXES (NO DROPDOWN) */}
+                <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200 shadow-2xs">
+                  <div className="flex flex-wrap items-center justify-between gap-1">
+                    <label className="text-[10px] font-extrabold text-slate-700 uppercase flex items-center gap-1.5 tracking-wider">
+                      <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Pilihan Cabang / BSO</span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-800">
+                        {branch === 'Nasional' ? 'Nasional' : `${selectedBranchList.length} Dipilih`}
+                      </span>
+                    </label>
+                    
+                    {/* Preset Buttons */}
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setBranch('Nasional')}
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded transition-all ${
+                          branch === 'Nasional' 
+                            ? 'bg-blue-600 text-white shadow-xs' 
+                            : 'bg-white hover:bg-slate-200 text-slate-700 border border-slate-200'
+                        }`}
+                        title="Pilih seluruh cabang di Indonesia"
+                      >
+                        Nasional
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBranch(MEGABRANCH_LIST.join(', '))}
+                        className="text-[9px] font-bold px-2 py-0.5 bg-white hover:bg-slate-200 text-slate-700 border border-slate-200 rounded transition-all"
+                        title="Pilih seluruh BSO Megabranch"
+                      >
+                        Semua BSO
+                      </button>
                       <button
                         type="button"
                         onClick={() => setBranch(WEST_BRANCHES.join(', '))}
-                        className="text-[9px] font-bold px-2 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded transition-colors"
-                        title="Pilih Cabang Wilayah Barat"
+                        className="text-[9px] font-bold px-1.5 py-0.5 bg-white hover:bg-slate-200 text-slate-700 border border-slate-200 rounded transition-all"
+                        title="Wilayah Barat"
                       >
                         West
                       </button>
                       <button
                         type="button"
                         onClick={() => setBranch(CENTRAL_BRANCHES.join(', '))}
-                        className="text-[9px] font-bold px-2 py-0.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-800 rounded transition-colors"
-                        title="Pilih Cabang Wilayah Tengah"
+                        className="text-[9px] font-bold px-1.5 py-0.5 bg-white hover:bg-slate-200 text-slate-700 border border-slate-200 rounded transition-all"
+                        title="Wilayah Tengah"
                       >
                         Central
                       </button>
                       <button
                         type="button"
                         onClick={() => setBranch(EAST_BRANCHES.join(', '))}
-                        className="text-[9px] font-bold px-2 py-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded transition-colors"
-                        title="Pilih Cabang Wilayah Timur"
+                        className="text-[9px] font-bold px-1.5 py-0.5 bg-white hover:bg-slate-200 text-slate-700 border border-slate-200 rounded transition-all"
+                        title="Wilayah Timur"
                       >
                         East
                       </button>
                       <button
                         type="button"
-                        onClick={() => setBranch('Nasional')}
-                        className="text-[9px] font-bold px-2 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded transition-colors"
-                        title="Pilih Seluruh Indonesia / Nasional"
+                        onClick={() => setBranch('')}
+                        className="text-[9px] font-bold px-1.5 py-0.5 bg-slate-200 hover:bg-red-100 hover:text-red-700 text-slate-600 rounded transition-all"
+                        title="Hapus pilihan"
                       >
-                        Nasional
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBranch(BRANCH_LIST.join(', '))}
-                        className="text-[9px] font-bold px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded transition-colors"
-                      >
-                        Semua
+                        Reset
                       </button>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-44 overflow-y-auto custom-scrollbar p-1">
-                    {BRANCH_LIST.map((bName) => {
-                      const isChecked = selectedBranchList.includes(bName) || branch === 'Nasional';
-                      return (
-                        <label
-                          key={bName}
-                          onClick={() => {
-                            if (branch === 'Nasional') {
-                              setBranch(bName);
-                            } else {
-                              toggleBranchSelection(bName);
-                            }
-                          }}
-                          className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold cursor-pointer transition-all select-none ${
-                            isChecked
-                              ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                          }`}
-                        >
-                          {isChecked ? (
-                            <CheckSquare className="w-3.5 h-3.5 text-white shrink-0" />
-                          ) : (
-                            <Square className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          )}
-                          <span className="truncate">{bName}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[10px] text-slate-500 italic mt-1">
-                    * Regional Head dan Maintenance Center dapat memilih banyak cabang sekaligus atau ketik 'Nasional' untuk nasional.
-                  </p>
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang</label>
-                  <select 
-                    value={branch}
-                    onChange={(e) => setBranch(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="Nasional">Nasional (HQ/Pusat)</option>
-                    {BRANCH_LIST.map(b => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+                  {/* Filter tabs and search bar */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 pt-0.5">
+                    <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-slate-200 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setBranchTab('all')}
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded transition-colors ${
+                          branchTab === 'all' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Semua ({ALL_SYSTEM_BRANCHES.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBranchTab('reguler')}
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded transition-colors ${
+                          branchTab === 'reguler' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Reguler ({BRANCH_LIST.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBranchTab('megabranch')}
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded transition-colors ${
+                          branchTab === 'megabranch' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        BSO ({MEGABRANCH_LIST.length})
+                      </button>
+                    </div>
 
-              <div className="flex justify-end space-x-2 mt-6 pt-3 border-t border-slate-100">
+                    <div className="relative flex-1">
+                      <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={branchSearch}
+                        onChange={(e) => setBranchSearch(e.target.value)}
+                        placeholder="Cari cabang / BSO..."
+                        className="w-full text-[10px] pl-7 pr-2.5 py-1 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Checkbox Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 max-h-36 sm:max-h-40 overflow-y-auto custom-scrollbar p-1 bg-white rounded-lg border border-slate-200">
+                    {ALL_SYSTEM_BRANCHES
+                      .filter((bName) => {
+                        if (branchTab === 'reguler' && !BRANCH_LIST.includes(bName)) return false;
+                        if (branchTab === 'megabranch' && !MEGABRANCH_LIST.includes(bName)) return false;
+                        if (branchSearch.trim()) {
+                          return bName.toLowerCase().includes(branchSearch.toLowerCase().trim());
+                        }
+                        return true;
+                      })
+                      .map((bName) => {
+                        const isChecked = branch === 'Nasional' || selectedBranchList.includes(bName);
+                        const isBso = MEGABRANCH_LIST.includes(bName);
+                        return (
+                          <label
+                            key={bName}
+                            onClick={() => toggleBranchSelection(bName)}
+                            className={`flex items-center space-x-1 px-1.5 py-1 rounded-md border text-[10px] font-bold cursor-pointer transition-all select-none ${
+                              isChecked
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                : 'bg-slate-50/70 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                            }`}
+                          >
+                            {isChecked ? (
+                              <CheckSquare className="w-3 h-3 text-white shrink-0" />
+                            ) : (
+                              <Square className="w-3 h-3 text-slate-400 shrink-0" />
+                            )}
+                            <span className="truncate flex-1">{bName}</span>
+                            {isBso && (
+                              <span className={`text-[7px] px-1 py-0.2 rounded font-extrabold shrink-0 ${
+                                isChecked ? 'bg-blue-800/60 text-blue-100' : 'bg-slate-200 text-slate-600'
+                              }`}>
+                                BSO
+                              </span>
+                            )}
+                          </label>
+                        );
+                      })}
+                  </div>
+
+                  {/* Selected Branches Summary */}
+                  <div className="text-[9px] text-slate-500 bg-slate-100/80 px-2 py-1 rounded-md border border-slate-200 flex items-start gap-1">
+                    <span className="font-bold text-slate-700 shrink-0">Terpilih:</span>
+                    <span className="font-mono text-slate-800 break-words leading-tight flex-1">
+                      {branch === 'Nasional' 
+                        ? `Nasional (Semua ${ALL_SYSTEM_BRANCHES.length} Cabang & BSO Aktif)`
+                        : selectedBranchList.length > 0 
+                          ? selectedBranchList.join(', ') 
+                          : 'Belum ada cabang dipilih (Wajib centang minimal 1 cabang)'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Sticky Footer */}
+              <div className="flex items-center justify-end space-x-2 px-4 sm:px-5 py-3 border-t border-slate-100 bg-slate-50/70 shrink-0">
                 <button 
                   type="button"
                   onClick={() => setShowForm(null)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100 rounded-xl transition-all"
+                  className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition-all"
                 >
                   Batal
                 </button>
                 <button 
                   type="submit"
-                  className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all"
+                  className="px-4 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition-all"
                 >
                   {showForm === 'add' ? 'Tambahkan Staf' : 'Perbarui Staf'}
                 </button>

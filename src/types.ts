@@ -3,7 +3,6 @@ export const BRANCH_LIST = [
   'Balikpapan', 
   'Bandung', 
   'Banjarmasin', 
-  'Jakarta', 
   'Lampung', 
   'Makassar', 
   'Malang', 
@@ -11,15 +10,44 @@ export const BRANCH_LIST = [
   'Padang', 
   'Palembang', 
   'Pekanbaru', 
-  'Pontianak', 
   'Semarang', 
   'Solo', 
   'Surabaya'
 ];
 
+export const MEGABRANCH_LIST = [
+  'BSO GSO & AFFCO',
+  'BSO Sudirman',
+  'BSO Sunter',
+  'BSO Pondok Pinang',
+  'BSO Banten',
+  'BSO Bekasi',
+  'BSO Daan Mogot',
+  'BSO Pontianak'
+];
+
+export const ALL_SYSTEM_BRANCHES = Array.from(new Set([...BRANCH_LIST, ...MEGABRANCH_LIST]));
+
+export function getUserBranches(branch: string): string[] {
+  if (!branch) return [];
+  if (branch === 'Nasional') return ALL_SYSTEM_BRANCHES;
+  const parts = branch.split(',').map(s => s.trim()).filter(Boolean);
+  const expanded = new Set<string>();
+  parts.forEach(part => {
+    if (part !== 'Megabranch') {
+      expanded.add(part);
+    }
+    const pLower = part.toLowerCase();
+    if (pLower === 'megabranch' || pLower === 'jakarta') {
+      MEGABRANCH_LIST.forEach(b => expanded.add(b));
+    }
+  });
+  return Array.from(expanded);
+}
+
 export type UserRole = 
   | 'Administrator' 
-  | 'ASO / Staff' 
+  | 'ASO' 
   | 'Sales Head' 
   | 'BRO' 
   | 'Admin' 
@@ -30,7 +58,8 @@ export type UserRole =
   | 'Regional Head Central' 
   | 'Regional Head East'
   | 'Admin Head'
-  | 'Maintenance Center';
+  | 'Maintenance Center'
+  | 'ASO Megabranch';
 
 export const REGIONAL_HEAD_ROLES: UserRole[] = [
   'Regional Head West',
@@ -137,7 +166,7 @@ export interface DashboardFilter {
 }
 
 export const WEST_BRANCHES = ['Lampung', 'Medan', 'Padang', 'Palembang', 'Pekanbaru'];
-export const CENTRAL_BRANCHES = ['Bandung', 'Jakarta', 'Pontianak'];
+export const CENTRAL_BRANCHES = ['Bandung', 'BSO Pontianak'];
 export const EAST_BRANCHES = ['Bali', 'Balikpapan', 'Banjarmasin', 'Makassar', 'Malang', 'Semarang', 'Solo', 'Surabaya'];
 
 export interface ContactInquiry {
