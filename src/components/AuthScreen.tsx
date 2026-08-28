@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Key, Mail, User, MapPin, UserCheck, Eye, EyeOff, CheckSquare, Square, Search } from 'lucide-react';
+import { Key, Mail, User, MapPin, UserCheck, Eye, EyeOff, CheckSquare, Square } from 'lucide-react';
 import { Profile, UserRole, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, WEST_BRANCHES, CENTRAL_BRANCHES, EAST_BRANCHES, isRegionalHeadRole } from '../types';
 import { supabase, isSupabaseConfigured, mockDb } from '../supabaseClient';
 

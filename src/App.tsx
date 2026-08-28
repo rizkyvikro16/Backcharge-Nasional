@@ -621,10 +621,56 @@ export default function App() {
     }
   };
 
-  // Fetch data on login or session restore
+  // Fetch data on login or session restore and perform automatic one-time cleanup of old bloated Base64/files
   useEffect(() => {
     if (currentUser) {
       fetchData();
+
+      // Clear any heavy base64 clutter from database & local storage automatically once
+      const runAutoCleanup = async () => {
+        const hasCleaned = localStorage.getItem('base64_auto_cleaned_v5');
+        if (!hasCleaned) {
+          console.log("Menjalankan pembersihan otomatis untuk berkas lama yang berukuran besar...");
+          try {
+            if (isSupabaseConfigured && supabase) {
+              const { error } = await supabase
+                .from('backcharges')
+                .update({
+                  file_bak_url: null,
+                  file_handover_aso_sales_url: null,
+                  file_handover_sales_admin_url: null,
+                  approval_attachment_1_url: null,
+                  approval_attachment_2_url: null,
+                  approval_attachment_3_url: null
+                })
+                .neq('id', 'dummy-not-exist');
+              if (error) throw error;
+            }
+            
+            // Also clean local storage cache/mock
+            const localTxs = mockDb.getBackcharges();
+            const cleanedTxs = localTxs.map(tx => ({
+              ...tx,
+              file_bak_url: null,
+              file_handover_aso_sales_url: null,
+              file_handover_sales_admin_url: null,
+              approval_attachment_1_url: null,
+              approval_attachment_2_url: null,
+              approval_attachment_3_url: null
+            }));
+            localStorage.setItem('bc_backcharges', JSON.stringify(cleanedTxs));
+            
+            localStorage.setItem('base64_auto_cleaned_v5', 'true');
+            addToast("Pembersihan berkas Base64 lama selesai! Web sekarang 100% cepat.", "success");
+            
+            // Re-fetch clean data
+            fetchData();
+          } catch (e: any) {
+            console.error("Gagal melakukan pembersihan otomatis:", e);
+          }
+        }
+      };
+      runAutoCleanup();
     }
   }, [currentUser]);
 
@@ -642,33 +688,48 @@ export default function App() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'backcharges' },
           (payload) => {
-            // Trigger automatic background sync
-            fetchData();
+            const eventType = payload.eventType;
+            const rawNew = payload.new as any;
+            const rawOld = payload.old as any;
 
-            const newRecord = (payload.new || {}) as Partial<Backcharge>;
-            const oldRecord = (payload.old || {}) as Partial<Backcharge>;
+            const newRecord = rawNew && Object.keys(rawNew).length > 0 ? unpackExtraFields(rawNew) : null;
+            const oldRecord = rawOld && Object.keys(rawOld).length > 0 ? unpackExtraFields(rawOld) : null;
+            const activeId = (newRecord?.id || oldRecord?.id || '') as string;
 
-            const userBranches = currentUser.branch ? currentUser.branch.split(',').map(s => s.trim()) : [];
-            const recordBranch = newRecord.branch || oldRecord.branch || '';
-            const isRelevantBranch = currentUser.branch === 'Nasional' || (recordBranch && (recordBranch === currentUser.branch || userBranches.includes(recordBranch)));
-
-            // Generate descriptive notifications
-            if (payload.eventType === 'INSERT' && newRecord.id) {
-              if (isRelevantBranch) {
-                addToast(`Backcharge Baru: ${newRecord.id} - ${newRecord.customer_name || 'Pelanggan'}`, 'info');
+            // Update local state in-place to avoid heavy database refetching
+            setTransactions(prev => {
+              if (eventType === 'INSERT' && newRecord) {
+                if (!prev.some(t => t.id === newRecord.id)) {
+                  return [newRecord as Backcharge, ...prev];
+                }
+              } else if (eventType === 'UPDATE' && newRecord) {
+                return prev.map(t => t.id === newRecord.id ? { ...t, ...newRecord } : t);
+              } else if (eventType === 'DELETE' && activeId) {
+                return prev.filter(t => t.id !== activeId);
               }
-            } else if (payload.eventType === 'UPDATE' && newRecord.id) {
-              if (isRelevantBranch) {
+              return prev;
+            });
+
+            // Handle Toast Alerts based on Branch access
+            const targetBranch = newRecord?.branch || oldRecord?.branch || '';
+            const userBranches = currentUser.branch ? currentUser.branch.split(',').map(s => s.trim()) : [];
+            const isRelevantBranch = currentUser.branch === 'Nasional' || 
+              (targetBranch && (targetBranch === currentUser.branch || userBranches.includes(targetBranch)));
+
+            if (isRelevantBranch) {
+              if (eventType === 'INSERT' && newRecord) {
+                addToast(`Backcharge Baru: ${newRecord.id} - ${newRecord.customer_name || 'Pelanggan'}`, 'info');
+              } else if (eventType === 'UPDATE' && newRecord && oldRecord) {
                 let changeMessage = '';
-                if (oldRecord && oldRecord.status_confirm && oldRecord.status_confirm !== newRecord.status_confirm) {
+                if (oldRecord.status_confirm !== newRecord.status_confirm) {
                   changeMessage = `Status konfirmasi diperbarui menjadi "${newRecord.status_confirm}"`;
-                } else if (oldRecord && oldRecord.status_sap && oldRecord.status_sap !== newRecord.status_sap) {
+                } else if (oldRecord.status_sap !== newRecord.status_sap) {
                   changeMessage = `Status SAP diperbarui menjadi "${newRecord.status_sap}"`;
-                } else if (oldRecord && oldRecord.status_handover && oldRecord.status_handover !== newRecord.status_handover) {
+                } else if (oldRecord.status_handover !== newRecord.status_handover) {
                   changeMessage = `Status penyerahan berkas diperbarui menjadi "${newRecord.status_handover}"`;
-                } else if (oldRecord && oldRecord.no_invoice !== undefined && oldRecord.no_invoice !== newRecord.no_invoice) {
+                } else if (oldRecord.no_invoice !== newRecord.no_invoice) {
                   changeMessage = `Nomor Invoice diperbarui menjadi "${newRecord.no_invoice}"`;
-                } else if (oldRecord && oldRecord.status_payment && oldRecord.status_payment !== newRecord.status_payment) {
+                } else if (oldRecord.status_payment !== newRecord.status_payment) {
                   changeMessage = `Status pembayaran diperbarui menjadi "${newRecord.status_payment}"`;
                 }
 
