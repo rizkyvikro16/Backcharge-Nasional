@@ -524,43 +524,25 @@ export default function App() {
     
     if (isSupabaseConfigured && supabase) {
       try {
-        // 1. Fetch backcharges (paginated chunks to load all data beyond the default 1000-row limit)
-        let allBcData: any[] = [];
-        let start = 0;
-        const chunkSize = 1000;
-        let hasMore = true;
-        
-        while (hasMore) {
-          let query = supabase
-            .from('backcharges')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .range(start, start + chunkSize - 1);
+        // 1. Fetch backcharges (Limit to 1500 terbaru to save Egress Bandwidth)
+        let query = supabase
+          .from('backcharges')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(1500);
           
-          // Apply branch filter if not national
-          if (currentUser && currentUser.branch !== 'Nasional') {
-            const userBranches = getUserBranches(currentUser.branch);
-            if (userBranches.length > 0) {
-              query = query.in('branch', userBranches);
-            }
-          }
-          
-          const { data: chunkData, error: bcError } = await query;
-          if (bcError) throw bcError;
-          
-          if (chunkData && chunkData.length > 0) {
-            allBcData = [...allBcData, ...chunkData];
-            if (chunkData.length < chunkSize) {
-              hasMore = false;
-            } else {
-              start += chunkSize;
-            }
-          } else {
-            hasMore = false;
+        // Apply branch filter if not national
+        if (currentUser && currentUser.branch !== 'Nasional') {
+          const userBranches = getUserBranches(currentUser.branch);
+          if (userBranches.length > 0) {
+            query = query.in('branch', userBranches);
           }
         }
+          
+        const { data: allBcData, error: bcError } = await query;
+        if (bcError) throw bcError;
         
-        const unpackedData = allBcData.map(unpackExtraFields);
+        const unpackedData = (allBcData || []).map(unpackExtraFields);
         setTransactions(unpackedData as Backcharge[]);
         try { localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedData)); } catch {}
 
@@ -569,7 +551,7 @@ export default function App() {
           .from('activity_logs')
           .select('*')
           .order('timestamp', { ascending: false })
-          .limit(300);
+          .limit(150); // Hemat egress
         if (logsError) throw logsError;
         setLogs((logsData as ActivityLog[]) || []);
         try { localStorage.setItem('backcharge_cache_logs', JSON.stringify(logsData || [])); } catch {}
@@ -621,56 +603,10 @@ export default function App() {
     }
   };
 
-  // Fetch data on login or session restore and perform automatic one-time cleanup of old bloated Base64/files
+  // Fetch data on login or session restore
   useEffect(() => {
     if (currentUser) {
       fetchData();
-
-      // Clear any heavy base64 clutter from database & local storage automatically once
-      const runAutoCleanup = async () => {
-        const hasCleaned = localStorage.getItem('base64_auto_cleaned_v5');
-        if (!hasCleaned) {
-          console.log("Menjalankan pembersihan otomatis untuk berkas lama yang berukuran besar...");
-          try {
-            if (isSupabaseConfigured && supabase) {
-              const { error } = await supabase
-                .from('backcharges')
-                .update({
-                  file_bak_url: null,
-                  file_handover_aso_sales_url: null,
-                  file_handover_sales_admin_url: null,
-                  approval_attachment_1_url: null,
-                  approval_attachment_2_url: null,
-                  approval_attachment_3_url: null
-                })
-                .neq('id', 'dummy-not-exist');
-              if (error) throw error;
-            }
-            
-            // Also clean local storage cache/mock
-            const localTxs = mockDb.getBackcharges();
-            const cleanedTxs = localTxs.map(tx => ({
-              ...tx,
-              file_bak_url: null,
-              file_handover_aso_sales_url: null,
-              file_handover_sales_admin_url: null,
-              approval_attachment_1_url: null,
-              approval_attachment_2_url: null,
-              approval_attachment_3_url: null
-            }));
-            localStorage.setItem('bc_backcharges', JSON.stringify(cleanedTxs));
-            
-            localStorage.setItem('base64_auto_cleaned_v5', 'true');
-            addToast("Pembersihan berkas Base64 lama selesai! Web sekarang 100% cepat.", "success");
-            
-            // Re-fetch clean data
-            fetchData();
-          } catch (e: any) {
-            console.error("Gagal melakukan pembersihan otomatis:", e);
-          }
-        }
-      };
-      runAutoCleanup();
     }
   }, [currentUser]);
 
