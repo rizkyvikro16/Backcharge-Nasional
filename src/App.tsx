@@ -543,32 +543,63 @@ export default function App() {
             }
           }
 
-          // b. Fetch only IDs to prune deleted rows (Extremely lightweight, ~150KB for 5000 rows)
-          let idQuery = supabase.from('backcharges').select('id');
-          if (currentUser && currentUser.branch !== 'Nasional') {
-            const userBranches = getUserBranches(currentUser.branch);
-            if (userBranches.length > 0) idQuery = idQuery.in('branch', userBranches);
-          }
-          const { data: dbIdsData, error: idError } = await idQuery;
-          if (idError) throw idError;
+          // b. Fetch only IDs to prune deleted rows (Paginated to handle >1000 rows limit)
+          let allDbIds: string[] = [];
+          let idStart = 0;
+          let idChunkSize = 1000;
+          let hasMoreIds = true;
           
-          const validIds = new Set((dbIdsData || []).map(d => d.id));
+          while (hasMoreIds) {
+            let idQuery = supabase.from('backcharges').select('id').range(idStart, idStart + idChunkSize - 1);
+            if (currentUser && currentUser.branch !== 'Nasional') {
+              const userBranches = getUserBranches(currentUser.branch);
+              if (userBranches.length > 0) idQuery = idQuery.in('branch', userBranches);
+            }
+            const { data: dbIdsData, error: idError } = await idQuery;
+            if (idError) throw idError;
+            
+            if (dbIdsData && dbIdsData.length > 0) {
+              allDbIds = [...allDbIds, ...dbIdsData.map(d => d.id)];
+              if (dbIdsData.length < idChunkSize) hasMoreIds = false;
+              else idStart += idChunkSize;
+            } else {
+              hasMoreIds = false;
+            }
+          }
+          const validIds = new Set(allDbIds);
           
           // c. Filter out deleted records from cache
           let syncedTxs = cachedTxs.filter(tx => validIds.has(tx.id));
 
-          // d. Fetch ONLY newly created or updated records since last sync
-          let deltaQuery = supabase
-            .from('backcharges')
-            .select('*')
-            .gt('updated_at', lastSync);
+          // d. Fetch ONLY newly created or updated records since last sync (Paginated)
+          let deltaData: any[] = [];
+          let deltaStart = 0;
+          let deltaChunkSize = 1000;
+          let hasMoreDelta = true;
+          
+          while (hasMoreDelta) {
+            let deltaQuery = supabase
+              .from('backcharges')
+              .select('*')
+              .gt('updated_at', lastSync)
+              .range(deltaStart, deltaStart + deltaChunkSize - 1);
+              
+            if (currentUser && currentUser.branch !== 'Nasional') {
+              const userBranches = getUserBranches(currentUser.branch);
+              if (userBranches.length > 0) deltaQuery = deltaQuery.in('branch', userBranches);
+            }
             
-          if (currentUser && currentUser.branch !== 'Nasional') {
-            const userBranches = getUserBranches(currentUser.branch);
-            if (userBranches.length > 0) deltaQuery = deltaQuery.in('branch', userBranches);
+            const { data: chunkData, error: deltaError } = await deltaQuery;
+            if (deltaError) throw deltaError;
+            
+            if (chunkData && chunkData.length > 0) {
+              deltaData = [...deltaData, ...chunkData];
+              if (chunkData.length < deltaChunkSize) hasMoreDelta = false;
+              else deltaStart += deltaChunkSize;
+            } else {
+              hasMoreDelta = false;
+            }
           }
-          const { data: deltaData, error: deltaError } = await deltaQuery;
-          if (deltaError) throw deltaError;
 
           // e. Merge the delta into our synced list
           if (deltaData && deltaData.length > 0) {
@@ -968,24 +999,43 @@ export default function App() {
     const usedIds = new Set(allIds);
 
     for (const newTx of newTxs) {
-      let nextNum = maxNum + 1;
-      let formatCount = String(nextNum).padStart(4, '0');
-      let newId = `BC-${year}-${formatCount}`;
+      // 1. DUPLICATE DETECTION: Check if data already exists in database (exact match on key fields)
+      const existingMatch = transactions.find(t => 
+        t.tanggal === newTx.tanggal &&
+        t.customer_name?.toLowerCase() === newTx.customer_name?.toLowerCase() &&
+        t.value === newTx.value &&
+        t.branch === newTx.branch &&
+        (t.license_plate || '').toLowerCase() === (newTx.license_plate || '').toLowerCase() &&
+        (t.no_bak || '').toLowerCase() === (newTx.no_bak || '').toLowerCase() &&
+        (t.no_spk || '').toLowerCase() === (newTx.no_spk || '').toLowerCase()
+      );
 
-      while (usedIds.has(newId)) {
-        nextNum++;
-        formatCount = String(nextNum).padStart(4, '0');
-        newId = `BC-${year}-${formatCount}`;
+      let targetId = '';
+      if (existingMatch) {
+        // If exists, reuse the existing ID to update (Upsert) it
+        targetId = existingMatch.id;
+      } else {
+        // If new, generate a new ID
+        let nextNum = maxNum + 1;
+        let formatCount = String(nextNum).padStart(4, '0');
+        targetId = `BC-${year}-${formatCount}`;
+  
+        while (usedIds.has(targetId)) {
+          nextNum++;
+          formatCount = String(nextNum).padStart(4, '0');
+          targetId = `BC-${year}-${formatCount}`;
+        }
+  
+        usedIds.add(targetId);
+        maxNum = nextNum;
       }
 
-      usedIds.add(newId);
-      maxNum = nextNum; // update maxNum for next iteration
-
       const txObj: Backcharge = {
+        ...(existingMatch || {}), // Merge with existing data so we don't lose old fields like dates
         ...newTx,
-        id: newId,
-        created_by: creatorEmail,
-        created_at: new Date().toISOString(),
+        id: targetId,
+        created_by: existingMatch ? existingMatch.created_by : creatorEmail,
+        created_at: existingMatch ? existingMatch.created_at : new Date().toISOString(),
         updated_at: new Date().toISOString(),
         nama_bro: newTx.nama_bro || newTx.bro_name || '-',
         bro_name: newTx.nama_bro || newTx.bro_name || '-',
@@ -1022,10 +1072,11 @@ export default function App() {
       const cleanedPayloads = preparedTxs.map(tx => cleanSupabasePayload(tx));
       try {
         // Insert in safe sequential batches of 500 rows to ensure zero gateway timeouts or size errors
-        const batchSize = 500;
+        const batchSize = 100;
         for (let i = 0; i < cleanedPayloads.length; i += batchSize) {
           const batch = cleanedPayloads.slice(i, i + batchSize);
-          const { error } = await supabase.from('backcharges').insert(batch);
+          // Use UPSERT so that if ID exists, it updates; if not, it inserts.
+          const { error } = await supabase.from('backcharges').upsert(batch, { onConflict: 'id' });
           if (error) throw error;
         }
         
