@@ -859,39 +859,68 @@ export default function App() {
 
     // Generate unique ID: BC-YYYY-XXXX
     const year = new Date().getFullYear();
-    let allIds: string[] = [];
+    let maxNum = 0;
+    const usedIds = new Set<string>();
 
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('backcharges').select('id');
-        if (!error && data) {
-          allIds = data.map((item: any) => item.id);
+        // Query the single largest ID starting with BC-YYYY-
+        const { data, error } = await supabase
+          .from('backcharges')
+          .select('id')
+          .like('id', `BC-${year}-%`)
+          .order('id', { ascending: false })
+          .limit(1);
+        
+        if (!error && data && data.length > 0) {
+          const highestId = data[0].id;
+          const parts = highestId.split('-');
+          const numPart = parts[parts.length - 1];
+          const parsed = parseInt(numPart, 10);
+          maxNum = isNaN(parsed) ? 0 : parsed;
         }
+
+        // Also cross-reference active memory/transactions state to prevent duplicate codes before sync completes
+        const localMaxNums = transactions
+          .filter(t => t.id && t.id.startsWith(`BC-${year}-`))
+          .map(t => {
+            const parts = t.id.split('-');
+            const numPart = parts[parts.length - 1];
+            const parsed = parseInt(numPart, 10);
+            return isNaN(parsed) ? 0 : parsed;
+          });
+        if (localMaxNums.length > 0) {
+          const localMax = Math.max(...localMaxNums);
+          if (localMax > maxNum) {
+            maxNum = localMax;
+          }
+        }
+        
+        transactions.forEach(t => usedIds.add(t.id));
       } catch (e) {
-        console.error("Error fetching all IDs from database:", e);
+        console.error("Error determining highest ID from Supabase:", e);
       }
     } else {
-      allIds = mockDb.getBackcharges().map(item => item.id);
+      const allIds = mockDb.getBackcharges().map(item => item.id);
+      allIds.forEach(id => usedIds.add(id));
+      const currentYearPrefix = `BC-${year}-`;
+      const existingNums = allIds
+        .filter(id => id && id.startsWith(currentYearPrefix))
+        .map(id => {
+          const parts = id.split('-');
+          const numPart = parts[parts.length - 1];
+          const parsed = parseInt(numPart, 10);
+          return isNaN(parsed) ? 0 : parsed;
+        });
+      maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 0;
     }
 
-    // Filter by year prefix and extract maximum numeric suffix
-    const currentYearPrefix = `BC-${year}-`;
-    const existingNums = allIds
-      .filter(id => id && id.startsWith(currentYearPrefix))
-      .map(id => {
-        const parts = id.split('-');
-        const numPart = parts[parts.length - 1];
-        const parsed = parseInt(numPart, 10);
-        return isNaN(parsed) ? 0 : parsed;
-      });
-
-    const maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 0;
     let nextNum = maxNum + 1;
     let formatCount = String(nextNum).padStart(4, '0');
     let newId = `BC-${year}-${formatCount}`;
 
-    // Loop fallback to guarantee 100% uniqueness in memory
-    while (allIds.includes(newId)) {
+    // Loop fallback to guarantee 100% uniqueness
+    while (usedIds.has(newId)) {
       nextNum++;
       formatCount = String(nextNum).padStart(4, '0');
       newId = `BC-${year}-${formatCount}`;
@@ -985,58 +1014,66 @@ export default function App() {
     if (!currentUser || newTxs.length === 0) return;
 
     const year = new Date().getFullYear();
-    let allIds: string[] = [];
+    let maxNum = 0;
+    const usedIds = new Set<string>();
 
     if (isSupabaseConfigured && supabase) {
       try {
-        let dbIds: string[] = [];
-        let start = 0;
-        const chunkSize = 1000;
-        let hasMore = true;
+        // Query the single largest ID starting with BC-YYYY-
+        const { data, error } = await supabase
+          .from('backcharges')
+          .select('id')
+          .like('id', `BC-${year}-%`)
+          .order('id', { ascending: false })
+          .limit(1);
         
-        while (hasMore) {
-          const { data, error } = await supabase
-            .from('backcharges')
-            .select('id')
-            .order('id')
-            .range(start, start + chunkSize - 1);
-            
-          if (error) throw error;
-          
-          if (data && data.length > 0) {
-            dbIds = [...dbIds, ...data.map((item: any) => item.id)];
-            if (data.length < chunkSize) {
-              hasMore = false;
-            } else {
-              start += chunkSize;
-            }
-          } else {
-            hasMore = false;
+        if (!error && data && data.length > 0) {
+          const highestId = data[0].id;
+          const parts = highestId.split('-');
+          const numPart = parts[parts.length - 1];
+          const parsed = parseInt(numPart, 10);
+          maxNum = isNaN(parsed) ? 0 : parsed;
+        }
+
+        // Also check memory transactions
+        const localMaxNums = transactions
+          .filter(t => t.id && t.id.startsWith(`BC-${year}-`))
+          .map(t => {
+            const parts = t.id.split('-');
+            const numPart = parts[parts.length - 1];
+            const parsed = parseInt(numPart, 10);
+            return isNaN(parsed) ? 0 : parsed;
+          });
+        if (localMaxNums.length > 0) {
+          const localMax = Math.max(...localMaxNums);
+          if (localMax > maxNum) {
+            maxNum = localMax;
           }
         }
-        allIds = dbIds;
+
+        // Add all local transactions to usedIds to prevent duplication during bulk generation
+        transactions.forEach(t => usedIds.add(t.id));
       } catch (e) {
-        console.error("Error fetching all IDs from database:", e);
+        console.error("Error determining highest ID from Supabase for bulk:", e);
       }
     } else {
-      allIds = mockDb.getBackcharges().map(item => item.id);
+      const allIds = mockDb.getBackcharges().map(item => item.id);
+      allIds.forEach(id => usedIds.add(id));
+      const currentYearPrefix = `BC-${year}-`;
+      const existingNums = allIds
+        .filter(id => id && id.startsWith(currentYearPrefix))
+        .map(id => {
+          const parts = id.split('-');
+          const numPart = parts[parts.length - 1];
+          const parsed = parseInt(numPart, 10);
+          return isNaN(parsed) ? 0 : parsed;
+        });
+      maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 0;
     }
 
-    const currentYearPrefix = `BC-${year}-`;
-    const existingNums = allIds
-      .filter(id => id && id.startsWith(currentYearPrefix))
-      .map(id => {
-        const parts = id.split('-');
-        const numPart = parts[parts.length - 1];
-        const parsed = parseInt(numPart, 10);
-        return isNaN(parsed) ? 0 : parsed;
-      });
-
-    let maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 0;
     const creatorEmail = currentUser.email;
 
     const preparedTxs: Backcharge[] = [];
-    const usedIds = new Set(allIds);
 
     for (const newTx of newTxs) {
       // 1. DUPLICATE DETECTION: Check if data already exists in database (exact match on key fields)
