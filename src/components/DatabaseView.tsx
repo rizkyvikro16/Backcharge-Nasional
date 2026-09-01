@@ -871,6 +871,7 @@ export default function DatabaseView({
       const matchesSearch = 
         t.id.toLowerCase().includes(searchLower) || 
         t.customer_name.toLowerCase().includes(searchLower) ||
+        (t.license_plate || '').toLowerCase().includes(searchLower) ||
         t.no_bak.toLowerCase().includes(searchLower) ||
         t.no_invoice.toLowerCase().includes(searchLower);
 
@@ -1854,6 +1855,7 @@ export default function DatabaseView({
                   <th className="p-3 whitespace-nowrap text-slate-500">TGL BAK</th>
                   <th className="p-3">Kategori</th>
                   <th className="p-3">Customer</th>
+                  <th className="p-3 whitespace-nowrap">Nopol</th>
                   <th className="p-3">Backcharge (Rp)</th>
                   <th className="p-3">Fisik Berkas</th>
                   <th className="p-3">Invoice</th>
@@ -1883,6 +1885,9 @@ export default function DatabaseView({
                       </td>
                       <td className="p-3">
                         <div className="h-4 bg-slate-200/80 rounded w-28" />
+                      </td>
+                      <td className="p-3">
+                        <div className="h-4 bg-slate-200/80 rounded w-20" />
                       </td>
                       <td className="p-3">
                         <div className="h-4 bg-slate-200/80 rounded w-24" />
@@ -2037,6 +2042,13 @@ export default function DatabaseView({
                         </td>
                         <td className="p-3 font-bold text-slate-950 truncate max-w-[120px]" title={t.customer_name}>
                           {t.customer_name}
+                        </td>
+                        <td className="p-3 font-mono text-[11px] font-bold text-slate-700 whitespace-nowrap" title={t.license_plate}>
+                          {t.license_plate ? (
+                            <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm uppercase">{t.license_plate}</span>
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
                         </td>
                         <td className="p-3 font-mono font-bold text-slate-950">
                           {formatRupiah(t.value)}
