@@ -1778,7 +1778,7 @@ export default function DatabaseView({
             </div>
           </div>
  
-          {isSuperAdmin && (
+          {(isSuperAdmin || isAdminUser || isAsoUser) && (
             <button 
               type="button"
               onClick={() => setShowBulkImportModal(true)}
@@ -2097,7 +2097,7 @@ export default function DatabaseView({
                               >
                                 <Edit className="w-4 h-4" />
                               </button>
-                              {currentUser.role === 'Administrator' && (
+                              {(currentUser.role === 'Administrator' || isAsoUser || currentUser.role === 'Admin') && (
                                 <button
                                   type="button"
                                   onClick={() => {

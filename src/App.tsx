@@ -1281,10 +1281,10 @@ export default function App() {
     }
   };
 
-  // 2B. DELETE TRANSACTION WORKFLOW (ADMINISTRATOR ONLY)
+  // 2B. DELETE TRANSACTION WORKFLOW (ADMINISTRATOR, ASO, MAINTENANCE CENTER)
   const handleDeleteTransaction = async (id: string) => {
-    if (!currentUser || currentUser.role !== 'Administrator') {
-      addToast("Akses Ditolak: Hanya Administrator yang boleh menghapus data!", "error");
+    if (!currentUser || (currentUser.role !== 'Administrator' && currentUser.role !== 'ASO' && currentUser.role !== 'ASO Megabranch' && currentUser.role !== 'Maintenance Center' && currentUser.role !== 'Admin')) {
+      addToast("Akses Ditolak: Hanya Administrator, ASO, ASO Megabranch, atau Maintenance Center yang boleh menghapus data!", "error");
       return;
     }
 
