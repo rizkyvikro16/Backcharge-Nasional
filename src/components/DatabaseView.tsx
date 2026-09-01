@@ -265,16 +265,7 @@ export default function DatabaseView({
     const headers = [
       ["Tanggal", "Kategori", "Cabang", "Nama Customer", "No Polisi", "Nilai Backcharge", "No BAK", "No SPK", "No SAP", "No Tilang", "PIC", "Alasan", "Tahap Proses", "No Invoice", "Status Bayar", "Status SAP (Bill/Not Bill/NA)"]
     ];
-    const sampleData = [
-      ["12/08/2026", "Own Risk", "Megabranch", "PT Maju Bersama", "B 1234 ABC", "150000", "BAK-001", "SPK-001", "SAP-001", "-", "John Doe", "Klaim Own Risk", "Berkas di ASO", "-", "Belum Bayar", "Bill"],
-      ["12/08/2026", "Own Risk", "Megabranch", "PT Prima Sentosa", "B 5678 XYZ", "250000", "BAK-002", "SPK-002", "SAP-002", "-", "Jane Smith", "Klaim Own Risk", "Berkas di Admin", "-", "Belum Bayar", "Not Bill"],
-      ["13/08/2026", "ETLE", "Surabaya", "PT Sukses Abadi", "L 9988 AA", "500000", "-", "-", "SAP-003", "TILANG-001", "John Doe", "Pelanggaran Lampu Merah", "Belum appr SH/Kacab", "-", "Belum Bayar", "N/A"],
-      ["14/08/2026", "Maintenance", "Bandung", "PT Sejahtera", "D 4321 EF", "8000000", "BAK-003", "SPK-003", "SAP-004", "-", "Jane Smith", "Ganti Oli Mesin", "Belum appr Regional Head", "-", "Belum Bayar", "Bill"],
-      ["15/08/2026", "Maintenance", "Medan", "PT Karya Jaya", "BK 7777 SS", "16000000", "BAK-004", "SPK-004", "SAP-005", "-", "John Doe", "Klaim Transmisi Pecah", "Belum appr Division Head", "-", "Belum Bayar", "Bill"],
-      ["16/08/2026", "TPL", "Semarang", "PT Sinar Terang", "H 1122 YU", "1200000", "BAK-005", "SPK-005", "SAP-006", "-", "Jane Smith", "Kerusakan Kendaraan Pihak Ketiga", "Belum Invoice", "-", "Belum Bayar", "Not Bill"],
-      ["17/08/2026", "Own Risk", "Megabranch", "PT Berkah Selalu", "B 8888 OK", "150000", "BAK-006", "SPK-006", "SAP-007", "-", "John Doe", "Klaim Own Risk", "Kolektif Bayar", "INV-2026-001", "Lunas", "Bill"]
-    ];
-    const worksheet = XLSX.utils.aoa_to_sheet([...headers, ...sampleData]);
+    const worksheet = XLSX.utils.aoa_to_sheet(headers);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Template Backcharge");
     worksheet['!cols'] = Array(16).fill({ wch: 22 });
