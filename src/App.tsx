@@ -519,17 +519,23 @@ export default function App() {
   }, [transactions, currentUser, readNotifIds]);
 
   // Fetch app data
-  const fetchData = async () => {
+  const fetchData = async (forceFull = false) => {
     setLoading(true);
     
     if (isSupabaseConfigured && supabase) {
       try {
+        if (forceFull) {
+          try { localStorage.removeItem('backcharge_cache_txs'); } catch {}
+        }
+
         // 1. SMART DELTA SYNC (To prevent Egress quota blow up with 5000+ data)
         let cachedTxs: any[] = [];
-        try {
-          const cacheStr = localStorage.getItem('backcharge_cache_txs');
-          if (cacheStr) cachedTxs = JSON.parse(cacheStr);
-        } catch (e) {}
+        if (!forceFull) {
+          try {
+            const cacheStr = localStorage.getItem('backcharge_cache_txs');
+            if (cacheStr) cachedTxs = JSON.parse(cacheStr);
+          } catch (e) {}
+        }
 
         let unpackedData: Backcharge[] = [];
 
@@ -571,7 +577,39 @@ export default function App() {
           // c. Filter out deleted records from cache
           let syncedTxs = cachedTxs.filter(tx => validIds.has(tx.id));
 
-          // d. Fetch ONLY newly created or updated records since last sync (Paginated)
+          // d. Gaps identification (Find IDs present in database but missing from the local cache)
+          const syncedIds = new Set(syncedTxs.map(tx => tx.id));
+          const missingIds = allDbIds.filter(id => !syncedIds.has(id));
+
+          let missingData: any[] = [];
+          if (missingIds.length > 0) {
+            const missingChunkSize = 250;
+            for (let i = 0; i < missingIds.length; i += missingChunkSize) {
+              const batch = missingIds.slice(i, i + missingChunkSize);
+              let missingQuery = supabase
+                .from('backcharges')
+                .select('*')
+                .in('id', batch);
+              
+              if (currentUser && currentUser.branch !== 'Nasional') {
+                const userBranches = getUserBranches(currentUser.branch);
+                if (userBranches.length > 0) missingQuery = missingQuery.in('branch', userBranches);
+              }
+
+              const { data: mChunk, error: mError } = await missingQuery;
+              if (mError) throw mError;
+              if (mChunk && mChunk.length > 0) {
+                missingData = [...missingData, ...mChunk];
+              }
+            }
+          }
+
+          if (missingData.length > 0) {
+            const missingUnpacked = missingData.map(unpackExtraFields);
+            syncedTxs = [...missingUnpacked, ...syncedTxs];
+          }
+
+          // e. Fetch ONLY newly created or updated records since last sync (Paginated)
           let deltaData: any[] = [];
           let deltaStart = 0;
           let deltaChunkSize = 1000;
@@ -602,7 +640,7 @@ export default function App() {
             }
           }
 
-          // e. Merge the delta into our synced list
+          // f. Merge the delta into our synced list
           if (deltaData && deltaData.length > 0) {
             const deltaUnpacked = deltaData.map(unpackExtraFields);
             const deltaMap = new Map(deltaUnpacked.map((tx: any) => [tx.id, tx]));
@@ -1741,10 +1779,10 @@ export default function App() {
             
             {/* Sync Global Button */}
             <button 
-              onClick={fetchData} 
+              onClick={(e) => fetchData(e.shiftKey)} 
               disabled={loading}
               className={`p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-xl transition-all border border-slate-100 ${loading ? 'animate-spin' : ''}`}
-              title="Sinkronkan Data"
+              title="Sinkronkan Data (Shift+Klik untuk Muat Ulang Penuh)"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
