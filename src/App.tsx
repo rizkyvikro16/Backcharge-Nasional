@@ -550,7 +550,7 @@ export default function App() {
           let hasMoreIds = true;
           
           while (hasMoreIds) {
-            let idQuery = supabase.from('backcharges').select('id').range(idStart, idStart + idChunkSize - 1);
+            let idQuery = supabase.from('backcharges').select('id').order('id').range(idStart, idStart + idChunkSize - 1);
             if (currentUser && currentUser.branch !== 'Nasional') {
               const userBranches = getUserBranches(currentUser.branch);
               if (userBranches.length > 0) idQuery = idQuery.in('branch', userBranches);
@@ -582,6 +582,7 @@ export default function App() {
               .from('backcharges')
               .select('*')
               .gt('updated_at', lastSync)
+              .order('id')
               .range(deltaStart, deltaStart + deltaChunkSize - 1);
               
             if (currentUser && currentUser.branch !== 'Nasional') {
@@ -959,6 +960,7 @@ export default function App() {
           const { data, error } = await supabase
             .from('backcharges')
             .select('id')
+            .order('id')
             .range(start, start + chunkSize - 1);
             
           if (error) throw error;
