@@ -5,7 +5,7 @@ import {
   Download, FileSpreadsheet, RefreshCw, LogOut, Bell, Shield, Users, Landmark, UserCheck
 } from 'lucide-react';
 
-import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, hasRole } from './types';
+import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, hasRole, isRegionalHeadRole } from './types';
 import { supabase, isSupabaseConfigured, mockDb } from './supabaseClient';
 
 import AuthScreen from './components/AuthScreen';
@@ -209,7 +209,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
       }
     }
     const val = t.value || 0;
-    const isRegionalHead = user.role ? user.role.startsWith('Regional Head') : false;
+    const isRegionalHead = isRegionalHeadRole(user.role as string);
     const isDivisionHead = hasRole(user.role, 'Division Head');
     const isMaintenance = t.category === 'Maintenance';
     const isRegionalHeadReq = isMaintenance 

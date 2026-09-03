@@ -4,7 +4,7 @@ import {
   Upload, FileText, Check, AlertCircle, AlertTriangle, RefreshCw, X, Trash2,
   Loader2, Edit, Info
 } from 'lucide-react';
-import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, hasRole } from '../types';
+import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, hasRole, isRegionalHeadRole } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
 import * as XLSX from 'xlsx';
 
@@ -56,7 +56,7 @@ export default function DatabaseView({
     (currentUser.branch && currentUser.branch.includes(',')) || 
     hasRole(currentUser.role, 'Administrator') || 
     hasRole(currentUser.role, 'Division Head') || 
-    (currentUser.role && currentUser.role.startsWith('Regional Head'));
+    (isRegionalHeadRole(currentUser.role as string));
   const userBranchList = currentUser.branch && currentUser.branch !== 'Nasional'
     ? getUserBranches(currentUser.branch)
     : null;
@@ -1088,7 +1088,7 @@ export default function DatabaseView({
             const isKacab = hasRole(currentUser.role, 'Kepala Cabang') || hasRole(currentUser.role, 'kacab');
             const isSH = hasRole(currentUser.role, 'Sales Head') || hasRole(currentUser.role, 'Sales / Sales Head');
             const isAdmin = hasRole(currentUser.role, 'Administrator');
-            const isRH = currentUser.role && currentUser.role.startsWith('Regional Head');
+            const isRH = isRegionalHeadRole(currentUser.role as string);
             const isDH = hasRole(currentUser.role, 'Division Head');
             const val = item.value || 0;
             const isMaintenance = item.category === 'Maintenance';

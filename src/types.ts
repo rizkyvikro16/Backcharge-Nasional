@@ -69,7 +69,9 @@ export const REGIONAL_HEAD_ROLES: UserRole[] = [
 ];
 
 export function isRegionalHeadRole(role: string): boolean {
-  return role ? role.startsWith('Regional Head') : false;
+  if (!role) return false;
+  const roles = role.split(',').map(s => s.trim());
+  return roles.some(r => r.startsWith('Regional Head'));
 }
 
 export interface Profile {

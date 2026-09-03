@@ -9,7 +9,7 @@ import {
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, BackchargeCategory, hasRole } from '../types';
+import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, BackchargeCategory, hasRole, isRegionalHeadRole } from '../types';
 
 interface DashboardProps {
   transactions: Backcharge[];
@@ -193,7 +193,7 @@ export default function Dashboard({
 
   // Check if current user is Division Head or Regional Head for clean view
   const isCleanExecutive = hasRole(currentUser?.role, 'Division Head') || 
-                           (currentUser?.role && currentUser.role.startsWith('Regional Head')) || 
+                           (isRegionalHeadRole(currentUser?.role as string)) || 
                            hasRole(currentUser?.role, 'RBU') || 
                            hasRole(currentUser?.role, 'RH');
 
