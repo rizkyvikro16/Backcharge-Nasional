@@ -4,7 +4,7 @@ import {
   Image, Eye,
   Cloud, Loader2, ExternalLink
 } from 'lucide-react';
-import { Backcharge, Profile, isRegionalHeadRole } from '../types';
+import { Backcharge, Profile, isRegionalHeadRole, hasRole } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
 
 interface DetailModalProps {
@@ -704,8 +704,8 @@ export default function DetailModal({
   };
 
   const handleApprovalSubmit = () => {
-    const isKacabUser = currentUser.role === 'Kepala Cabang' || (currentUser.role as string) === 'kacab';
-    const isSHUser = currentUser.role === 'Sales Head' || (currentUser.role as string) === 'Sales / Sales Head';
+    const isKacabUser = hasRole(currentUser.role, 'Kepala Cabang') || hasRole(currentUser.role, 'kacab');
+    const isSHUser = hasRole(currentUser.role, 'Sales Head') || hasRole(currentUser.role, 'Sales / Sales Head');
     const roleTitle = isKacabUser ? 'Kepala Cabang' : isSHUser ? 'Sales Head' : currentUser.role;
 
     const confirmMessage = `PERINGATAN STATUS KRITIS!\n\nApakah Anda yakin ingin menyimpan keputusan Approval Backcharge ini dengan status: "${modalApprovalStatus.toUpperCase()}"?\n\nPerubahan ini akan dicatat secara resmi atas nama ${currentUser.full_name || currentUser.email} (${roleTitle}).`;
@@ -770,17 +770,17 @@ export default function DetailModal({
   };
 
   // Check roles permission
-  const isKacabRole = currentUser.role === 'Kepala Cabang' || (currentUser.role as string) === 'kacab' || currentUser.role === 'Administrator';
-  const isSalesHeadRole = currentUser.role === 'Sales Head' || (currentUser.role as string) === 'Sales / Sales Head' || currentUser.role === 'Administrator';
-  const isSales = currentUser.role === 'Sales Head' || currentUser.role === 'Kepala Cabang' || (currentUser.role as string) === 'Sales / Sales Head' || (currentUser.role as string) === 'kacab' || currentUser.role === 'Administrator';
-  const isBro = currentUser.role === 'BRO';
-  const isAdmin = currentUser.role === 'Admin' || currentUser.role === 'Administrator';
-  const isAdminView = isAdmin || currentUser.role === 'Admin Head';
-  const isAso = currentUser.role === 'ASO' || currentUser.role === 'Maintenance Center' || currentUser.role === 'ASO Megabranch' || currentUser.role === 'Administrator';
+  const isKacabRole = hasRole(currentUser.role, 'Kepala Cabang') || hasRole(currentUser.role, 'kacab') || hasRole(currentUser.role, 'Administrator');
+  const isSalesHeadRole = hasRole(currentUser.role, 'Sales Head') || hasRole(currentUser.role, 'Sales / Sales Head') || hasRole(currentUser.role, 'Administrator');
+  const isSales = hasRole(currentUser.role, 'Sales Head') || hasRole(currentUser.role, 'Kepala Cabang') || hasRole(currentUser.role, 'Sales / Sales Head') || hasRole(currentUser.role, 'kacab') || hasRole(currentUser.role, 'Administrator');
+  const isBro = hasRole(currentUser.role, 'BRO');
+  const isAdmin = hasRole(currentUser.role, 'Admin') || hasRole(currentUser.role, 'Administrator');
+  const isAdminView = isAdmin || hasRole(currentUser.role, 'Admin Head');
+  const isAso = hasRole(currentUser.role, 'ASO') || hasRole(currentUser.role, 'Maintenance Center') || hasRole(currentUser.role, 'ASO Megabranch') || hasRole(currentUser.role, 'Administrator');
 
   const txValue = transaction.value || 0;
   const isRegionalHeadView = isRegionalHeadRole(currentUser.role as string);
-  const isDivisionHeadView = currentUser.role === 'Division Head';
+  const isDivisionHeadView = hasRole(currentUser.role, 'Division Head');
 
   const expectedApproverLabel = 
     (transaction.category === 'Maintenance' || transaction.category === 'TPL') ? 'Kepala Cabang (Kacab)' : 'Sales Head (SH)';
@@ -790,13 +790,13 @@ export default function DetailModal({
   const isOtherCat = transaction.category === 'Own Risk' || transaction.category === 'Ekspedisi' || transaction.category === 'ETLE' || transaction.category === 'Unclaimable Insurance' || transaction.category === 'Dokumen Kendaraan';
 
   const isAuthorizedApprover = 
-    currentUser.role === 'Administrator' ||
+    hasRole(currentUser.role, 'Administrator') ||
     (isKacabRole && (isMaintenance || isTPL)) ||
     (isSalesHeadRole && isOtherCat) ||
     (isRegionalHeadView && ((isMaintenance && txValue > 7500000) || (!isMaintenance && txValue > 5000000))) ||
     (isDivisionHeadView && txValue > 15000000);
 
-  const isSuperAdmin = currentUser.role === 'Administrator';
+  const isSuperAdmin = hasRole(currentUser.role, 'Administrator');
   const isRegionalHeadUser = isRegionalHeadView;
   const isDivisionHeadUser = isDivisionHeadView;
   const isKacabUser = isKacabRole && !isRegionalHeadUser && !isDivisionHeadUser;
@@ -1755,7 +1755,7 @@ export default function DetailModal({
                             <span>Membutuhkan persetujuan pejabat berwenang sebelum penerbitan invoice.</span>
                           )}
                         </div>
-                        {(isAuthorizedApprover || currentUser.role === 'Administrator') && (
+                        {(isAuthorizedApprover || hasRole(currentUser.role, 'Administrator')) && (
                           <button 
                             onClick={() => {
                               setModalApprovalStatus(transaction.status_approval === 'Disetujui' ? 'Disetujui' : 'Disetujui');
@@ -1871,7 +1871,7 @@ export default function DetailModal({
                             <span>Membutuhkan persetujuan Regional Head (Nominal menengah).</span>
                           )}
                         </div>
-                        {(isRegionalHeadView || currentUser.role === 'Administrator') && (
+                        {(isRegionalHeadView || hasRole(currentUser.role, 'Administrator')) && (
                           <button 
                             onClick={() => {
                               setModalRegionalApprovalStatus(transaction.regional_approval_status === 'Disetujui' ? 'Disetujui' : 'Disetujui');
@@ -1988,7 +1988,7 @@ export default function DetailModal({
                             <span>Membutuhkan persetujuan Division Head (Nominal &gt; 15 Juta).</span>
                           )}
                         </div>
-                        {(isDivisionHeadView || currentUser.role === 'Administrator') && (
+                        {(isDivisionHeadView || hasRole(currentUser.role, 'Administrator')) && (
                           <button 
                             onClick={() => {
                               setModalDivisionApprovalStatus(transaction.division_approval_status === 'Disetujui' ? 'Disetujui' : 'Disetujui');
@@ -2126,7 +2126,7 @@ export default function DetailModal({
                 {!(isSales || isBro || isAdminView) &&
                  !((isKacabRole && (transaction.category === 'Maintenance' || transaction.category === 'TPL')) ||
                    (isSalesHeadRole && (transaction.category === 'Own Risk' || transaction.category === 'Ekspedisi' || transaction.category === 'ETLE' || transaction.category === 'Unclaimable Insurance' || transaction.category === 'Dokumen Kendaraan')) ||
-                   currentUser.role === 'Administrator') &&
+                   hasRole(currentUser.role, 'Administrator')) &&
                  !isAdminView && (
                   <div className="p-4 bg-slate-100 border border-slate-200 rounded-xl text-center">
                     <p className="text-xs font-bold text-slate-600">

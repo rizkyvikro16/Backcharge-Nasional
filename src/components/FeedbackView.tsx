@@ -6,7 +6,7 @@ import {
   Edit, Save, X, Download, FileSpreadsheet, Trash2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { ContactInquiry, Profile } from '../types';
+import { ContactInquiry, Profile, hasRole } from '../types';
 
 interface FeedbackViewProps {
   inquiries: ContactInquiry[];
@@ -240,7 +240,7 @@ export default function FeedbackView({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider">Direct Communication</h3>
-                {currentUser?.role === 'Administrator' && !isEditingContact && (
+                {hasRole(currentUser?.role, 'Administrator') && !isEditingContact && (
                   <button
                     type="button"
                     onClick={handleStartEditing}
@@ -534,7 +534,7 @@ export default function FeedbackView({
                       )}
 
                       {/* Premium 1-by-1 Deletion Trigger with Inline Confirmation */}
-                      {currentUser?.role === 'Administrator' && (
+                      {hasRole(currentUser?.role, 'Administrator') && (
                         <div className="flex items-center ml-2">
                           {confirmDeleteId === inquiry.id ? (
                             <div className="flex items-center gap-1.5 bg-red-50 border border-red-100 px-2 py-1 rounded-xl animate-in zoom-in duration-200">

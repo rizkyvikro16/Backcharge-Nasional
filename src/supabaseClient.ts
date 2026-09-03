@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Backcharge, ActivityLog, Profile, ContactInquiry } from './types';
+import { Backcharge, ActivityLog, Profile, ContactInquiry, hasRole } from './types';
 
 // Read Supabase environment variables from import.meta.env
 const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL || '';
@@ -54,13 +54,13 @@ if (!localStorage.getItem('bc_profiles')) {
     }
     
     currentProfs.forEach((prof: any) => {
-      if ((prof.role as string) === 'kacab') { prof.role = 'Kepala Cabang'; modified = true; }
-      if ((prof.role as string) === 'RBU') { prof.role = 'Division Head'; modified = true; }
-      if ((prof.role as string) === 'RH') { prof.role = 'Regional Head'; modified = true; }
-      if ((prof.role as string) === 'ASO / Staff') { prof.role = 'ASO'; modified = true; }
-      if ((prof.role as string) === 'Megabranch') { prof.role = 'ASO Megabranch'; modified = true; }
-      if ((prof.role as string) === 'BRO Megabranch') { prof.role = 'BRO'; modified = true; }
-      if ((prof.role as string) === 'SM Megabranch') { prof.role = 'Sales Head'; modified = true; }
+      if (hasRole(prof.role, 'kacab')) { prof.role = 'Kepala Cabang'; modified = true; }
+      if (hasRole(prof.role, 'RBU')) { prof.role = 'Division Head'; modified = true; }
+      if (hasRole(prof.role, 'RH')) { prof.role = 'Regional Head'; modified = true; }
+      if (hasRole(prof.role, 'ASO / Staff')) { prof.role = 'ASO'; modified = true; }
+      if (hasRole(prof.role, 'Megabranch')) { prof.role = 'ASO Megabranch'; modified = true; }
+      if (hasRole(prof.role, 'BRO Megabranch')) { prof.role = 'BRO'; modified = true; }
+      if (hasRole(prof.role, 'SM Megabranch')) { prof.role = 'Sales Head'; modified = true; }
       if (prof.branch === 'Jakarta') { prof.branch = 'BSO GSO & AFFCO'; modified = true; }
       if (prof.branch && prof.branch.includes('Jakarta')) {
         prof.branch = prof.branch.replace(/Jakarta/g, 'BSO GSO & AFFCO');

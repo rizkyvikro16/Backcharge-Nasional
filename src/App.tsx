@@ -5,7 +5,7 @@ import {
   Download, FileSpreadsheet, RefreshCw, LogOut, Bell, Shield, Users, Landmark, UserCheck
 } from 'lucide-react';
 
-import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches } from './types';
+import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, hasRole } from './types';
 import { supabase, isSupabaseConfigured, mockDb } from './supabaseClient';
 
 import AuthScreen from './components/AuthScreen';
@@ -164,7 +164,7 @@ function unpackExtraFields(item: any): any {
 function deriveNotifications(transactionsList: Backcharge[], user: Profile, readIds: string[]): AppNotification[] {
   if (!user) return [];
   const list: AppNotification[] = [];
-  const isBro = user.role === 'BRO';
+  const isBro = hasRole(user.role, 'BRO');
 
   transactionsList.forEach(t => {
     // Determine branch match
@@ -173,7 +173,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
     if (!branchMatch) return;
 
     // 1. ASO Role Tasks
-    if (user.role === 'ASO' || user.role === 'Maintenance Center' || user.role === 'ASO Megabranch' || user.role === 'Administrator' || isBro) {
+    if (hasRole(user.role, 'ASO') || hasRole(user.role, 'Maintenance Center') || hasRole(user.role, 'ASO Megabranch') || hasRole(user.role, 'Administrator') || isBro) {
       // Task A: Upload BAK / Dokumen Pendukung
       if (!t.file_bak_url || t.file_bak_url === 'dummy_pdf_file' || t.file_bak_url === '') {
         const id = `notif-aso-upload-${t.id}`;
@@ -210,7 +210,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
     }
     const val = t.value || 0;
     const isRegionalHead = user.role ? user.role.startsWith('Regional Head') : false;
-    const isDivisionHead = user.role === 'Division Head';
+    const isDivisionHead = hasRole(user.role, 'Division Head');
     const isMaintenance = t.category === 'Maintenance';
     const isRegionalHeadReq = isMaintenance 
       ? (val > 7500000 && val <= 15000000) 
@@ -219,7 +219,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
     const tier1Approved = t.status_approval === 'Disetujui';
     const tier2Approved = !isRegionalHeadReq || t.regional_approval_status === 'Disetujui';
 
-    if ((isRegionalHead || user.role === 'Administrator') && isRegionalHeadReq && tier1Approved && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval')) {
+    if ((isRegionalHead || hasRole(user.role, 'Administrator')) && isRegionalHeadReq && tier1Approved && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval')) {
       const id = `notif-rh-approval-${t.id}`;
       list.push({
         id,
@@ -235,7 +235,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
       });
     }
 
-    if ((isDivisionHead || user.role === 'Administrator') && val > 15000000 && tier1Approved && tier2Approved && (!t.division_approval_status || t.division_approval_status === 'Belum Approval')) {
+    if ((isDivisionHead || hasRole(user.role, 'Administrator')) && val > 15000000 && tier1Approved && tier2Approved && (!t.division_approval_status || t.division_approval_status === 'Belum Approval')) {
       const id = `notif-dh-approval-${t.id}`;
       list.push({
         id,
@@ -253,7 +253,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
 
 
     // 2. Kepala Cabang Role Tasks
-    const isKacab = user.role === 'Kepala Cabang' || (user.role as string) === 'kacab' || user.role === 'Administrator' || isBro;
+    const isKacab = hasRole(user.role, 'Kepala Cabang') || hasRole(user.role, 'kacab') || hasRole(user.role, 'Administrator') || isBro;
     if (isKacab) {
       // Task A: Approval for Maintenance & TPL
       const val = t.value || 0;
@@ -277,7 +277,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
     }
 
     // 3. Sales Head Role Tasks
-    const isSH = user.role === 'Sales Head' || (user.role as string) === 'Sales / Sales Head' || user.role === 'Administrator' || isBro;
+    const isSH = hasRole(user.role, 'Sales Head') || hasRole(user.role, 'Sales / Sales Head') || hasRole(user.role, 'Administrator') || isBro;
     if (isSH) {
       // Task A: Approval for Own Risk, Ekspedisi, ETLE, etc.
       const val = t.value || 0;
@@ -299,7 +299,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
     }
 
     // 4. Admin Role Tasks
-    if (user.role === 'Admin' || user.role === 'Admin Head' || user.role === 'Administrator' || isBro) {
+    if (hasRole(user.role, 'Admin') || hasRole(user.role, 'Admin Head') || hasRole(user.role, 'Administrator') || isBro) {
       // Task A: Terima Berkas Fisik yang Diserahkan ASO
       if (t.status_handover === 'Diserahkan ke Admin') {
         const id = `notif-admin-handover-accept-${t.id}`;
@@ -707,7 +707,7 @@ export default function App() {
         try { localStorage.setItem('backcharge_cache_logs', JSON.stringify(logsData || [])); } catch {}
 
         // 3. Fetch profiles (for administrator)
-        if (currentUser?.role === 'Administrator') {
+        if (hasRole(currentUser?.role, 'Administrator')) {
           const { data: profsData, error: profsError } = await supabase
             .from('profiles')
             .select('*')
@@ -1283,7 +1283,7 @@ export default function App() {
 
   // 2B. DELETE TRANSACTION WORKFLOW (ADMINISTRATOR, ASO, MAINTENANCE CENTER)
   const handleDeleteTransaction = async (id: string) => {
-    if (!currentUser || (currentUser.role !== 'Administrator' && currentUser.role !== 'ASO' && currentUser.role !== 'ASO Megabranch' && currentUser.role !== 'Maintenance Center' && currentUser.role !== 'Admin')) {
+    if (!currentUser || (!hasRole(currentUser.role, 'Administrator') && !hasRole(currentUser.role, 'ASO') && !hasRole(currentUser.role, 'ASO Megabranch') && !hasRole(currentUser.role, 'Maintenance Center') && !hasRole(currentUser.role, 'Admin'))) {
       addToast("Akses Ditolak: Hanya Administrator, ASO, ASO Megabranch, atau Maintenance Center yang boleh menghapus data!", "error");
       return;
     }
@@ -1318,7 +1318,7 @@ export default function App() {
 
   // 3. ADMIN: ADD USER WORKFLOW
   const handleAddUser = async (email: string, fullName: string, role: UserRole, branch: string, password?: string) => {
-    if (!currentUser || currentUser.role !== 'Administrator') return;
+    if (!currentUser || !hasRole(currentUser.role, 'Administrator')) return;
 
     const newProfile: Profile = {
       id: Math.random().toString(36).substring(7),
@@ -1361,7 +1361,7 @@ export default function App() {
 
   // 4. ADMIN: UPDATE USER WORKFLOW
   const handleUpdateUser = async (id: string, updates: Partial<Profile>) => {
-    if (!currentUser || currentUser.role !== 'Administrator') return;
+    if (!currentUser || !hasRole(currentUser.role, 'Administrator')) return;
 
     if (isSupabaseConfigured && supabase) {
       try {
@@ -1434,7 +1434,7 @@ export default function App() {
 
   // 5. ADMIN: DELETE USER WORKFLOW
   const handleDeleteUser = async (id: string) => {
-    if (!currentUser || currentUser.role !== 'Administrator') return;
+    if (!currentUser || !hasRole(currentUser.role, 'Administrator')) return;
 
     if (isSupabaseConfigured && supabase) {
       try {
@@ -1698,7 +1698,7 @@ export default function App() {
           </button>
 
           {/* ADMIN ONLY TABS */}
-          {currentUser.role === 'Administrator' && (
+          {hasRole(currentUser.role, 'Administrator') && (
             <>
               <button 
                 onClick={() => setCurrentTab('audit')} 
@@ -1765,7 +1765,7 @@ export default function App() {
           <span className="truncate max-w-[64px]">Keluhan</span>
         </button>
         
-        {currentUser.role === 'Administrator' && (
+        {hasRole(currentUser.role, 'Administrator') && (
           <>
             <button 
               onClick={() => setCurrentTab('audit')} 

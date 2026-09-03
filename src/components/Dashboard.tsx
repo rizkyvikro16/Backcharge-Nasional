@@ -9,7 +9,7 @@ import {
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, BackchargeCategory } from '../types';
+import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, BackchargeCategory, hasRole } from '../types';
 
 interface DashboardProps {
   transactions: Backcharge[];
@@ -192,10 +192,10 @@ export default function Dashboard({
   const valueChange = getPercentChange(activeValue, priorValue);
 
   // Check if current user is Division Head or Regional Head for clean view
-  const isCleanExecutive = currentUser?.role === 'Division Head' || 
+  const isCleanExecutive = hasRole(currentUser?.role, 'Division Head') || 
                            (currentUser?.role && currentUser.role.startsWith('Regional Head')) || 
-                           (currentUser?.role as string) === 'RBU' || 
-                           (currentUser?.role as string) === 'RH';
+                           hasRole(currentUser?.role, 'RBU') || 
+                           hasRole(currentUser?.role, 'RH');
 
   // 3. Main stats calculation based on filtered subset
   const totalCount = filteredTransactions.length;
@@ -247,7 +247,7 @@ export default function Dashboard({
   const [bsoSearchInput, setBsoSearchInput] = useState<string>('');
 
   const isMegabranchContext = 
-    currentUser?.role === 'ASO Megabranch' || 
+    hasRole(currentUser?.role, 'ASO Megabranch') || 
     currentUser?.branch === 'Megabranch' || 
     (currentUser?.branch && currentUser.branch.includes('Megabranch')) ||
     selectedBranchFilter === 'Megabranch' ||
@@ -910,7 +910,7 @@ export default function Dashboard({
               <option value="">
                 {currentUser?.branch === 'Nasional' || !currentUser?.branch
                   ? 'Semua Cabang (Nasional)'
-                  : currentUser?.branch === 'Megabranch' || currentUser?.role === 'ASO Megabranch'
+                  : currentUser?.branch === 'Megabranch' || hasRole(currentUser?.role, 'ASO Megabranch')
                   ? 'Semua BSO Megabranch (8 BSO)'
                   : `Semua Cabang Otoritas (${availableBranchOptions.length} Cabang)`}
               </option>

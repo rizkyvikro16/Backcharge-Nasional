@@ -183,3 +183,8 @@ export interface ContactInquiry {
 }
 
 
+
+export function hasRole(roleStr: string | UserRole | undefined | null, targetRole: string): boolean {
+  if (!roleStr) return false;
+  return String(roleStr).split(',').map(s => s.trim()).includes(targetRole);
+}

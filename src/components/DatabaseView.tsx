@@ -4,7 +4,7 @@ import {
   Upload, FileText, Check, AlertCircle, AlertTriangle, RefreshCw, X, Trash2,
   Loader2, Edit, Info
 } from 'lucide-react';
-import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches } from '../types';
+import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, hasRole } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
 import * as XLSX from 'xlsx';
 
@@ -54,8 +54,8 @@ export default function DatabaseView({
   const [selectedCategory, setSelectedCategory] = useState('');
   const isNasional = currentUser.branch === 'Nasional' || 
     (currentUser.branch && currentUser.branch.includes(',')) || 
-    currentUser.role === 'Administrator' || 
-    currentUser.role === 'Division Head' || 
+    hasRole(currentUser.role, 'Administrator') || 
+    hasRole(currentUser.role, 'Division Head') || 
     (currentUser.role && currentUser.role.startsWith('Regional Head'));
   const userBranchList = currentUser.branch && currentUser.branch !== 'Nasional'
     ? getUserBranches(currentUser.branch)
@@ -177,8 +177,8 @@ export default function DatabaseView({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Check role permission for writing & editing
-  const isBroOnly = currentUser.role === 'BRO';
-  const canWrite = currentUser.role === 'ASO' || currentUser.role === 'Maintenance Center' || currentUser.role === 'ASO Megabranch' || currentUser.role === 'Administrator' || isBroOnly;
+  const isBroOnly = hasRole(currentUser.role, 'BRO');
+  const canWrite = hasRole(currentUser.role, 'ASO') || hasRole(currentUser.role, 'Maintenance Center') || hasRole(currentUser.role, 'ASO Megabranch') || hasRole(currentUser.role, 'Administrator') || isBroOnly;
 
   // Upgraded file change handler with automatic Google Drive upload (either Service Account or Client OAuth)
   const handleFileChange = async (
@@ -646,7 +646,7 @@ export default function DatabaseView({
     try {
       await onAddTransaction({
         category,
-        branch: (currentUser.branch === 'Nasional' || currentUser.branch === 'Megabranch' || currentUser.role === 'Administrator' || currentUser.role === 'Division Head' || (userBranchList && userBranchList.length > 0)) ? (branch && branch !== 'Megabranch' ? branch : ALL_SYSTEM_BRANCHES[0]) : (currentUser.branch && currentUser.branch !== 'Megabranch' ? currentUser.branch : ALL_SYSTEM_BRANCHES[0]),
+        branch: (currentUser.branch === 'Nasional' || currentUser.branch === 'Megabranch' || hasRole(currentUser.role, 'Administrator') || hasRole(currentUser.role, 'Division Head') || (userBranchList && userBranchList.length > 0)) ? (branch && branch !== 'Megabranch' ? branch : ALL_SYSTEM_BRANCHES[0]) : (currentUser.branch && currentUser.branch !== 'Megabranch' ? currentUser.branch : ALL_SYSTEM_BRANCHES[0]),
         no_bak: category === 'Own Risk' ? (noBak.trim() || '-') : '-',
         no_spk: noSpk.trim() || '-',
         no_sap: category === 'Own Risk' ? (noSap.trim() || '-') : '-',
@@ -1085,11 +1085,11 @@ export default function DatabaseView({
           const itemUpdates: Partial<Backcharge> = { ...updates };
 
           if (bulkStatusApproval && item) {
-            const isKacab = currentUser.role === 'Kepala Cabang' || (currentUser.role as string) === 'kacab';
-            const isSH = currentUser.role === 'Sales Head' || (currentUser.role as string) === 'Sales / Sales Head';
-            const isAdmin = currentUser.role === 'Administrator';
+            const isKacab = hasRole(currentUser.role, 'Kepala Cabang') || hasRole(currentUser.role, 'kacab');
+            const isSH = hasRole(currentUser.role, 'Sales Head') || hasRole(currentUser.role, 'Sales / Sales Head');
+            const isAdmin = hasRole(currentUser.role, 'Administrator');
             const isRH = currentUser.role && currentUser.role.startsWith('Regional Head');
-            const isDH = currentUser.role === 'Division Head';
+            const isDH = hasRole(currentUser.role, 'Division Head');
             const val = item.value || 0;
             const isMaintenance = item.category === 'Maintenance';
             const isTPL = item.category === 'TPL';
@@ -1446,7 +1446,7 @@ export default function DatabaseView({
         )}
 
         <form onSubmit={handleFormSubmit} className="space-y-4">
-          {currentUser.branch === 'Nasional' || currentUser.role === 'Administrator' || currentUser.role === 'Division Head' ? (
+          {currentUser.branch === 'Nasional' || hasRole(currentUser.role, 'Administrator') || hasRole(currentUser.role, 'Division Head') ? (
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota / BSO</label>
               <select 
@@ -1926,7 +1926,7 @@ export default function DatabaseView({
                         <td className="p-3 text-center">
                           <div className="flex items-center justify-center space-x-1.5">
                             <div className="w-6 h-6 bg-slate-200/70 rounded-lg" />
-                            {currentUser.role === 'Administrator' && (
+                            {hasRole(currentUser.role, 'Administrator') && (
                               <div className="w-6 h-6 bg-slate-200/70 rounded-lg" />
                             )}
                           </div>
@@ -2088,7 +2088,7 @@ export default function DatabaseView({
                               >
                                 <Edit className="w-4 h-4" />
                               </button>
-                              {(currentUser.role === 'Administrator' || isAsoUser || currentUser.role === 'Admin') && (
+                              {(hasRole(currentUser.role, 'Administrator') || isAsoUser || hasRole(currentUser.role, 'Admin')) && (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -2233,7 +2233,7 @@ export default function DatabaseView({
               )}
 
               {/* Cabang */}
-              {currentUser.branch === 'Nasional' || currentUser.role === 'Administrator' || currentUser.role === 'Division Head' ? (
+              {currentUser.branch === 'Nasional' || hasRole(currentUser.role, 'Administrator') || hasRole(currentUser.role, 'Division Head') ? (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota</label>
                   <select 
