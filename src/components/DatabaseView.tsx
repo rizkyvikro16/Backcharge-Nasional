@@ -972,7 +972,7 @@ export default function DatabaseView({
       let matchesAlertFilter = true;
       const combinedAlert = activeAlertFilter || activeDashboardFilter?.alert;
       if (combinedAlert) {
-        const ageMs = new Date().getTime() - new Date(t.created_at).getTime();
+        const ageMs = new Date().getTime() - new Date(t.tanggal || t.created_at).getTime();
         if (combinedAlert === 'due') {
           matchesAlertFilter = t.status_payment === 'Belum Bayar' && ageMs > 15 * 24 * 3600 * 1000;
         } else if (combinedAlert === 'pending') {
@@ -1936,8 +1936,8 @@ export default function DatabaseView({
                   ))
                 ) : (
                   paginatedTransactions.map((t) => {
-                    const createdDate = new Date(t.created_at || t.tanggal).getTime();
-                    const ageDays = Math.floor((new Date().getTime() - createdDate) / (1000 * 60 * 60 * 24));
+                    const refDate = new Date(t.tanggal || t.created_at).getTime();
+                    const ageDays = Math.floor((new Date().getTime() - refDate) / (1000 * 60 * 60 * 24));
                     const isUnpaid = t.status_payment === 'Belum Bayar';
                     const isOver30DaysUnpaid = isUnpaid && ageDays > 30;
                     const isOver7DaysUnpaid = isUnpaid && ageDays > 7;
