@@ -21,6 +21,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
   const [regRole, setRegRole] = useState<UserRole>('ASO');
   const [regBranch, setRegBranch] = useState(ALL_SYSTEM_BRANCHES[0]);
   const [regPassword, setRegPassword] = useState('');
+  const [isRegDualRole, setIsRegDualRole] = useState(false);
 
   const selectedBranchList = regBranch === 'Nasional' 
     ? ALL_SYSTEM_BRANCHES 
@@ -42,6 +43,9 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
 
   const handleRegRoleChange = (newRole: UserRole) => {
     setRegRole(newRole);
+    if (newRole !== 'Sales Head' && newRole !== 'Kepala Cabang') {
+      setIsRegDualRole(false);
+    }
     if (newRole === 'ASO Megabranch') {
       setRegBranch(MEGABRANCH_LIST.join(', '));
     } else if (isRegionalHeadRole(newRole) || newRole === 'Maintenance Center') {
@@ -213,11 +217,15 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
       return;
     }
 
+    const finalRole = isRegDualRole && (regRole === 'Sales Head' || regRole === 'Kepala Cabang')
+      ? 'Sales Head, Kepala Cabang'
+      : regRole;
+
     const newProfile: Profile = {
       id: 'USR-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
       email: emailTrim,
       full_name: fullNameTrim,
-      role: regRole,
+      role: finalRole as UserRole,
       branch: regBranch,
       password: passwordTrim,
       created_at: new Date().toISOString()
@@ -474,6 +482,27 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
                   ))}
                 </select>
               </div>
+
+              {/* Sales Head & Kepala Cabang Dual Role Option */}
+              {(regRole === 'Sales Head' || regRole === 'Kepala Cabang') && (
+                <div className="mt-2.5 bg-blue-50 border border-blue-100 p-3 rounded-xl flex items-center justify-between shadow-2xs">
+                  <div className="pr-2">
+                    <p className="text-[10px] font-black text-slate-800">Aktifkan Dual Role</p>
+                    <p className="text-[9px] text-slate-500 font-bold leading-tight">Mendukung otoritas Sales Head & Kepala Cabang sekaligus dalam satu email.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsRegDualRole(!isRegDualRole)}
+                    className={`w-10 h-5.5 rounded-full transition-all duration-300 relative ${
+                      isRegDualRole ? 'bg-blue-600' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 w-4.5 h-4.5 rounded-full bg-white shadow-md transition-all duration-300 ${
+                      isRegDualRole ? 'left-5' : 'left-0.5'
+                    }`} />
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* BRANCH SELECTION VIA CHECKBOXES (NO DROPDOWN) */}

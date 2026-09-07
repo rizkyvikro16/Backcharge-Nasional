@@ -376,14 +376,16 @@ export default function UserManagement({
                       <option value="Regional Head">Regional Head (General)</option>
                     </select>
 
-                    {/* Secondary Role Checkboxes for Regional/Division Head */}
-                    {['Division Head', 'Regional Head', 'Regional Head West', 'Regional Head Central', 'Regional Head East'].includes(role.split(',')[0].trim()) && (
+                    {/* Secondary Role Checkboxes for Regional/Division Head or Sales Head/Kepala Cabang */}
+                    {['Division Head', 'Regional Head', 'Regional Head West', 'Regional Head Central', 'Regional Head East', 'Sales Head', 'Kepala Cabang'].includes(role.split(',')[0].trim()) && (
                       <div className="mt-3 p-3 border border-blue-200 bg-blue-50/50 rounded-xl shadow-2xs">
                         <label className="block text-[10px] font-bold text-blue-700 uppercase mb-2 tracking-wider">
-                          Pilih Role Tambahan (Khusus Regional/Division Head)
+                          Pilih Role Tambahan (Otoritas Ganda / Regional)
                         </label>
                         <div className="grid grid-cols-1 gap-2">
-                          {['Division Head', 'Regional Head West', 'Regional Head Central', 'Regional Head East', 'Regional Head']
+                          {(['Sales Head', 'Kepala Cabang'].includes(role.split(',')[0].trim())
+                            ? ['Sales Head', 'Kepala Cabang']
+                            : ['Division Head', 'Regional Head West', 'Regional Head Central', 'Regional Head East', 'Regional Head'])
                             .filter(r => r !== role.split(',')[0].trim())
                             .map(r => {
                               const selectedRoles = role.split(',').map(s => s.trim());

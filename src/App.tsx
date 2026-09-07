@@ -5,7 +5,7 @@ import {
   Download, FileSpreadsheet, RefreshCw, LogOut, Bell, Shield, Users, Landmark, UserCheck
 } from 'lucide-react';
 
-import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, hasRole, isRegionalHeadRole } from './types';
+import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, hasRole, isRegionalHeadRole, ALL_SYSTEM_BRANCHES } from './types';
 import { supabase, isSupabaseConfigured, mockDb } from './supabaseClient';
 
 import AuthScreen from './components/AuthScreen';
@@ -433,6 +433,76 @@ function getNotificationBadge(notif: AppNotification) {
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
+  const [activeRole, setActiveRole] = useState<UserRole | null>(null);
+  const [activeBranch, setActiveBranch] = useState<string | null>(null);
+
+  // Derive available roles based on user and dual role settings
+  const availableUserRoles = React.useMemo<UserRole[]>(() => {
+    if (!currentUser) return [];
+    const registeredRoles = currentUser.role ? String(currentUser.role).split(',').map(s => s.trim()) as UserRole[] : [];
+    
+    // Check if user has either Sales Head or Kepala Cabang registered
+    const hasSH = registeredRoles.includes('Sales Head');
+    const hasKC = registeredRoles.includes('Kepala Cabang');
+    
+    if (hasSH || hasKC) {
+      const roleSet = new Set<UserRole>(registeredRoles);
+      roleSet.add('Sales Head');
+      roleSet.add('Kepala Cabang');
+      return Array.from(roleSet);
+    }
+    return registeredRoles;
+  }, [currentUser]);
+
+  // Derive available branches
+  const availableUserBranches = React.useMemo<string[]>(() => {
+    if (!currentUser) return [];
+    if (currentUser.branch === 'Nasional') return ALL_SYSTEM_BRANCHES;
+    return currentUser.branch ? String(currentUser.branch).split(',').map(s => s.trim()).filter(Boolean) : [];
+  }, [currentUser]);
+
+  // Create activeUser that represents the currently active persona/branch context
+  const activeUser = React.useMemo<Profile | null>(() => {
+    if (!currentUser) return null;
+    
+    let resolvedRole = activeRole;
+    if (!resolvedRole || !availableUserRoles.includes(resolvedRole)) {
+      resolvedRole = availableUserRoles[0] || currentUser.role;
+    }
+    
+    const resolvedBranch = currentUser.branch;
+    
+    return {
+      ...currentUser,
+      role: resolvedRole,
+      branch: resolvedBranch
+    };
+  }, [currentUser, activeRole, availableUserRoles]);
+
+  // Automatically update activeRole/activeBranch when currentUser logs in or is changed
+  useEffect(() => {
+    if (currentUser) {
+      const roles = currentUser.role ? String(currentUser.role).split(',').map(s => s.trim()) as UserRole[] : [];
+      const branches = currentUser.branch ? String(currentUser.branch).split(',').map(s => s.trim()).filter(Boolean) : [];
+      
+      // Check if user is Sales Head or Kepala Cabang to enable dual roles by default
+      const hasSH = roles.includes('Sales Head');
+      const hasKC = roles.includes('Kepala Cabang');
+      
+      let defaultRole = roles[0];
+      if (hasSH || hasKC) {
+        // If they have both, prioritize their main role or default to 'Sales Head'
+        defaultRole = roles.includes('Sales Head') ? 'Sales Head' : 'Kepala Cabang';
+      }
+      
+      setActiveRole(defaultRole || currentUser.role);
+      setActiveBranch(branches[0] || currentUser.branch);
+    } else {
+      setActiveRole(null);
+      setActiveBranch(null);
+    }
+  }, [currentUser]);
+
   const [currentTab, setCurrentTab] = useState<'dashboard' | 'database' | 'audit' | 'users' | 'complaints'>('dashboard');
   const [activeAlertFilter, setActiveAlertFilter] = useState<'due' | 'pending' | 'high_value' | ''>('');
   const [activeDashboardFilter, setActiveDashboardFilter] = useState<DashboardFilter | null>(null);
@@ -510,13 +580,13 @@ export default function App() {
 
   // Automatically derive role-specific actionable notifications
   useEffect(() => {
-    if (currentUser) {
-      const derived = deriveNotifications(transactions, currentUser, readNotifIds);
+    if (activeUser) {
+      const derived = deriveNotifications(transactions, activeUser, readNotifIds);
       setNotifications(derived);
     } else {
       setNotifications([]);
     }
-  }, [transactions, currentUser, readNotifIds]);
+  }, [transactions, activeUser, readNotifIds]);
 
   // Fetch app data
   const fetchData = async (forceFull = false) => {
@@ -1919,6 +1989,7 @@ export default function App() {
           </div>
         </header>
 
+
         {/* 5. JENDELA AREA TAB KONTEN */}
         <main className="p-3 sm:p-4 md:p-6 flex-grow space-y-6 pb-28 md:pb-6 max-w-full">
           {loading && (
@@ -1931,7 +2002,7 @@ export default function App() {
           {currentTab === 'dashboard' && (
             <Dashboard 
               transactions={transactions} 
-              currentUser={currentUser}
+              currentUser={activeUser!}
               onSelectTransaction={(id) => {
                 setSelectedTransactionId(id);
                 setCurrentTab('database');
@@ -1952,7 +2023,7 @@ export default function App() {
           {currentTab === 'database' && (
             <DatabaseView 
               transactions={transactions}
-              currentUser={currentUser}
+              currentUser={activeUser!}
               isLoading={loading}
               onAddTransaction={handleAddTransaction}
               onBulkAddTransactions={handleBulkAddTransactions}
@@ -1977,7 +2048,7 @@ export default function App() {
           {currentTab === 'users' && (
             <UserManagement 
               profiles={profiles}
-              currentUser={currentUser}
+              currentUser={activeUser!}
               onAddUser={handleAddUser}
               onUpdateUser={handleUpdateUser}
               onDeleteUser={handleDeleteUser}
@@ -1987,7 +2058,7 @@ export default function App() {
           {currentTab === 'complaints' && (
             <FeedbackView 
               inquiries={inquiries}
-              currentUser={currentUser}
+              currentUser={activeUser!}
               onAddInquiry={handleAddInquiry}
               onUpdateInquiry={handleUpdateInquiry}
               onDeleteInquiry={handleDeleteInquiry}
@@ -2001,7 +2072,7 @@ export default function App() {
       {selectedTransactionId && selectedTransaction && (
         <DetailModal 
           transaction={selectedTransaction}
-          currentUser={currentUser}
+          currentUser={activeUser!}
           onClose={() => setSelectedTransactionId(null)}
           onUpdateStatus={handleUpdateTransaction}
         />
