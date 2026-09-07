@@ -1809,7 +1809,7 @@ export default function Dashboard({
                                 title={`Klik untuk menyaring kategori ${cat} Belum Approve L1`}
                               >
                                 <div className="flex justify-between items-center">
-                                  <span className="text-[8px] font-black text-amber-500 uppercase">Belum Appr. BM</span>
+                                  <span className="text-[8px] font-black text-amber-500 uppercase">Belum Appr. SH/Kacab</span>
                                   {pipeline.stage4ApproveL1 > 0 && <Clock className="w-2.5 h-2.5 text-amber-500 animate-pulse" />}
                                 </div>
                                 <div className="flex items-baseline justify-between mt-0.5">
