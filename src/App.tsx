@@ -590,222 +590,271 @@ export default function App() {
 
   // Fetch app data
   const fetchData = async (forceFull = false) => {
+    // 1. INSTANT LOCAL CACHE HYDRATION (0ms Load Experience)
+    let loadedFromCache = false;
+    try {
+      const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
+      const cachedLogsStr = localStorage.getItem('backcharge_cache_logs');
+      const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
+      
+      if (cachedTxsStr) {
+        setTransactions(JSON.parse(cachedTxsStr));
+        loadedFromCache = true;
+      }
+      if (cachedLogsStr) {
+        setLogs(JSON.parse(cachedLogsStr));
+      }
+      if (cachedProfsStr) {
+        setProfiles(JSON.parse(cachedProfsStr));
+      }
+    } catch (e) {
+      console.warn("Failed to read initial local cache:", e);
+    }
+
+    // Set loading so the sync indicator is shown in the background
     setLoading(true);
     
     if (isSupabaseConfigured && supabase) {
       try {
         if (forceFull) {
-          try { localStorage.removeItem('backcharge_cache_txs'); } catch {}
+          try { 
+            localStorage.removeItem('backcharge_cache_txs'); 
+            localStorage.removeItem('backcharge_cache_logs');
+            localStorage.removeItem('backcharge_cache_profs');
+          } catch {}
         }
 
-        // 1. SMART DELTA SYNC (To prevent Egress quota blow up with 5000+ data)
-        let cachedTxs: any[] = [];
-        if (!forceFull) {
+        // We run the metadata fetch (logs, profiles, inquiries) and transaction sync concurrently
+        const fetchMetadataPromise = (async () => {
           try {
-            const cacheStr = localStorage.getItem('backcharge_cache_txs');
-            if (cacheStr) cachedTxs = JSON.parse(cacheStr);
-          } catch (e) {}
-        }
+            const logsPromise = supabase
+              .from('activity_logs')
+              .select('*')
+              .order('timestamp', { ascending: false })
+              .limit(150);
 
+            const profilesPromise = hasRole(currentUser?.role, 'Administrator')
+              ? supabase.from('profiles').select('*').order('full_name', { ascending: true })
+              : Promise.resolve({ data: null, error: null });
+
+            const inquiriesPromise = supabase
+              .from('contact_inquiries')
+              .select('*')
+              .order('created_at', { ascending: false });
+
+            const [logsRes, profsRes, ciRes] = await Promise.all([
+              logsPromise,
+              profilesPromise,
+              inquiriesPromise
+            ]);
+
+            if (logsRes.error) throw logsRes.error;
+            if (logsRes.data) {
+              setLogs((logsRes.data as ActivityLog[]) || []);
+              try { localStorage.setItem('backcharge_cache_logs', JSON.stringify(logsRes.data)); } catch {}
+            }
+
+            if (profsRes.error) throw profsRes.error;
+            if (profsRes.data) {
+              setProfiles((profsRes.data as Profile[]) || []);
+              try { localStorage.setItem('backcharge_cache_profs', JSON.stringify(profsRes.data)); } catch {}
+            }
+
+            if (ciRes.error) {
+              console.warn("Could not fetch contact inquiries from Supabase. Using local storage fallback.", ciRes.error);
+              setInquiries(mockDb.getContactInquiries());
+            } else if (ciRes.data) {
+              setInquiries((ciRes.data as ContactInquiry[]) || []);
+            }
+          } catch (e: any) {
+            console.warn("Error fetching metadata concurrently:", e);
+          }
+        })();
+
+        // 2. TRANSACTION SYNC PROCESS
         let unpackedData: Backcharge[] = [];
 
-        if (cachedTxs.length > 0) {
-          // If we have cache, we do a lightweight sync to save >90% Egress
-          // a. Get the latest updated_at from cache
-          let lastSync = new Date(0).toISOString();
-          for (const tx of cachedTxs) {
-            if (tx.updated_at && tx.updated_at > lastSync) {
-              lastSync = tx.updated_at;
-            }
+        const syncTransactionsPromise = (async () => {
+          // SMART DELTA SYNC (To prevent Egress quota blow up with 5000+ data)
+          let cachedTxs: any[] = [];
+          if (!forceFull) {
+            try {
+              const cacheStr = localStorage.getItem('backcharge_cache_txs');
+              if (cacheStr) cachedTxs = JSON.parse(cacheStr);
+            } catch (e) {}
           }
 
-          // b. Fetch only IDs to prune deleted rows (Paginated to handle >1000 rows limit)
-          let allDbIds: string[] = [];
-          let idStart = 0;
-          let idChunkSize = 1000;
-          let hasMoreIds = true;
-          
-          while (hasMoreIds) {
-            let idQuery = supabase.from('backcharges').select('id').order('id').range(idStart, idStart + idChunkSize - 1);
-            if (currentUser && currentUser.branch !== 'Nasional') {
-              const userBranches = getUserBranches(currentUser.branch);
-              if (userBranches.length > 0) idQuery = idQuery.in('branch', userBranches);
+          if (cachedTxs.length > 0) {
+            // If we have cache, we do a lightweight sync to save >90% Egress
+            // a. Get the latest updated_at from cache
+            let lastSync = new Date(0).toISOString();
+            for (const tx of cachedTxs) {
+              if (tx.updated_at && tx.updated_at > lastSync) {
+                lastSync = tx.updated_at;
+              }
             }
-            const { data: dbIdsData, error: idError } = await idQuery;
-            if (idError) throw idError;
+
+            // b. Fetch only IDs to prune deleted rows (Paginated to handle >1000 rows limit)
+            let allDbIds: string[] = [];
+            let idStart = 0;
+            let idChunkSize = 1000;
+            let hasMoreIds = true;
             
-            if (dbIdsData && dbIdsData.length > 0) {
-              allDbIds = [...allDbIds, ...dbIdsData.map(d => d.id)];
-              if (dbIdsData.length < idChunkSize) hasMoreIds = false;
-              else idStart += idChunkSize;
-            } else {
-              hasMoreIds = false;
-            }
-          }
-          const validIds = new Set(allDbIds);
-          
-          // c. Filter out deleted records from cache
-          let syncedTxs = cachedTxs.filter(tx => validIds.has(tx.id));
-
-          // d. Gaps identification (Find IDs present in database but missing from the local cache)
-          const syncedIds = new Set(syncedTxs.map(tx => tx.id));
-          const missingIds = allDbIds.filter(id => !syncedIds.has(id));
-
-          let missingData: any[] = [];
-          if (missingIds.length > 0) {
-            const missingChunkSize = 250;
-            for (let i = 0; i < missingIds.length; i += missingChunkSize) {
-              const batch = missingIds.slice(i, i + missingChunkSize);
-              let missingQuery = supabase
-                .from('backcharges')
-                .select('*')
-                .in('id', batch);
-              
+            while (hasMoreIds) {
+              let idQuery = supabase.from('backcharges').select('id').order('id').range(idStart, idStart + idChunkSize - 1);
               if (currentUser && currentUser.branch !== 'Nasional') {
                 const userBranches = getUserBranches(currentUser.branch);
-                if (userBranches.length > 0) missingQuery = missingQuery.in('branch', userBranches);
+                if (userBranches.length > 0) idQuery = idQuery.in('branch', userBranches);
               }
-
-              const { data: mChunk, error: mError } = await missingQuery;
-              if (mError) throw mError;
-              if (mChunk && mChunk.length > 0) {
-                missingData = [...missingData, ...mChunk];
-              }
-            }
-          }
-
-          if (missingData.length > 0) {
-            const missingUnpacked = missingData.map(unpackExtraFields);
-            syncedTxs = [...missingUnpacked, ...syncedTxs];
-          }
-
-          // e. Fetch ONLY newly created or updated records since last sync (Paginated)
-          let deltaData: any[] = [];
-          let deltaStart = 0;
-          let deltaChunkSize = 1000;
-          let hasMoreDelta = true;
-          
-          while (hasMoreDelta) {
-            let deltaQuery = supabase
-              .from('backcharges')
-              .select('*')
-              .gt('updated_at', lastSync)
-              .order('id')
-              .range(deltaStart, deltaStart + deltaChunkSize - 1);
+              const { data: dbIdsData, error: idError } = await idQuery;
+              if (idError) throw idError;
               
-            if (currentUser && currentUser.branch !== 'Nasional') {
-              const userBranches = getUserBranches(currentUser.branch);
-              if (userBranches.length > 0) deltaQuery = deltaQuery.in('branch', userBranches);
-            }
-            
-            const { data: chunkData, error: deltaError } = await deltaQuery;
-            if (deltaError) throw deltaError;
-            
-            if (chunkData && chunkData.length > 0) {
-              deltaData = [...deltaData, ...chunkData];
-              if (chunkData.length < deltaChunkSize) hasMoreDelta = false;
-              else deltaStart += deltaChunkSize;
-            } else {
-              hasMoreDelta = false;
-            }
-          }
-
-          // f. Merge the delta into our synced list
-          if (deltaData && deltaData.length > 0) {
-            const deltaUnpacked = deltaData.map(unpackExtraFields);
-            const deltaMap = new Map(deltaUnpacked.map((tx: any) => [tx.id, tx]));
-            
-            // Replace updated records
-            syncedTxs = syncedTxs.map(tx => deltaMap.has(tx.id) ? deltaMap.get(tx.id) : tx);
-            
-            // Add brand new records
-            const existingIds = new Set(syncedTxs.map(tx => tx.id));
-            const newTxs = deltaUnpacked.filter((tx: any) => !existingIds.has(tx.id));
-            syncedTxs = [...newTxs, ...syncedTxs];
-          }
-          
-          // Sort final list by created_at descending
-          syncedTxs.sort((a, b) => new Date(b.created_at || b.tanggal).getTime() - new Date(a.created_at || a.tanggal).getTime());
-          unpackedData = syncedTxs as Backcharge[];
-
-        } else {
-          // If no cache (first time load on this device), do a full paginated fetch
-          let allBcData: any[] = [];
-          let start = 0;
-          const chunkSize = 1000;
-          let hasMore = true;
-          
-          while (hasMore) {
-            let query = supabase
-              .from('backcharges')
-              .select('*')
-              .order('created_at', { ascending: false })
-              .range(start, start + chunkSize - 1);
-              
-            if (currentUser && currentUser.branch !== 'Nasional') {
-              const userBranches = getUserBranches(currentUser.branch);
-              if (userBranches.length > 0) {
-                query = query.in('branch', userBranches);
+              if (dbIdsData && dbIdsData.length > 0) {
+                allDbIds = [...allDbIds, ...dbIdsData.map(d => d.id)];
+                if (dbIdsData.length < idChunkSize) hasMoreIds = false;
+                else idStart += idChunkSize;
+              } else {
+                hasMoreIds = false;
               }
             }
+            const validIds = new Set(allDbIds);
             
-            const { data: chunkData, error: bcError } = await query;
-            if (bcError) throw bcError;
-            
-            if (chunkData && chunkData.length > 0) {
-              allBcData = [...allBcData, ...chunkData];
-              if (chunkData.length < chunkSize) hasMore = false;
-              else start += chunkSize;
-            } else {
-              hasMore = false;
+            // c. Filter out deleted records from cache
+            let syncedTxs = cachedTxs.filter(tx => validIds.has(tx.id));
+
+            // d. Gaps identification (Find IDs present in database but missing from the local cache)
+            const syncedIds = new Set(syncedTxs.map(tx => tx.id));
+            const missingIds = allDbIds.filter(id => !syncedIds.has(id));
+
+            let missingData: any[] = [];
+            if (missingIds.length > 0) {
+              const missingChunkSize = 250;
+              for (let i = 0; i < missingIds.length; i += missingChunkSize) {
+                const batch = missingIds.slice(i, i + missingChunkSize);
+                let missingQuery = supabase
+                  .from('backcharges')
+                  .select('*')
+                  .in('id', batch);
+                
+                if (currentUser && currentUser.branch !== 'Nasional') {
+                  const userBranches = getUserBranches(currentUser.branch);
+                  if (userBranches.length > 0) missingQuery = missingQuery.in('branch', userBranches);
+                }
+
+                const { data: mChunk, error: mError } = await missingQuery;
+                if (mError) throw mError;
+                if (mChunk && mChunk.length > 0) {
+                  missingData = [...missingData, ...mChunk];
+                }
+              }
             }
+
+            if (missingData.length > 0) {
+              const missingUnpacked = missingData.map(unpackExtraFields);
+              syncedTxs = [...missingUnpacked, ...syncedTxs];
+            }
+
+            // e. Fetch ONLY newly created or updated records since last sync (Paginated)
+            let deltaData: any[] = [];
+            let deltaStart = 0;
+            let deltaChunkSize = 1000;
+            let hasMoreDelta = true;
+            
+            while (hasMoreDelta) {
+              let deltaQuery = supabase
+                .from('backcharges')
+                .select('*')
+                .gt('updated_at', lastSync)
+                .order('id')
+                .range(deltaStart, deltaStart + deltaChunkSize - 1);
+                
+              if (currentUser && currentUser.branch !== 'Nasional') {
+                const userBranches = getUserBranches(currentUser.branch);
+                if (userBranches.length > 0) deltaQuery = deltaQuery.in('branch', userBranches);
+              }
+              
+              const { data: chunkData, error: deltaError } = await deltaQuery;
+              if (deltaError) throw deltaError;
+              
+              if (chunkData && chunkData.length > 0) {
+                deltaData = [...deltaData, ...chunkData];
+                if (chunkData.length < deltaChunkSize) hasMoreDelta = false;
+                else deltaStart += deltaChunkSize;
+              } else {
+                hasMoreDelta = false;
+              }
+            }
+
+            // f. Merge the delta into our synced list
+            if (deltaData && deltaData.length > 0) {
+              const deltaUnpacked = deltaData.map(unpackExtraFields);
+              const deltaMap = new Map(deltaUnpacked.map((tx: any) => [tx.id, tx]));
+              
+              // Replace updated records
+              syncedTxs = syncedTxs.map(tx => deltaMap.has(tx.id) ? deltaMap.get(tx.id) : tx);
+              
+              // Add brand new records
+              const existingIds = new Set(syncedTxs.map(tx => tx.id));
+              const newTxs = deltaUnpacked.filter((tx: any) => !existingIds.has(tx.id));
+              syncedTxs = [...newTxs, ...syncedTxs];
+            }
+            
+            // Sort final list by created_at descending
+            syncedTxs.sort((a, b) => new Date(b.created_at || b.tanggal).getTime() - new Date(a.created_at || a.tanggal).getTime());
+            unpackedData = syncedTxs as Backcharge[];
+
+          } else {
+            // If no cache (first time load on this device), do a full paginated fetch
+            let allBcData: any[] = [];
+            let start = 0;
+            const chunkSize = 1000;
+            let hasMore = true;
+            
+            while (hasMore) {
+              let query = supabase
+                .from('backcharges')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .range(start, start + chunkSize - 1);
+                
+              if (currentUser && currentUser.branch !== 'Nasional') {
+                const userBranches = getUserBranches(currentUser.branch);
+                if (userBranches.length > 0) {
+                  query = query.in('branch', userBranches);
+                }
+              }
+              
+              const { data: chunkData, error: bcError } = await query;
+              if (bcError) throw bcError;
+              
+              if (chunkData && chunkData.length > 0) {
+                allBcData = [...allBcData, ...chunkData];
+                if (chunkData.length < chunkSize) hasMore = false;
+                else start += chunkSize;
+              } else {
+                hasMore = false;
+              }
+            }
+            unpackedData = allBcData.map(unpackExtraFields) as Backcharge[];
           }
-          unpackedData = allBcData.map(unpackExtraFields) as Backcharge[];
-        }
 
-        setTransactions(unpackedData);
-        try { localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedData)); } catch {}
+          setTransactions(unpackedData);
+          try { localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedData)); } catch {}
+        })();
 
-        // 2. Fetch logs
-        const { data: logsData, error: logsError } = await supabase
-          .from('activity_logs')
-          .select('*')
-          .order('timestamp', { ascending: false })
-          .limit(150); // Hemat egress
-        if (logsError) throw logsError;
-        setLogs((logsData as ActivityLog[]) || []);
-        try { localStorage.setItem('backcharge_cache_logs', JSON.stringify(logsData || [])); } catch {}
+        // Wait for both the parallel metadata fetching and transaction synchronization to complete
+        await Promise.all([
+          syncTransactionsPromise,
+          fetchMetadataPromise
+        ]);
 
-        // 3. Fetch profiles (for administrator)
-        if (hasRole(currentUser?.role, 'Administrator')) {
-          const { data: profsData, error: profsError } = await supabase
-            .from('profiles')
-            .select('*')
-            .order('full_name', { ascending: true });
-          if (profsError) throw profsError;
-          setProfiles((profsData as Profile[]) || []);
-          try { localStorage.setItem('backcharge_cache_profs', JSON.stringify(profsData || [])); } catch {}
-        }
-
-        // 4. Fetch contact inquiries (with graceful fallback to mock database if not created yet)
-        try {
-          const { data: ciData, error: ciError } = await supabase
-            .from('contact_inquiries')
-            .select('*')
-            .order('created_at', { ascending: false });
-          if (ciError) throw ciError;
-          setInquiries((ciData as ContactInquiry[]) || []);
-        } catch (ciErr) {
-          console.warn("Could not fetch contact inquiries from Supabase. Using local storage fallback.", ciErr);
-          setInquiries(mockDb.getContactInquiries());
-        }
       } catch (err: any) {
         addToast(`Gagal menyinkronkan data: ${err.message}`, 'error');
       } finally {
         setLoading(false);
       }
     } else {
-      // Fetch mock offline data
+      // Fetch mock offline data with minimum latency simulation
       setTimeout(() => {
         let bcs = mockDb.getBackcharges();
         if (currentUser && currentUser.branch !== 'Nasional') {
@@ -819,7 +868,7 @@ export default function App() {
         setProfiles(mockDb.getProfiles());
         setInquiries(mockDb.getContactInquiries());
         setLoading(false);
-      }, 300);
+      }, 50); // instant feeling
     }
   };
 
