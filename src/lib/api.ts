@@ -4,8 +4,10 @@
  * forwards requests to the stable Cloud Run container backend.
  */
 export const getApiUrl = (path: string): string => {
-  const isCloudflarePages = window.location.hostname.includes("pages.dev");
-  const base = isCloudflarePages 
+  const hostname = window.location.hostname;
+  const isCloudflare = hostname.includes("pages.dev") || hostname.includes("workers.dev");
+  
+  const base = isCloudflare 
     ? "https://ais-pre-d2jxy6lmt46fvtybeg4n24-563947435575.asia-southeast1.run.app"
     : "";
   return `${base}${path}`;
