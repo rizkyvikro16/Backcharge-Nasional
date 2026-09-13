@@ -863,171 +863,185 @@ export default function App() {
         let unpackedData: Backcharge[] = [];
 
         const syncTransactionsPromise = (async () => {
-          // SMART DELTA SYNC (To prevent Egress quota blow up with 5000+ data)
-          let cachedTxs: any[] = [];
-          if (!forceFull) {
-            try {
-              const cacheStr = localStorage.getItem('backcharge_cache_txs');
-              if (cacheStr) cachedTxs = JSON.parse(cacheStr);
-            } catch (e) {}
-          }
-
-          if (cachedTxs.length > 0) {
-            // If we have cache, we do a lightweight sync to save >90% Egress
-            // a. Get the latest updated_at from cache
-            let lastSync = new Date(0).toISOString();
-            for (const tx of cachedTxs) {
-              if (tx.updated_at && tx.updated_at > lastSync) {
-                lastSync = tx.updated_at;
-              }
+          try {
+            // SMART DELTA SYNC (To prevent Egress quota blow up and avoid statement timeouts)
+            let cachedTxs: any[] = [];
+            if (!forceFull) {
+              try {
+                const cacheStr = localStorage.getItem('backcharge_cache_txs');
+                if (cacheStr) cachedTxs = JSON.parse(cacheStr);
+              } catch (e) {}
             }
 
-            // b. Fetch only IDs to prune deleted rows (Paginated to handle >1000 rows limit)
-            let allDbIds: string[] = [];
-            let idStart = 0;
-            let idChunkSize = 1000;
-            let hasMoreIds = true;
-            
-            while (hasMoreIds) {
-              let idQuery = supabase.from('backcharges').select('id').order('id').range(idStart, idStart + idChunkSize - 1);
-              if (currentUser && currentUser.branch !== 'Nasional') {
-                const userBranches = getUserBranches(currentUser.branch);
-                if (userBranches.length > 0) idQuery = idQuery.in('branch', userBranches);
+            if (cachedTxs.length > 0) {
+              // If we have cache, we do a lightweight sync to save >90% Egress
+              let lastSync = new Date(0).toISOString();
+              for (const tx of cachedTxs) {
+                if (tx.updated_at && tx.updated_at > lastSync) {
+                  lastSync = tx.updated_at;
+                }
               }
-              const { data: dbIdsData, error: idError } = await idQuery;
-              if (idError) throw idError;
+
+              // b. Fetch only IDs to prune deleted rows (Paginated in small chunks of 250)
+              let allDbIds: string[] = [];
+              let idStart = 0;
+              let idChunkSize = 250;
+              let hasMoreIds = true;
               
-              if (dbIdsData && dbIdsData.length > 0) {
-                allDbIds = [...allDbIds, ...dbIdsData.map(d => d.id)];
-                if (dbIdsData.length < idChunkSize) hasMoreIds = false;
-                else idStart += idChunkSize;
-              } else {
-                hasMoreIds = false;
-              }
-            }
-            const validIds = new Set(allDbIds);
-            
-            // c. Filter out deleted records from cache
-            let syncedTxs = cachedTxs.filter(tx => validIds.has(tx.id));
-
-            // d. Gaps identification (Find IDs present in database but missing from the local cache)
-            const syncedIds = new Set(syncedTxs.map(tx => tx.id));
-            const missingIds = allDbIds.filter(id => !syncedIds.has(id));
-
-            let missingData: any[] = [];
-            if (missingIds.length > 0) {
-              const missingChunkSize = 250;
-              for (let i = 0; i < missingIds.length; i += missingChunkSize) {
-                const batch = missingIds.slice(i, i + missingChunkSize);
-                let missingQuery = supabase
-                  .from('backcharges')
-                  .select('*')
-                  .in('id', batch);
-                
+              while (hasMoreIds) {
+                let idQuery = supabase.from('backcharges').select('id').range(idStart, idStart + idChunkSize - 1);
                 if (currentUser && currentUser.branch !== 'Nasional') {
                   const userBranches = getUserBranches(currentUser.branch);
-                  if (userBranches.length > 0) missingQuery = missingQuery.in('branch', userBranches);
+                  if (userBranches.length > 0) idQuery = idQuery.in('branch', userBranches);
                 }
-
-                const { data: mChunk, error: mError } = await missingQuery;
-                if (mError) throw mError;
-                if (mChunk && mChunk.length > 0) {
-                  missingData = [...missingData, ...mChunk];
-                }
-              }
-            }
-
-            if (missingData.length > 0) {
-              const missingUnpacked = missingData.map(unpackExtraFields);
-              syncedTxs = [...missingUnpacked, ...syncedTxs];
-            }
-
-            // e. Fetch ONLY newly created or updated records since last sync (Paginated)
-            let deltaData: any[] = [];
-            let deltaStart = 0;
-            let deltaChunkSize = 1000;
-            let hasMoreDelta = true;
-            
-            while (hasMoreDelta) {
-              let deltaQuery = supabase
-                .from('backcharges')
-                .select('*')
-                .gt('updated_at', lastSync)
-                .order('id')
-                .range(deltaStart, deltaStart + deltaChunkSize - 1);
+                const { data: dbIdsData, error: idError } = await idQuery;
+                if (idError) throw idError;
                 
-              if (currentUser && currentUser.branch !== 'Nasional') {
-                const userBranches = getUserBranches(currentUser.branch);
-                if (userBranches.length > 0) deltaQuery = deltaQuery.in('branch', userBranches);
-              }
-              
-              const { data: chunkData, error: deltaError } = await deltaQuery;
-              if (deltaError) throw deltaError;
-              
-              if (chunkData && chunkData.length > 0) {
-                deltaData = [...deltaData, ...chunkData];
-                if (chunkData.length < deltaChunkSize) hasMoreDelta = false;
-                else deltaStart += deltaChunkSize;
-              } else {
-                hasMoreDelta = false;
-              }
-            }
-
-            // f. Merge the delta into our synced list
-            if (deltaData && deltaData.length > 0) {
-              const deltaUnpacked = deltaData.map(unpackExtraFields);
-              const deltaMap = new Map(deltaUnpacked.map((tx: any) => [tx.id, tx]));
-              
-              // Replace updated records
-              syncedTxs = syncedTxs.map(tx => deltaMap.has(tx.id) ? deltaMap.get(tx.id) : tx);
-              
-              // Add brand new records
-              const existingIds = new Set(syncedTxs.map(tx => tx.id));
-              const newTxs = deltaUnpacked.filter((tx: any) => !existingIds.has(tx.id));
-              syncedTxs = [...newTxs, ...syncedTxs];
-            }
-            
-            // Sort final list by created_at descending
-            syncedTxs.sort((a, b) => new Date(b.created_at || b.tanggal).getTime() - new Date(a.created_at || a.tanggal).getTime());
-            unpackedData = syncedTxs as Backcharge[];
-
-          } else {
-            // If no cache (first time load on this device), do a full paginated fetch
-            let allBcData: any[] = [];
-            let start = 0;
-            const chunkSize = 1000;
-            let hasMore = true;
-            
-            while (hasMore) {
-              let query = supabase
-                .from('backcharges')
-                .select('*')
-                .order('created_at', { ascending: false })
-                .range(start, start + chunkSize - 1);
-                
-              if (currentUser && currentUser.branch !== 'Nasional') {
-                const userBranches = getUserBranches(currentUser.branch);
-                if (userBranches.length > 0) {
-                  query = query.in('branch', userBranches);
+                if (dbIdsData && dbIdsData.length > 0) {
+                  allDbIds = [...allDbIds, ...dbIdsData.map(d => d.id)];
+                  if (dbIdsData.length < idChunkSize) hasMoreIds = false;
+                  else idStart += idChunkSize;
+                } else {
+                  hasMoreIds = false;
                 }
               }
+              const validIds = new Set(allDbIds);
               
-              const { data: chunkData, error: bcError } = await query;
-              if (bcError) throw bcError;
-              
-              if (chunkData && chunkData.length > 0) {
-                allBcData = [...allBcData, ...chunkData];
-                if (chunkData.length < chunkSize) hasMore = false;
-                else start += chunkSize;
-              } else {
-                hasMore = false;
+              // c. Filter out deleted records from cache
+              let syncedTxs = cachedTxs.filter(tx => validIds.has(tx.id));
+
+              // d. Gaps identification (Find IDs present in database but missing from the local cache)
+              const syncedIds = new Set(syncedTxs.map(tx => tx.id));
+              const missingIds = allDbIds.filter(id => !syncedIds.has(id));
+
+              let missingData: any[] = [];
+              if (missingIds.length > 0) {
+                const missingChunkSize = 100;
+                for (let i = 0; i < missingIds.length; i += missingChunkSize) {
+                  const batch = missingIds.slice(i, i + missingChunkSize);
+                  let missingQuery = supabase
+                    .from('backcharges')
+                    .select('*')
+                    .in('id', batch);
+                  
+                  if (currentUser && currentUser.branch !== 'Nasional') {
+                    const userBranches = getUserBranches(currentUser.branch);
+                    if (userBranches.length > 0) missingQuery = missingQuery.in('branch', userBranches);
+                  }
+
+                  const { data: mChunk, error: mError } = await missingQuery;
+                  if (mError) throw mError;
+                  if (mChunk && mChunk.length > 0) {
+                    missingData = [...missingData, ...mChunk];
+                  }
+                }
               }
+
+              if (missingData.length > 0) {
+                const missingUnpacked = missingData.map(unpackExtraFields);
+                syncedTxs = [...missingUnpacked, ...syncedTxs];
+              }
+
+              // e. Fetch ONLY newly created or updated records since last sync (Paginated)
+              let deltaData: any[] = [];
+              let deltaStart = 0;
+              let deltaChunkSize = 250;
+              let hasMoreDelta = true;
+              
+              while (hasMoreDelta) {
+                let deltaQuery = supabase
+                  .from('backcharges')
+                  .select('*')
+                  .gt('updated_at', lastSync)
+                  .range(deltaStart, deltaStart + deltaChunkSize - 1);
+                  
+                if (currentUser && currentUser.branch !== 'Nasional') {
+                  const userBranches = getUserBranches(currentUser.branch);
+                  if (userBranches.length > 0) deltaQuery = deltaQuery.in('branch', userBranches);
+                }
+                
+                const { data: chunkData, error: deltaError } = await deltaQuery;
+                if (deltaError) throw deltaError;
+                
+                if (chunkData && chunkData.length > 0) {
+                  deltaData = [...deltaData, ...chunkData];
+                  if (chunkData.length < deltaChunkSize) hasMoreDelta = false;
+                  else deltaStart += deltaChunkSize;
+                } else {
+                  hasMoreDelta = false;
+                }
+              }
+
+              // f. Merge the delta into our synced list
+              if (deltaData && deltaData.length > 0) {
+                const deltaUnpacked = deltaData.map(unpackExtraFields);
+                const deltaMap = new Map(deltaUnpacked.map((tx: any) => [tx.id, tx]));
+                
+                // Replace updated records
+                syncedTxs = syncedTxs.map(tx => deltaMap.has(tx.id) ? deltaMap.get(tx.id) : tx);
+                
+                // Add brand new records
+                const existingIds = new Set(syncedTxs.map(tx => tx.id));
+                const newTxs = deltaUnpacked.filter((tx: any) => !existingIds.has(tx.id));
+                syncedTxs = [...newTxs, ...syncedTxs];
+              }
+              
+              // Sort final list by created_at descending in JS memory (extremely fast)
+              syncedTxs.sort((a, b) => new Date(b.created_at || b.tanggal).getTime() - new Date(a.created_at || a.tanggal).getTime());
+              unpackedData = syncedTxs as Backcharge[];
+
+            } else {
+              // If no cache (first time load on this device), do a fast paginated fetch without heavy server sorts
+              let allBcData: any[] = [];
+              let start = 0;
+              const chunkSize = 250;
+              let hasMore = true;
+              
+              while (hasMore) {
+                let query = supabase
+                  .from('backcharges')
+                  .select('*')
+                  .range(start, start + chunkSize - 1);
+                  
+                if (currentUser && currentUser.branch !== 'Nasional') {
+                  const userBranches = getUserBranches(currentUser.branch);
+                  if (userBranches.length > 0) {
+                    query = query.in('branch', userBranches);
+                  }
+                }
+                
+                const { data: chunkData, error: bcError } = await query;
+                if (bcError) throw bcError;
+                
+                if (chunkData && chunkData.length > 0) {
+                  allBcData = [...allBcData, ...chunkData];
+                  if (chunkData.length < chunkSize) hasMore = false;
+                  else start += chunkSize;
+                } else {
+                  hasMore = false;
+                }
+              }
+              unpackedData = allBcData.map(unpackExtraFields) as Backcharge[];
+              unpackedData.sort((a, b) => new Date(b.created_at || b.tanggal).getTime() - new Date(a.created_at || a.tanggal).getTime());
             }
-            unpackedData = allBcData.map(unpackExtraFields) as Backcharge[];
+
+            setTransactions(unpackedData);
+            try { localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedData)); } catch {}
+          } catch (syncErr: any) {
+            console.warn("Sinkronisasi Supabase gagal atau timeout:", syncErr);
+            const cacheStr = localStorage.getItem('backcharge_cache_txs');
+            if (cacheStr) {
+              try {
+                const cached = JSON.parse(cacheStr);
+                if (cached && cached.length > 0) {
+                  setTransactions(cached as Backcharge[]);
+                  addToast("Menampilkan data dari cache lokal (koneksi Supabase mengalami timeout).", "info");
+                  return;
+                }
+              } catch (e) {}
+            }
+            throw syncErr;
           }
-
-          setTransactions(unpackedData);
-          try { localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedData)); } catch {}
         })();
 
         // Wait for both the parallel metadata fetching and transaction synchronization to complete

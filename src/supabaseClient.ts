@@ -6,16 +6,11 @@ const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY || '';
 
 // Detect if Supabase is properly configured
-export const isSupabaseConfigured = 
-  supabaseUrl && 
-  supabaseUrl !== 'YOUR_SUPABASE_URL' && 
-  supabaseAnonKey && 
-  supabaseAnonKey !== 'YOUR_SUPABASE_ANON_KEY';
+// SUPABASE IS NOW DISABLED to force Cloudflare D1 usage
+export const isSupabaseConfigured = false;
 
 // Initialize Supabase client if configured, otherwise null
-export const supabase = isSupabaseConfigured 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
-  : null;
+export const supabase = null;
 
 // =========================================================================
 // OFFLINE MOCK ENGINE (LOCAL STORAGE FALLBACK)
