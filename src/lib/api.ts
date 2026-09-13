@@ -1,14 +1,20 @@
 /**
  * Resolves the backend API URL dynamically.
- * If running on a static hosting platform (like Cloudflare Pages), it automatically
- * forwards requests to the stable Cloud Run container backend.
  */
 export const getApiUrl = (path: string): string => {
   const hostname = window.location.hostname;
   const isCloudflare = hostname.includes("pages.dev") || hostname.includes("workers.dev");
   
-  const base = isCloudflare 
-    ? "https://ais-pre-d2jxy6lmt46fvtybeg4n24-563947435575.asia-southeast1.run.app"
-    : "";
+  // Jika berjalan di Cloudflare, arahkan ke Worker API Anda sendiri (jika ada)
+  // Ganti URL ini dengan URL Worker API D1 Anda (contoh: https://api.backcharge-assa.workers.dev)
+  // Jika kosong (""), ia akan memanggil domainnya sendiri (cocok jika frontend & backend digabung)
+  let base = "";
+  
+  if (isCloudflare) {
+    // DEFAULT SEMENTARA: Masih mengarah ke server AI Studio
+    // UBAH BARIS DI BAWAH INI menjadi URL Worker Anda agar tidak bergantung pada AI Studio
+    base = "https://api.backcharge-assa.workers.dev/";
+  }
+
   return `${base}${path}`;
 };
