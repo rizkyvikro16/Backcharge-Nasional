@@ -172,8 +172,12 @@ export default {
       }
     }
 
+    if (env.ASSETS) {
+      return await env.ASSETS.fetch(request);
+    }
+
     return new Response(
-      JSON.stringify({ message: "Backcharge D1 API Worker Running Successfully!" }),
+      JSON.stringify({ message: "Backcharge D1 API Worker (app.backcharge-assa.workers.dev) Running Successfully!" }),
       { headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   }

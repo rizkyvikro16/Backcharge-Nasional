@@ -1209,41 +1209,66 @@ export default function App() {
     let maxNum = 0;
     const usedIds = new Set<string>();
 
-    if (isSupabaseConfigured && supabase) {
+    // Always include all IDs in current memory transactions state
+    transactions.forEach(t => {
+      if (t.id) usedIds.add(t.id);
+    });
+
+    if (isD1Active) {
+      try {
+        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sql, params })
+          });
+          const d = await res.json();
+          if (!d.success) throw new Error(d.error);
+          return d.results || [];
+        };
+
+        const d1Rows = await executeD1Query(
+          `SELECT id FROM backcharges WHERE id LIKE ?`,
+          [`BC-${year}-%`]
+        );
+
+        if (d1Rows && d1Rows.length > 0) {
+          d1Rows.forEach((r: any) => {
+            if (r.id) {
+              usedIds.add(r.id);
+              const parts = r.id.split('-');
+              const numPart = parts[parts.length - 1];
+              const parsed = parseInt(numPart, 10);
+              if (!isNaN(parsed) && parsed > maxNum) {
+                maxNum = parsed;
+              }
+            }
+          });
+        }
+      } catch (e) {
+        console.error("Error determining highest ID from D1:", e);
+      }
+    } else if (isSupabaseConfigured && supabase) {
       try {
         // Query the single largest ID starting with BC-YYYY-
         const { data, error } = await supabase
           .from('backcharges')
           .select('id')
-          .like('id', `BC-${year}-%`)
-          .order('id', { ascending: false })
-          .limit(1);
+          .like('id', `BC-${year}-%`);
         
         if (!error && data && data.length > 0) {
-          const highestId = data[0].id;
-          const parts = highestId.split('-');
-          const numPart = parts[parts.length - 1];
-          const parsed = parseInt(numPart, 10);
-          maxNum = isNaN(parsed) ? 0 : parsed;
-        }
-
-        // Also cross-reference active memory/transactions state to prevent duplicate codes before sync completes
-        const localMaxNums = transactions
-          .filter(t => t.id && t.id.startsWith(`BC-${year}-`))
-          .map(t => {
-            const parts = t.id.split('-');
-            const numPart = parts[parts.length - 1];
-            const parsed = parseInt(numPart, 10);
-            return isNaN(parsed) ? 0 : parsed;
+          data.forEach(r => {
+            if (r.id) {
+              usedIds.add(r.id);
+              const parts = r.id.split('-');
+              const numPart = parts[parts.length - 1];
+              const parsed = parseInt(numPart, 10);
+              if (!isNaN(parsed) && parsed > maxNum) {
+                maxNum = parsed;
+              }
+            }
           });
-        if (localMaxNums.length > 0) {
-          const localMax = Math.max(...localMaxNums);
-          if (localMax > maxNum) {
-            maxNum = localMax;
-          }
         }
-        
-        transactions.forEach(t => usedIds.add(t.id));
       } catch (e) {
         console.error("Error determining highest ID from Supabase:", e);
       }
@@ -1260,6 +1285,22 @@ export default function App() {
           return isNaN(parsed) ? 0 : parsed;
         });
       maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 0;
+    }
+
+    // Also cross-reference local memory
+    const localMaxNums = Array.from(usedIds)
+      .filter(id => id && id.startsWith(`BC-${year}-`))
+      .map(id => {
+        const parts = id.split('-');
+        const numPart = parts[parts.length - 1];
+        const parsed = parseInt(numPart, 10);
+        return isNaN(parsed) ? 0 : parsed;
+      });
+    if (localMaxNums.length > 0) {
+      const localMax = Math.max(...localMaxNums);
+      if (localMax > maxNum) {
+        maxNum = localMax;
+      }
     }
 
     let nextNum = maxNum + 1;
@@ -1310,10 +1351,6 @@ export default function App() {
 
     if (isD1Active) {
       try {
-        const cleanedInsertObj = cleanSupabasePayload({
-          ...txObj
-        });
-
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
           const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
@@ -1325,12 +1362,38 @@ export default function App() {
           return d.results;
         };
 
-        const columns = Object.keys(cleanedInsertObj);
-        const placeholders = columns.map(() => '?').join(', ');
-        const values = Object.values(cleanedInsertObj);
+        let currentId = newId;
+        let success = false;
+        let attempt = 0;
 
-        const sql = `INSERT INTO backcharges (${columns.join(', ')}) VALUES (${placeholders})`;
-        await executeD1Query(sql, values);
+        while (!success && attempt < 10) {
+          attempt++;
+          const currentTxObj = {
+            ...txObj,
+            id: currentId
+          };
+          const cleanedInsertObj = cleanSupabasePayload(currentTxObj);
+          const columns = Object.keys(cleanedInsertObj);
+          const placeholders = columns.map(() => '?').join(', ');
+          const values = Object.values(cleanedInsertObj);
+
+          const sql = `INSERT INTO backcharges (${columns.join(', ')}) VALUES (${placeholders})`;
+          try {
+            await executeD1Query(sql, values);
+            success = true;
+            newId = currentId;
+          } catch (insertErr: any) {
+            const errMsg = insertErr.message || String(insertErr);
+            if (errMsg.includes("UNIQUE constraint failed") || errMsg.includes("SQLITE_CONSTRAINT")) {
+              console.warn(`ID ${currentId} already exists in D1, auto-incrementing ID...`);
+              nextNum++;
+              formatCount = String(nextNum).padStart(4, '0');
+              currentId = `BC-${year}-${formatCount}`;
+            } else {
+              throw insertErr;
+            }
+          }
+        }
 
         // Write activity log to D1
         await executeD1Query(
@@ -2623,12 +2686,11 @@ export default function App() {
 
           <div className="flex items-center space-x-1.5 md:space-x-2 relative flex-shrink-0">
             
-            {/* Sync Global Button */}
+            {/* Reload Web Page Button */}
             <button 
-              onClick={(e) => fetchData(e.shiftKey)} 
-              disabled={loading}
-              className={`p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-xl transition-all border border-slate-100 ${loading ? 'animate-spin' : ''}`}
-              title="Sinkronkan Data (Shift+Klik untuk Muat Ulang Penuh)"
+              onClick={() => window.location.reload()} 
+              className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-xl transition-all border border-slate-100"
+              title="Muat Ulang Halaman Web (Full Reload)"
             >
               <RefreshCw className="w-4 h-4" />
             </button>

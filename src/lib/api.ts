@@ -3,15 +3,15 @@
  */
 export const getApiUrl = (path: string): string => {
   const hostname = window.location.hostname;
-  const isCloudflare = hostname.includes("pages.dev") || hostname.includes("workers.dev");
-  
-  let base = "";
-  if (isCloudflare) {
-    // Ubah URL di bawah ini dengan URL Cloudflare Worker API D1 Anda
-    base = "https://api.backcharge-assa.workers.dev";
-  }
-
-  const cleanBase = base.replace(/\/+$/, "");
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
-  return cleanBase ? `${cleanBase}${cleanPath}` : cleanPath;
+
+  // Direct relative path if running on the worker domain itself or local environment
+  if (hostname.includes("app.backcharge-assa.workers.dev") || (!hostname.includes("pages.dev") && !hostname.includes("workers.dev"))) {
+    return cleanPath;
+  }
+  
+  // Default API Worker URL for Cloudflare Pages / external clients
+  const base = "https://app.backcharge-assa.workers.dev";
+  const cleanBase = base.replace(/\/+$/, "");
+  return `${cleanBase}${cleanPath}`;
 };
