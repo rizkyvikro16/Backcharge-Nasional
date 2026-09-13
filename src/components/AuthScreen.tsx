@@ -90,6 +90,63 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
 
     const emailTrim = email.trim().toLowerCase();
     
+    const isD1Active = localStorage.getItem('backcharge_use_d1') === 'true';
+    if (isD1Active) {
+      try {
+        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
+          const res = await fetch("/api/d1/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sql, params })
+          });
+          const d = await res.json();
+          if (!d.success) throw new Error(d.error);
+          return d.results;
+        };
+
+        const dbProfiles = await executeD1Query(
+          "SELECT * FROM profiles WHERE LOWER(email) = ?",
+          [emailTrim]
+        );
+
+        if (dbProfiles && dbProfiles.length > 0) {
+          const dbProfile = dbProfiles[0];
+          const dbPassword = dbProfile.password || 'password123';
+          if (dbPassword === password) {
+            onLoginSuccess(dbProfile as Profile);
+            setLoading(false);
+            return;
+          } else {
+            throw new Error('Password yang Anda masukkan salah!');
+          }
+        } else {
+          // If no profile exists, auto-register them
+          const newProfile: Profile = {
+            id: 'USR-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+            email: emailTrim,
+            full_name: emailTrim.split('@')[0].toUpperCase() + ' (Staff D1)',
+            role: 'ASO',
+            branch: 'Megabranch',
+            password: password,
+            created_at: new Date().toISOString()
+          };
+          
+          await executeD1Query(
+            "INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [newProfile.id, newProfile.email, newProfile.full_name, newProfile.role, newProfile.branch, newProfile.created_at, newProfile.password]
+          );
+
+          onLoginSuccess(newProfile);
+          setLoading(false);
+          return;
+        }
+      } catch (err: any) {
+        setError(err.message || 'Gagal login ke Cloudflare D1. Periksa kembali email dan password.');
+        setLoading(false);
+        return;
+      }
+    }
+
     if (isSupabaseConfigured && supabase) {
       try {
         // 1. First check if a profile exists with this email in public.profiles table
@@ -230,6 +287,54 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
       password: passwordTrim,
       created_at: new Date().toISOString()
     };
+
+    const isD1Active = localStorage.getItem('backcharge_use_d1') === 'true';
+    if (isD1Active) {
+      try {
+        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
+          const res = await fetch("/api/d1/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sql, params })
+          });
+          const d = await res.json();
+          if (!d.success) throw new Error(d.error);
+          return d.results;
+        };
+
+        // Check if user already exists
+        const existing = await executeD1Query("SELECT id FROM profiles WHERE LOWER(email) = ?", [emailTrim]);
+        if (existing && existing.length > 0) {
+          throw new Error("Email ini sudah terdaftar!");
+        }
+
+        await executeD1Query(
+          "INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [newProfile.id, newProfile.email, newProfile.full_name, newProfile.role, newProfile.branch, newProfile.created_at, newProfile.password]
+        );
+
+        // Save activity log
+        try {
+          await executeD1Query(
+            "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
+            ['SYSTEM', emailTrim, `Mendaftar akun staf mandiri baru: ${fullNameTrim} (${emailTrim}) - ${finalRole}`]
+          );
+        } catch {}
+
+        setSuccess('Pendaftaran Mandiri Berhasil! Silakan masuk menggunakan tab Login.');
+        setActiveTab('login');
+        setEmail(regEmail);
+        setPassword(regPassword);
+        setRegFullName('');
+        setRegEmail('');
+        setRegPassword('');
+      } catch (err: any) {
+        setError(err.message || 'Gagal mendaftar ke Cloudflare D1.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     if (isSupabaseConfigured && supabase) {
       try {

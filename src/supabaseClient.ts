@@ -337,6 +337,27 @@ export const mockDb = {
     }
   },
 
+  saveBackchargesBatch: (batchList: Backcharge[], performedByEmail: string) => {
+    const bcs = mockDb.getBackcharges();
+    const bcMap = new Map<string, number>();
+    bcs.forEach((item, index) => {
+      if (item.id) bcMap.set(item.id, index);
+    });
+
+    for (const b of batchList) {
+      const idx = bcMap.has(b.id) ? bcMap.get(b.id)! : -1;
+      if (idx !== -1) {
+        bcs[idx] = { ...b, updated_at: new Date().toISOString() };
+      } else {
+        bcs.push(b);
+        bcMap.set(b.id, bcs.length - 1);
+      }
+    }
+
+    localStorage.setItem('bc_backcharges', JSON.stringify(bcs));
+    mockDb.addLog('SYSTEM', performedByEmail, `Melakukan import data secara massal sebanyak ${batchList.length} data Backcharge`);
+  },
+
   getLogs: (): ActivityLog[] => {
     try {
       const data = localStorage.getItem('bc_activity_logs');

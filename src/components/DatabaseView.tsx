@@ -13,7 +13,10 @@ interface DatabaseViewProps {
   currentUser: Profile;
   isLoading?: boolean;
   onAddTransaction: (newTx: Omit<Backcharge, 'id' | 'created_by' | 'created_at' | 'updated_at'>) => Promise<void>;
-  onBulkAddTransactions?: (newTxs: Omit<Backcharge, 'id' | 'created_by' | 'created_at' | 'updated_at'>[]) => Promise<void>;
+  onBulkAddTransactions?: (
+    newTxs: Omit<Backcharge, 'id' | 'created_by' | 'created_at' | 'updated_at'>[],
+    onProgress?: (current: number, total: number) => void
+  ) => Promise<void>;
   onSelectTransaction: (id: string) => void;
   onDeleteTransaction?: (id: string) => void;
   onUpdateTransaction?: (id: string, updates: Partial<Backcharge>, logMessage: string) => Promise<void> | void;
@@ -260,15 +263,105 @@ export default function DatabaseView({
   const [bulkImportList, setBulkImportList] = useState<any[]>([]);
   const [bulkImportError, setBulkImportError] = useState<string | null>(null);
   const [isProcessingImport, setIsProcessingImport] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
 
   const downloadTemplate = () => {
     const headers = [
-      ["Tanggal", "Kategori", "Cabang", "Nama Customer", "No Polisi", "Nilai Backcharge", "No BAK", "No SPK", "No SAP", "No Tilang", "PIC", "Alasan", "Tahap Proses", "No Invoice", "Status Bayar", "Status SAP (Bill/Not Bill/NA)"]
+      [
+        "id",
+        "category",
+        "branch",
+        "no_bak",
+        "no_spk",
+        "no_sap",
+        "customer_name",
+        "license_plate",
+        "value",
+        "status_sap",
+        "status_confirm",
+        "status_handover",
+        "no_invoice",
+        "status_payment",
+        "created_by",
+        "created_at",
+        "updated_at",
+        "file_bak_url",
+        "file_handover_aso_sales_url",
+        "file_handover_sales_admin_url",
+        "no_tilang",
+        "tanggal",
+        "nama_bro",
+        "upload_dok_pendukung",
+        "alasan_pendukung",
+        "tanggal_handover",
+        "alasan",
+        "status_approval",
+        "approved_by",
+        "approved_at",
+        "approval_note",
+        "approval_attachment_1_url",
+        "approval_attachment_2_url",
+        "approval_attachment_3_url",
+        "regional_approval_status",
+        "regional_approved_by",
+        "regional_approved_at",
+        "regional_approval_note",
+        "division_approval_status",
+        "division_approved_by",
+        "division_approved_at",
+        "division_approval_note"
+      ]
     ];
-    const worksheet = XLSX.utils.aoa_to_sheet(headers);
+
+    const sampleRow = [
+      "BC-2026-0001",
+      "Own Risk",
+      "Jakarta",
+      "BAK/2026/09/001",
+      "SPK-12345",
+      "SAP-67890",
+      "PT Contoh Mitra Jaya",
+      "B 1234 ABC",
+      5000000,
+      "Bill",
+      "Telah Dikonfirmasi",
+      "Pending",
+      "INV-2026-001",
+      "Belum Bayar",
+      "admin.pusat@company.id",
+      "2026-09-13T00:00:00.000Z",
+      "2026-09-13T00:00:00.000Z",
+      "",
+      "",
+      "",
+      "TLG-001",
+      "2026-09-13",
+      "Budi Broker",
+      "",
+      "Dokumen Tambahan",
+      "2026-09-14",
+      "Klaim Own Risk perbaikan bodi",
+      "Belum Approval",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "Belum Approval",
+      "",
+      "",
+      "",
+      "Belum Approval",
+      "",
+      "",
+      ""
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet([headers[0], sampleRow]);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Template Backcharge");
-    worksheet['!cols'] = Array(16).fill({ wch: 22 });
+    worksheet['!cols'] = Array(42).fill({ wch: 22 });
     XLSX.writeFile(workbook, "template_import_backcharge.xlsx");
   };
 
@@ -284,68 +377,176 @@ export default function DatabaseView({
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         
-        // Convert to JSON array of arrays
-        const jsonData = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
+        // Convert to array of arrays
+        const rawJsonData = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
+        // Also parse as json objects if column names are present
+        const rawObjRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
         
-        if (jsonData.length === 0) {
+        if (rawJsonData.length === 0) {
           setBulkImportError("File Excel kosong.");
           return;
         }
         
-        // Check if first row is headers, if yes, skip it
+        // Check if first row is headers
         let startIndex = 0;
-        const firstRow = jsonData[0];
+        const firstRow = rawJsonData[0];
         if (firstRow && firstRow.length > 0) {
-          const potentialHeader = String(firstRow[0]).toLowerCase();
-          const isHeader = potentialHeader.includes('tanggal') || 
-                           potentialHeader.includes('kategori') || 
-                           potentialHeader.includes('cabang') || 
-                           potentialHeader.includes('customer') ||
-                           potentialHeader.includes('nama') ||
-                           potentialHeader.includes('nopol') ||
-                           potentialHeader.includes('nilai');
-          if (isHeader) {
+          const firstCell = String(firstRow[0]).toLowerCase();
+          const secondCell = firstRow[1] ? String(firstRow[1]).toLowerCase() : '';
+          if (
+            firstCell === 'id' ||
+            firstCell === 'tanggal' ||
+            firstCell === 'category' ||
+            secondCell === 'category' ||
+            firstCell.includes('kategori')
+          ) {
             startIndex = 1;
           }
         }
 
         const resultList: any[] = [];
-        for (let i = startIndex; i < jsonData.length; i++) {
-          const row = jsonData[i];
-          if (!row || row.length === 0) continue;
-          
-          // Pad array to at least 16 elements
-          const parts = Array.from({ length: 16 }, (_, idx) => {
-            const val = row[idx];
-            return val !== undefined && val !== null ? String(val).trim() : '';
-          });
+        
+        // Helper to extract value from object key or array index
+        const getVal = (objRow: any, arrRow: any[], keyNames: string[], colIdx: number, defaultVal: string = '') => {
+          if (objRow) {
+            for (const key of keyNames) {
+              if (objRow[key] !== undefined && objRow[key] !== null && String(objRow[key]).trim() !== '') {
+                return String(objRow[key]).trim();
+              }
+            }
+          }
+          if (arrRow && colIdx >= 0 && arrRow[colIdx] !== undefined && arrRow[colIdx] !== null) {
+            return String(arrRow[colIdx]).trim();
+          }
+          return defaultVal;
+        };
 
-          const rawTanggal = parts[0];
-          const rawKategori = parts[1];
-          const rawCabang = parts[2];
-          const rawCustomer = parts[3];
-          const rawNoPolisi = parts[4];
-          const rawValue = parts[5];
-          const rawNoBak = parts[6];
-          const rawNoSpk = parts[7];
-          const rawNoSap = parts[8];
-          const rawNoTilang = parts[9];
-          const rawBroker = parts[10];
-          const rawAlasan = parts[11];
-          const rawTahapProses = parts[12];
-          const rawNoInvoice = parts[13];
-          const rawStatusBayar = parts[14];
-          const rawStatusSap = parts[15];
-          
-          if (!rawCustomer && !rawTanggal && !rawValue) {
+        for (let i = startIndex; i < rawJsonData.length; i++) {
+          const arrRow = rawJsonData[i] || [];
+          const objRow = rawObjRows[i - (startIndex === 1 ? 0 : 0)] || null;
+
+          if (arrRow.length === 0 && (!objRow || Object.keys(objRow).length === 0)) continue;
+
+          // Check if this row is using legacy format (16 columns: Tanggal, Kategori, Cabang, Customer, ...)
+          const isLegacyFormat = firstRow && (
+            String(firstRow[0]).toLowerCase().includes('tanggal') ||
+            String(firstRow[1]).toLowerCase().includes('kategori')
+          );
+
+          let id = '';
+          let rawCategory = '';
+          let rawBranch = '';
+          let rawNoBak = '';
+          let rawNoSpk = '';
+          let rawNoSap = '';
+          let rawCustomer = '';
+          let rawLicensePlate = '';
+          let rawValue = '';
+          let rawStatusSap = '';
+          let rawStatusConfirm = '';
+          let rawStatusHandover = '';
+          let rawNoInvoice = '';
+          let rawStatusPayment = '';
+          let rawCreatedBy = '';
+          let rawCreatedAt = '';
+          let rawUpdatedAt = '';
+          let rawFileBakUrl = '';
+          let rawFileHandoverAsoSalesUrl = '';
+          let rawFileHandoverSalesAdminUrl = '';
+          let rawNoTilang = '';
+          let rawTanggal = '';
+          let rawNamaBro = '';
+          let rawUploadDokPendukung = '';
+          let rawAlasanPendukung = '';
+          let rawTanggalHandover = '';
+          let rawAlasan = '';
+          let rawStatusApproval = '';
+          let rawApprovedBy = '';
+          let rawApprovedAt = '';
+          let rawApprovalNote = '';
+          let rawAppAtt1 = '';
+          let rawAppAtt2 = '';
+          let rawAppAtt3 = '';
+          let rawRegStatus = '';
+          let rawRegBy = '';
+          let rawRegAt = '';
+          let rawRegNote = '';
+          let rawDivStatus = '';
+          let rawDivBy = '';
+          let rawDivAt = '';
+          let rawDivNote = '';
+
+          if (isLegacyFormat) {
+            // Legacy 16-column layout
+            rawTanggal = getVal(objRow, arrRow, ['Tanggal', 'tanggal'], 0);
+            rawCategory = getVal(objRow, arrRow, ['Kategori', 'kategori', 'category'], 1);
+            rawBranch = getVal(objRow, arrRow, ['Cabang', 'cabang', 'branch'], 2);
+            rawCustomer = getVal(objRow, arrRow, ['Nama Customer', 'customer_name'], 3);
+            rawLicensePlate = getVal(objRow, arrRow, ['No Polisi', 'license_plate'], 4);
+            rawValue = getVal(objRow, arrRow, ['Nilai Backcharge', 'value'], 5);
+            rawNoBak = getVal(objRow, arrRow, ['No BAK', 'no_bak'], 6);
+            rawNoSpk = getVal(objRow, arrRow, ['No SPK', 'no_spk'], 7);
+            rawNoSap = getVal(objRow, arrRow, ['No SAP', 'no_sap'], 8);
+            rawNoTilang = getVal(objRow, arrRow, ['No Tilang', 'no_tilang'], 9);
+            rawNamaBro = getVal(objRow, arrRow, ['PIC', 'nama_bro'], 10);
+            rawAlasan = getVal(objRow, arrRow, ['Alasan', 'alasan'], 11);
+            rawNoInvoice = getVal(objRow, arrRow, ['No Invoice', 'no_invoice'], 13);
+            rawStatusPayment = getVal(objRow, arrRow, ['Status Bayar', 'status_payment'], 14);
+            rawStatusSap = getVal(objRow, arrRow, ['Status SAP (Bill/Not Bill/NA)', 'status_sap'], 15);
+          } else {
+            // Standard 42-column layout requested by user
+            id = getVal(objRow, arrRow, ['id'], 0);
+            rawCategory = getVal(objRow, arrRow, ['category', 'Kategori'], 1);
+            rawBranch = getVal(objRow, arrRow, ['branch', 'Cabang'], 2);
+            rawNoBak = getVal(objRow, arrRow, ['no_bak'], 3);
+            rawNoSpk = getVal(objRow, arrRow, ['no_spk'], 4);
+            rawNoSap = getVal(objRow, arrRow, ['no_sap'], 5);
+            rawCustomer = getVal(objRow, arrRow, ['customer_name'], 6);
+            rawLicensePlate = getVal(objRow, arrRow, ['license_plate'], 7);
+            rawValue = getVal(objRow, arrRow, ['value'], 8);
+            rawStatusSap = getVal(objRow, arrRow, ['status_sap'], 9);
+            rawStatusConfirm = getVal(objRow, arrRow, ['status_confirm'], 10);
+            rawStatusHandover = getVal(objRow, arrRow, ['status_handover'], 11);
+            rawNoInvoice = getVal(objRow, arrRow, ['no_invoice'], 12);
+            rawStatusPayment = getVal(objRow, arrRow, ['status_payment'], 13);
+            rawCreatedBy = getVal(objRow, arrRow, ['created_by'], 14);
+            rawCreatedAt = getVal(objRow, arrRow, ['created_at'], 15);
+            rawUpdatedAt = getVal(objRow, arrRow, ['updated_at'], 16);
+            rawFileBakUrl = getVal(objRow, arrRow, ['file_bak_url'], 17);
+            rawFileHandoverAsoSalesUrl = getVal(objRow, arrRow, ['file_handover_aso_sales_url'], 18);
+            rawFileHandoverSalesAdminUrl = getVal(objRow, arrRow, ['file_handover_sales_admin_url'], 19);
+            rawNoTilang = getVal(objRow, arrRow, ['no_tilang'], 20);
+            rawTanggal = getVal(objRow, arrRow, ['tanggal'], 21);
+            rawNamaBro = getVal(objRow, arrRow, ['nama_bro'], 22);
+            rawUploadDokPendukung = getVal(objRow, arrRow, ['upload_dok_pendukung'], 23);
+            rawAlasanPendukung = getVal(objRow, arrRow, ['alasan_pendukung'], 24);
+            rawTanggalHandover = getVal(objRow, arrRow, ['tanggal_handover'], 25);
+            rawAlasan = getVal(objRow, arrRow, ['alasan'], 26);
+            rawStatusApproval = getVal(objRow, arrRow, ['status_approval'], 27);
+            rawApprovedBy = getVal(objRow, arrRow, ['approved_by'], 28);
+            rawApprovedAt = getVal(objRow, arrRow, ['approved_at'], 29);
+            rawApprovalNote = getVal(objRow, arrRow, ['approval_note'], 30);
+            rawAppAtt1 = getVal(objRow, arrRow, ['approval_attachment_1_url'], 31);
+            rawAppAtt2 = getVal(objRow, arrRow, ['approval_attachment_2_url'], 32);
+            rawAppAtt3 = getVal(objRow, arrRow, ['approval_attachment_3_url'], 33);
+            rawRegStatus = getVal(objRow, arrRow, ['regional_approval_status'], 34);
+            rawRegBy = getVal(objRow, arrRow, ['regional_approved_by'], 35);
+            rawRegAt = getVal(objRow, arrRow, ['regional_approved_at'], 36);
+            rawRegNote = getVal(objRow, arrRow, ['regional_approval_note'], 37);
+            rawDivStatus = getVal(objRow, arrRow, ['division_approval_status'], 38);
+            rawDivBy = getVal(objRow, arrRow, ['division_approved_by'], 39);
+            rawDivAt = getVal(objRow, arrRow, ['division_approved_at'], 40);
+            rawDivNote = getVal(objRow, arrRow, ['division_approval_note'], 41);
+          }
+
+          if (!rawCustomer && !rawTanggal && !rawValue && !rawNoBak && !id) {
             // Skip completely empty row
             continue;
           }
 
-          // Clean and validate Tanggal
+          // Clean and format date
           let formattedDate = '';
           if (rawTanggal) {
-            // If Excel date was parsed as a number (serial number)
             if (!isNaN(Number(rawTanggal)) && Number(rawTanggal) > 20000 && Number(rawTanggal) < 60000) {
               try {
                 const dateObj = new Date((Number(rawTanggal) - 25569) * 86400 * 1000);
@@ -357,29 +558,13 @@ export default function DatabaseView({
               const cleanDateStr = rawTanggal.replace(/["']/g, '').trim();
               const partsSlash = cleanDateStr.split('/');
               const partsDash = cleanDateStr.split('-');
-              
               if (partsSlash.length === 3) {
                 const d = partsSlash[0].padStart(2, '0');
                 const m = partsSlash[1].padStart(2, '0');
                 const y = partsSlash[2];
-                if (y.length === 4) {
-                  formattedDate = `${y}-${m}-${d}`;
-                } else if (y.length === 2) {
-                  formattedDate = `20${y}-${m}-${d}`;
-                }
+                formattedDate = y.length === 4 ? `${y}-${m}-${d}` : `20${y}-${m}-${d}`;
               } else if (partsDash.length === 3) {
-                if (partsDash[0].length === 4) {
-                  formattedDate = cleanDateStr;
-                } else {
-                  const d = partsDash[0].padStart(2, '0');
-                  const m = partsDash[1].padStart(2, '0');
-                  const y = partsDash[2];
-                  if (y.length === 4) {
-                    formattedDate = `${y}-${m}-${d}`;
-                  } else {
-                    formattedDate = `20${y}-${m}-${d}`;
-                  }
-                }
+                formattedDate = partsDash[0].length === 4 ? cleanDateStr : `20${partsDash[2]}-${partsDash[1].padStart(2, '0')}-${partsDash[0].padStart(2, '0')}`;
               } else {
                 try {
                   const parsed = new Date(cleanDateStr);
@@ -390,16 +575,13 @@ export default function DatabaseView({
               }
             }
           }
-          
           if (!formattedDate) {
-            const today = new Date();
-            formattedDate = today.toISOString().split('T')[0];
+            formattedDate = new Date().toISOString().split('T')[0];
           }
-          
+
           // Kategori matching
           let matchedCategory: BackchargeCategory = 'Own Risk';
-          const cleanKategori = rawKategori.replace(/["']/g, '').trim().toLowerCase();
-          
+          const cleanKategori = rawCategory.replace(/["']/g, '').trim().toLowerCase();
           if (cleanKategori.includes('own') || cleanKategori.includes('risk')) matchedCategory = 'Own Risk';
           else if (cleanKategori.includes('maint') || cleanKategori.includes('perawatan')) matchedCategory = 'Maintenance';
           else if (cleanKategori.includes('ekspedisi') || cleanKategori.includes('exp')) matchedCategory = 'Ekspedisi';
@@ -407,10 +589,10 @@ export default function DatabaseView({
           else if (cleanKategori.includes('tpl') || cleanKategori.includes('third')) matchedCategory = 'TPL';
           else if (cleanKategori.includes('unclaim') || cleanKategori.includes('insurance')) matchedCategory = 'Unclaimable Insurance';
           else if (cleanKategori.includes('dokumen') || cleanKategori.includes('stnk') || cleanKategori.includes('kendaraan')) matchedCategory = 'Dokumen Kendaraan';
-          
+
           // Cabang matching
           let matchedBranch = MEGABRANCH_LIST[0];
-          const cleanCabang = rawCabang.replace(/["']/g, '').trim().toLowerCase();
+          const cleanCabang = rawBranch.replace(/["']/g, '').trim().toLowerCase();
           const foundBranch = ALL_SYSTEM_BRANCHES.find(b => b.toLowerCase() === cleanCabang);
           if (foundBranch) {
             matchedBranch = foundBranch;
@@ -418,170 +600,84 @@ export default function DatabaseView({
             matchedBranch = MEGABRANCH_LIST[0];
           } else {
             const partialBranch = ALL_SYSTEM_BRANCHES.find(b => cleanCabang.includes(b.toLowerCase()) || b.toLowerCase().includes(cleanCabang));
-            if (partialBranch) {
-              matchedBranch = partialBranch;
-            }
+            if (partialBranch) matchedBranch = partialBranch;
           }
-          
-          // Value parsing (Handling Indonesian / English number formats)
+
+          // Value parsing
           let cleanValueStr = String(rawValue).replace(/[^0-9.,-]/g, '');
-          
           if (cleanValueStr.includes(',') && cleanValueStr.includes('.')) {
-              // e.g. 1.000.000,50 or 1,000,000.50
-              const lastComma = cleanValueStr.lastIndexOf(',');
-              const lastDot = cleanValueStr.lastIndexOf('.');
-              if (lastComma > lastDot) {
-                  // Comma is decimal: 1.000.000,50
-                  cleanValueStr = cleanValueStr.replace(/\./g, '').replace(',', '.');
-              } else {
-                  // Dot is decimal: 1,000,000.50
-                  cleanValueStr = cleanValueStr.replace(/,/g, '');
-              }
+            const lastComma = cleanValueStr.lastIndexOf(',');
+            const lastDot = cleanValueStr.lastIndexOf('.');
+            cleanValueStr = lastComma > lastDot ? cleanValueStr.replace(/\./g, '').replace(',', '.') : cleanValueStr.replace(/,/g, '');
           } else if (cleanValueStr.includes(',')) {
-              // e.g. 1,000,000 or 1000,50
-              const parts = cleanValueStr.split(',');
-              if (parts[parts.length - 1].length === 3 && parts.length > 1) {
-                  // Likely thousands separator
-                  cleanValueStr = cleanValueStr.replace(/,/g, '');
-              } else {
-                  // Decimal
-                  cleanValueStr = cleanValueStr.replace(',', '.');
-              }
+            const parts = cleanValueStr.split(',');
+            cleanValueStr = (parts[parts.length - 1].length === 3 && parts.length > 1) ? cleanValueStr.replace(/,/g, '') : cleanValueStr.replace(',', '.');
           } else if (cleanValueStr.includes('.')) {
-              // e.g. 1.000.000 or 1000.50
-              const parts = cleanValueStr.split('.');
-              // If there are multiple dots, or the last part is exactly 3 digits, it's likely a thousands separator (IDR)
-              if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
-                  cleanValueStr = cleanValueStr.replace(/\./g, '');
-              }
+            const parts = cleanValueStr.split('.');
+            if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
+              cleanValueStr = cleanValueStr.replace(/\./g, '');
+            }
           }
           const parsedValue = Math.round(parseFloat(cleanValueStr)) || 0;
 
-          // Process the 8 workflow stages into database state fields
-          let status_handover = 'Pending';
-          let status_approval = 'Belum Approval';
-          let regional_approval_status = 'Belum Approval';
-          let division_approval_status = 'Belum Approval';
-          let status_payment = 'Belum Bayar';
-          let no_invoice = '-';
-
-          const cleanTahap = rawTahapProses.toLowerCase().trim();
-
-          if (cleanTahap.includes('berkas di aso') || cleanTahap.includes('input aso')) {
-            status_handover = 'Pending';
-            status_approval = 'Belum Approval';
-          } else if (cleanTahap.includes('berkas di admin')) {
-            status_handover = 'Diserahkan ke Admin';
-            status_approval = 'Belum Approval';
-          } else if (cleanTahap.includes('belum appr sh/kacab') || cleanTahap.includes('belum appr sh') || cleanTahap.includes('sh/kacab')) {
-            status_handover = 'Diserahkan ke Admin';
-            status_approval = 'Belum Approval';
-          } else if (cleanTahap.includes('belum appr regional head') || cleanTahap.includes('regional head') || cleanTahap.includes('regional')) {
-            status_handover = 'Diserahkan ke Admin';
-            status_approval = 'Disetujui';
-            regional_approval_status = 'Belum Approval';
-          } else if (cleanTahap.includes('belum appr division head') || cleanTahap.includes('division head') || cleanTahap.includes('division')) {
-            status_handover = 'Diserahkan ke Admin';
-            status_approval = 'Disetujui';
-            regional_approval_status = 'Disetujui';
-            division_approval_status = 'Belum Approval';
-          } else if (cleanTahap.includes('belum invoice') || cleanTahap.includes('blm invoice')) {
-            status_handover = 'Diserahkan ke Admin';
-            status_approval = 'Disetujui';
-            regional_approval_status = 'Disetujui';
-            division_approval_status = 'Disetujui';
-            no_invoice = '-';
-          } else if (cleanTahap.includes('kolektif bayar') || cleanTahap.includes('bayar') || cleanTahap.includes('lunas')) {
-            status_handover = 'Diserahkan ke Admin';
-            status_approval = 'Disetujui';
-            regional_approval_status = 'Disetujui';
-            division_approval_status = 'Disetujui';
-            no_invoice = rawNoInvoice && rawNoInvoice !== '-' && rawNoInvoice !== '' ? rawNoInvoice : 'INV-MASS-COLLECTIVE';
-          } else {
-            // Default based on values
-            if (rawNoInvoice && rawNoInvoice !== '-' && rawNoInvoice !== '') {
-              status_handover = 'Diserahkan ke Admin';
-              status_approval = 'Disetujui';
-              regional_approval_status = 'Disetujui';
-              division_approval_status = 'Disetujui';
-              no_invoice = rawNoInvoice;
-            }
-          }
-
-          // Override / refine with specific values if provided explicitly in the columns
-          if (rawNoInvoice && rawNoInvoice !== '-' && rawNoInvoice !== '') {
-            no_invoice = rawNoInvoice;
-            status_handover = 'Diserahkan ke Admin';
-            status_approval = 'Disetujui';
-            regional_approval_status = 'Disetujui';
-            division_approval_status = 'Disetujui';
-          }
-
-          const cleanStatusBayar = rawStatusBayar.toLowerCase().trim();
-          if (cleanStatusBayar.includes('lunas') || cleanStatusBayar.includes('paid')) {
-            status_payment = 'Lunas';
-            status_handover = 'Diterima Admin';
-            status_approval = 'Disetujui';
-            regional_approval_status = 'Disetujui';
-            division_approval_status = 'Disetujui';
-            if (no_invoice === '-') {
-              no_invoice = rawNoInvoice && rawNoInvoice !== '-' && rawNoInvoice !== '' ? rawNoInvoice : 'INV-MASS-COLLECTIVE';
-            }
-          } else if (cleanStatusBayar.includes('belum') || cleanStatusBayar.includes('outstanding') || cleanStatusBayar.includes('unpaid')) {
-            status_payment = 'Belum Bayar';
-          }
-          
-          // Parse status_sap (Bill / Not Bill / N/A)
-          let status_sap = 'N/A';
-          if (rawStatusSap) {
-            const cleanSap = rawStatusSap.toLowerCase().trim();
-            if (cleanSap === 'bill') {
-              status_sap = 'Bill';
-            } else if (cleanSap === 'not bill' || cleanSap === 'notbill') {
-              status_sap = 'Not Bill';
-            } else if (cleanSap === 'n/a' || cleanSap === 'na' || cleanSap === '-') {
-              status_sap = 'N/A';
-            } else {
-              status_sap = rawStatusSap;
-            }
-          }
-          
           const rowObj = {
+            id: id || undefined,
             tanggal: formattedDate,
             category: matchedCategory,
             branch: matchedBranch,
             customer_name: rawCustomer.replace(/["']/g, '').trim(),
-            license_plate: rawNoPolisi.replace(/["']/g, '').trim() || '-',
+            license_plate: rawLicensePlate.replace(/["']/g, '').trim() || '-',
             value: parsedValue,
             no_bak: rawNoBak.replace(/["']/g, '').trim() || '-',
             no_spk: rawNoSpk.replace(/["']/g, '').trim() || '-',
             no_sap: rawNoSap.replace(/["']/g, '').trim() || '-',
             no_tilang: rawNoTilang.replace(/["']/g, '').trim() || '-',
-            bro_name: rawBroker.replace(/["']/g, '').trim() || '-',
-            nama_bro: rawBroker.replace(/["']/g, '').trim() || '-',
+            bro_name: rawNamaBro.replace(/["']/g, '').trim() || '-',
+            nama_bro: rawNamaBro.replace(/["']/g, '').trim() || '-',
             alasan: rawAlasan.replace(/["']/g, '').trim() || '-',
-            dok_pendukung_alasan: rawAlasan.replace(/["']/g, '').trim() || '-',
-            status_sap,
-            status_confirm: 'Telah Dikonfirmasi',
-            status_handover,
-            status_approval,
-            regional_approval_status,
-            division_approval_status,
-            status_payment,
-            no_invoice,
+            alasan_pendukung: rawAlasanPendukung.replace(/["']/g, '').trim() || '-',
+            upload_dok_pendukung: rawUploadDokPendukung.replace(/["']/g, '').trim() || '',
+            dok_pendukung_alasan: rawAlasanPendukung || rawAlasan || '-',
+            tanggal_handover: rawTanggalHandover.replace(/["']/g, '').trim() || undefined,
+            status_sap: rawStatusSap || 'N/A',
+            status_confirm: rawStatusConfirm || 'Telah Dikonfirmasi',
+            status_handover: rawStatusHandover || 'Pending',
+            status_approval: rawStatusApproval || 'Belum Approval',
+            approved_by: rawApprovedBy || undefined,
+            approved_at: rawApprovedAt || undefined,
+            approval_note: rawApprovalNote || undefined,
+            approval_attachment_1_url: rawAppAtt1 || undefined,
+            approval_attachment_2_url: rawAppAtt2 || undefined,
+            approval_attachment_3_url: rawAppAtt3 || undefined,
+            regional_approval_status: rawRegStatus || 'Belum Approval',
+            regional_approved_by: rawRegBy || undefined,
+            regional_approved_at: rawRegAt || undefined,
+            regional_approval_note: rawRegNote || undefined,
+            division_approval_status: rawDivStatus || 'Belum Approval',
+            division_approved_by: rawDivBy || undefined,
+            division_approved_at: rawDivAt || undefined,
+            division_approval_note: rawDivNote || undefined,
+            status_payment: rawStatusPayment || 'Belum Bayar',
+            no_invoice: rawNoInvoice || '-',
+            created_by: rawCreatedBy || undefined,
+            created_at: rawCreatedAt || undefined,
+            updated_at: rawUpdatedAt || undefined,
+            file_bak_url: rawFileBakUrl || undefined,
+            file_handover_aso_sales_url: rawFileHandoverAsoSalesUrl || undefined,
+            file_handover_sales_admin_url: rawFileHandoverSalesAdminUrl || undefined,
             errors: [] as string[]
           };
-          
+
           if (!rowObj.customer_name) {
             rowObj.errors.push('Nama Customer wajib diisi');
           }
           if (rowObj.value <= 0) {
             rowObj.errors.push('Nilai Backcharge harus > 0');
           }
-          
+
           resultList.push(rowObj);
         }
-        
+
         setBulkImportList(resultList);
         setBulkImportError(null);
       } catch (err: any) {
@@ -601,22 +697,27 @@ export default function DatabaseView({
     }
 
     setIsProcessingImport(true);
+    setImportProgress({ current: 0, total: bulkImportList.length });
     try {
       const payload = bulkImportList.map(item => {
         const { errors, ...cleanItem } = item;
         return cleanItem;
       });
 
-      await onBulkAddTransactions(payload);
+      await onBulkAddTransactions(payload, (current, total) => {
+        setImportProgress({ current, total });
+      });
       
       setBulkImportList([]);
       setShowBulkImportModal(false);
+      setImportProgress(null);
       if (addToast) addToast(`Berhasil mengimpor ${payload.length} data Backcharge!`, 'success');
     } catch (err: any) {
       setBulkImportError(err.message || 'Gagal melakukan import massal.');
       if (addToast) addToast('Gagal melakukan import massal: ' + err.message, 'error');
     } finally {
       setIsProcessingImport(false);
+      setImportProgress(null);
     }
   };
 
@@ -2130,8 +2231,10 @@ export default function DatabaseView({
                 onChange={(e) => setPageSize(Number(e.target.value))}
                 className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-slate-700 font-extrabold focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
               >
-                {[5, 10, 15, 25, 50].map(size => (
-                  <option key={size} value={size}>{size} data</option>
+                {[10, 25, 50, 100, 250, 500, 1000, 5000, 999999].map(size => (
+                  <option key={size} value={size}>
+                    {size === 999999 ? 'Semua Data' : `${size.toLocaleString('id-ID')} data`}
+                  </option>
                 ))}
               </select>
               <span className="text-slate-400 font-medium">
@@ -2925,6 +3028,36 @@ export default function DatabaseView({
                 </div>
               </div>
 
+              {/* Loading Progress State */}
+              {isProcessingImport && importProgress && (
+                <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl shadow-sm space-y-2.5 animate-fadeIn">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-600 flex-shrink-0" />
+                      <span className="text-xs font-black text-slate-800">
+                        Mengimpor Data Backcharge...
+                      </span>
+                    </div>
+                    <span className="text-xs font-black text-blue-700 bg-blue-100 px-2.5 py-1 rounded-full">
+                      {importProgress.current} dari {importProgress.total} Data ({Math.round((importProgress.current / (importProgress.total || 1)) * 100)}%)
+                    </span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="w-full bg-slate-200/80 rounded-full h-3 overflow-hidden p-0.5">
+                    <div 
+                      className="bg-gradient-to-r from-blue-600 to-indigo-600 h-2 rounded-full transition-all duration-200 ease-out shadow-sm"
+                      style={{ width: `${Math.min(100, Math.max(0, Math.round((importProgress.current / (importProgress.total || 1)) * 100)))}%` }}
+                    />
+                  </div>
+
+                  <div className="flex justify-between items-center text-[10px] text-slate-500 font-semibold pt-0.5">
+                    <span>Sedang menyimpan data ke database... Mohon tunggu hingga selesai.</span>
+                    <span className="font-extrabold text-blue-800">{importProgress.current} / {importProgress.total} Baris</span>
+                  </div>
+                </div>
+              )}
+
               {/* Error Parsed State */}
               {bulkImportError && (
                 <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs rounded-xl font-medium flex items-center space-x-2">
@@ -3082,7 +3215,9 @@ export default function DatabaseView({
                 {isProcessingImport ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Mengimpor {bulkImportList.length} Data...</span>
+                    <span>
+                      Mengimpor {importProgress ? `${importProgress.current}/${importProgress.total}` : bulkImportList.length} Data...
+                    </span>
                   </>
                 ) : (
                   <>

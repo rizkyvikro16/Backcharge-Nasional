@@ -6,12 +6,17 @@ import { google } from "googleapis";
 import { Readable } from "stream";
 import dotenv from "dotenv";
 import fs from "fs";
+import { queryD1, ensureD1TablesExist, importFullMigrationFile } from "./src/cloudflareD1Client";
 
 dotenv.config();
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // Middleware to parse incoming JSON bodies for database queries
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
   // Pastikan folder uploads tersedia secara lokal
   const uploadsDir = path.join(process.cwd(), "uploads");
@@ -174,6 +179,70 @@ async function startServer() {
       } catch {
         return res.status(500).json({ error: err.message || "Internal Server Error" });
       }
+    }
+  });
+
+  // ==========================================
+  // CLOUDFLARE D1 SECURE DATABASE GATEWAY API
+  // ==========================================
+  
+  // 1. Get D1 Configuration status and test authentication
+  app.get("/api/d1/status", async (req, res) => {
+    const isConfigured = !!(
+      process.env.CLOUDFLARE_ACCOUNT_ID &&
+      process.env.CLOUDFLARE_DATABASE_ID &&
+      process.env.CLOUDFLARE_API_TOKEN
+    );
+    if (!isConfigured) {
+      return res.json({ configured: false, authorized: false });
+    }
+    try {
+      // Test the credentials with a rapid lightweight D1 SQL query
+      await queryD1("SELECT 1");
+      res.json({ configured: true, authorized: true });
+    } catch (err: any) {
+      console.warn("⚠️ Cloudflare D1 is configured but unauthorized/invalid:", err.message);
+      res.json({ configured: true, authorized: false, error: err.message });
+    }
+  });
+
+  // 1b. Trigger manual migration / full dataset migration
+  app.post("/api/d1/migrate", async (req, res) => {
+    try {
+      await ensureD1TablesExist();
+      res.json({ success: true, message: "Migrasi skema tabel Cloudflare D1 selesai dijalankan." });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
+  // 1c. Execute full SQL migration dump (all 2,125+ data rows) directly into Cloudflare D1
+  app.post("/api/d1/import-sql", async (req, res) => {
+    try {
+      const result = await importFullMigrationFile();
+      res.json({ 
+        success: true, 
+        message: `Berhasil mengimpor seluruh ${result.totalStatements} pernyataan/data SQL ke Cloudflare D1 dalam ${result.executedBatches} batch!`,
+        ...result 
+      });
+    } catch (err: any) {
+      console.error("❌ Gagal mengimpor SQL ke D1:", err);
+      res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
+  // 2. Secure dynamic SQL execution gateway on D1
+  app.post("/api/d1/query", async (req, res) => {
+    try {
+      const { sql, params } = req.body;
+      if (!sql) {
+        return res.status(400).json({ error: "Kueri SQL diperlukan" });
+      }
+      const results = await queryD1(sql, params || []);
+      res.json({ success: true, results });
+    } catch (err: any) {
+      console.error("❌ Error di gateway /api/d1/query:", err.message);
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
