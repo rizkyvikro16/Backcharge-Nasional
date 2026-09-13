@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Key, Mail, User, MapPin, UserCheck, Eye, EyeOff, CheckSquare, Square } from 'lucide-react';
 import { Profile, UserRole, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, WEST_BRANCHES, CENTRAL_BRANCHES, EAST_BRANCHES, isRegionalHeadRole } from '../types';
-import { supabase, isSupabaseConfigured, mockDb } from '../supabaseClient';
+import { mockDb } from '../supabaseClient';
+import { getApiUrl } from '../lib/api';
+const isSupabaseConfigured = false;
+const supabase = null as any;
 
 interface AuthScreenProps {
   onLoginSuccess: (profile: Profile) => void;
@@ -94,7 +97,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
     if (isD1Active) {
       try {
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
@@ -292,7 +295,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
     if (isD1Active) {
       try {
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })

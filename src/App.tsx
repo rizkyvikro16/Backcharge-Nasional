@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Key, Mail, Layers, CheckCircle, Clock, AlertTriangle, BarChart3, 
-  Download, FileSpreadsheet, RefreshCw, LogOut, Bell, Shield, Users, Landmark, UserCheck
+  Download, FileSpreadsheet, RefreshCw, LogOut, Bell, Shield, Users, Landmark, UserCheck, X
 } from 'lucide-react';
 
 import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, hasRole, isRegionalHeadRole, ALL_SYSTEM_BRANCHES } from './types';
-import { supabase, isSupabaseConfigured, mockDb } from './supabaseClient';
+import { mockDb } from './supabaseClient';
+const isSupabaseConfigured = false;
+const supabase = null as any;
 
 import AuthScreen from './components/AuthScreen';
 import Dashboard from './components/Dashboard';
@@ -15,6 +17,7 @@ import DetailModal from './components/DetailModal';
 import UserManagement from './components/UserManagement';
 import AuditView from './components/AuditView';
 import FeedbackView from './components/FeedbackView';
+import { getApiUrl } from './lib/api';
 
 // Helper functions to pack and unpack extra fields into/from no_bak text field as fallback for Supabase databases without schema updates
 function packExtraFields(tx: any): string {
@@ -556,6 +559,7 @@ export default function App() {
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' | 'info' }[]>([]);
   const [sidebarHover, setSidebarHover] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showD1Banner, setShowD1Banner] = useState(true);
 
   const [isD1Active, setIsD1Active] = useState<boolean>(() => {
     return localStorage.getItem('backcharge_use_d1') === 'true';
@@ -566,7 +570,7 @@ export default function App() {
   const runD1Migration = async () => {
     setMigratingD1(true);
     try {
-      const res = await fetch("/api/d1/migrate", { method: "POST" });
+      const res = await fetch(getApiUrl("/api/d1/migrate"), { method: "POST" });
       const data = await res.json();
       if (data.success) {
         addToast(data.message || "Migrasi berhasil!", "success");
@@ -588,7 +592,7 @@ export default function App() {
     setMigratingD1(true);
     try {
       addToast("Memulai pengimporan 100% data SQL (2.125+ Data) ke Cloudflare D1...", "info");
-      const res = await fetch("/api/d1/import-sql", { method: "POST" });
+      const res = await fetch(getApiUrl("/api/d1/import-sql"), { method: "POST" });
       const data = await res.json();
       if (data.success) {
         addToast(data.message || "Pengimporan 100% data SQL selesai!", "success");
@@ -606,11 +610,33 @@ export default function App() {
     }
   };
 
+  const runD1LiveSyncFromSupabase = async () => {
+    setMigratingD1(true);
+    try {
+      addToast("Memulai pemindahan & sinkronisasi 100% data langsung dari Supabase ke Cloudflare D1...", "info");
+      const res = await fetch(getApiUrl("/api/d1/sync-from-supabase"), { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        addToast(data.message || "Sinkronisasi langsung dari Supabase ke D1 sukses!", "success");
+        setD1Error(null);
+        setIsD1Active(true);
+        try { localStorage.setItem('backcharge_use_d1', 'true'); } catch {}
+        fetchData();
+      } else {
+        addToast(`Gagal sinkronisasi data: ${data.error}`, "error");
+      }
+    } catch (e: any) {
+      addToast(`Error: ${e.message}`, "error");
+    } finally {
+      setMigratingD1(false);
+    }
+  };
+
   // Query D1 Configuration Status from our secure Express backend on mount
   useEffect(() => {
     const checkD1Status = async () => {
       try {
-        const response = await fetch('/api/d1/status');
+        const response = await fetch(getApiUrl('/api/d1/status'));
         const data = await response.json();
         if (data.configured && data.authorized !== false) {
           setIsD1Active(true);
@@ -698,7 +724,7 @@ export default function App() {
         }
 
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
@@ -751,12 +777,12 @@ export default function App() {
               return allRows;
             };
 
-            const [bcs, logsData, profilesData, inquiriesData] = await Promise.all([
-              fetchAllBackchargesFromD1(backchargesQuery),
-              executeD1Query(logsQuery),
-              hasRole(currentUser?.role, 'Administrator') ? executeD1Query(profilesQuery) : Promise.resolve([]),
-              executeD1Query(inquiriesQuery)
-            ]);
+            const bcs = await fetchAllBackchargesFromD1(backchargesQuery);
+            const logsData = await executeD1Query(logsQuery);
+            const profilesData = hasRole(currentUser?.role, 'Administrator')
+              ? await executeD1Query(profilesQuery)
+              : [];
+            const inquiriesData = await executeD1Query(inquiriesQuery);
 
             const unpackedTxs = bcs.map(unpackExtraFields);
             setTransactions(unpackedTxs as Backcharge[]);
@@ -1289,7 +1315,7 @@ export default function App() {
         });
 
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
@@ -1550,17 +1576,27 @@ export default function App() {
       try {
         const cleanedPayloads = preparedTxs.map(tx => cleanSupabasePayload(tx));
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
           });
-          const d = await res.json();
+          const text = await res.text();
+          let d;
+          try {
+            d = JSON.parse(text);
+          } catch (e) {
+            throw new Error(`API Endpoint returned non-JSON (${res.status}): ${text.substring(0, 100)}...`);
+          }
           if (!d.success) throw new Error(d.error);
           return d.results;
         };
 
-        const batchSize = 50;
+        const firstRowColumns = Object.keys(cleanedPayloads[0] || {});
+        // SQLite limits the total number of bound variables in a single SQL statement.
+        const maxSqlVariables = 90;
+        const batchSize = Math.max(1, Math.floor(maxSqlVariables / (firstRowColumns.length || 1)));
+        
         let currentCount = 0;
         const totalCount = cleanedPayloads.length;
         if (onProgress) onProgress(0, totalCount);
@@ -1592,7 +1628,35 @@ export default function App() {
             ON CONFLICT(id) DO UPDATE SET ${updateAssigns}
           `;
 
-          await executeD1Query(sql, params);
+          try {
+            await executeD1Query(sql, params);
+          } catch (e: any) {
+            if (e.message?.includes("SQLITE_TOOBIG") || String(e).includes("SQLITE_TOOBIG")) {
+              console.warn("⚠️ Batch insert failed with SQLITE_TOOBIG. Retrying row-by-row...");
+              for (const tx of batch) {
+                const singleSql = `
+                  INSERT INTO backcharges (${columns.join(', ')}) 
+                  VALUES (${columns.map(() => '?').join(', ')}) 
+                  ON CONFLICT(id) DO UPDATE SET ${updateAssigns}
+                `;
+                let singleParams = columns.map(col => tx[col] !== undefined && tx[col] !== null ? tx[col] : null);
+                
+                try {
+                  await executeD1Query(singleSql, singleParams);
+                } catch (err2: any) {
+                  if (err2.message?.includes("SQLITE_TOOBIG") || String(err2).includes("SQLITE_TOOBIG")) {
+                     console.warn(`❌ Single row insert failed with SQLITE_TOOBIG. Truncating large text fields for row...`);
+                     singleParams = singleParams.map(val => (typeof val === 'string' && val.length > 50000) ? val.substring(0, 50000) + "... [TRUNCATED DUE TO CLOUDFLARE D1 SIZE LIMIT]" : val);
+                     await executeD1Query(singleSql, singleParams);
+                  } else {
+                     throw err2;
+                  }
+                }
+              }
+            } else {
+              throw e;
+            }
+          }
 
           currentCount = Math.min(i + batch.length, totalCount);
           if (onProgress) onProgress(currentCount, totalCount);
@@ -1704,7 +1768,7 @@ export default function App() {
         });
 
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
@@ -1811,7 +1875,7 @@ export default function App() {
     if (isD1Active) {
       try {
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
@@ -1874,7 +1938,7 @@ export default function App() {
     if (isD1Active) {
       try {
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
@@ -1938,7 +2002,7 @@ export default function App() {
     if (isD1Active) {
       try {
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
@@ -1994,7 +2058,7 @@ export default function App() {
     if (isD1Active) {
       try {
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
@@ -2065,7 +2129,7 @@ export default function App() {
     if (isD1Active) {
       try {
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
@@ -2115,7 +2179,7 @@ export default function App() {
     if (isD1Active) {
       try {
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
@@ -2193,7 +2257,7 @@ export default function App() {
     if (isD1Active) {
       try {
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
@@ -2273,7 +2337,7 @@ export default function App() {
     if (isD1Active) {
       try {
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch("/api/d1/query", {
+          const res = await fetch(getApiUrl("/api/d1/query"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
@@ -2478,17 +2542,6 @@ export default function App() {
             </>
           )}
         </nav>
-
-        {/* Bottom logout */}
-        <div className="p-3 border-t border-slate-800 flex-shrink-0 h-16 flex items-center">
-          <button 
-            onClick={handleLogout}
-            className="w-full flex items-center justify-start space-x-3 py-2.5 px-3 rounded-xl bg-red-950/20 hover:bg-red-900/40 text-xs font-bold text-red-400 transition-all border border-red-950/50"
-          >
-            <LogOut className="w-4 h-4 flex-shrink-0" />
-            <span className={`transition-all duration-200 ${sidebarHover ? 'opacity-100' : 'opacity-0 hidden'}`}>Logout Portal</span>
-          </button>
-        </div>
       </aside>
 
       {/* 3. MOBILE BOTTOM FIXED BAR (ACCESSIBILITY FOR MOBILE PHONES) */}
@@ -2664,13 +2717,14 @@ export default function App() {
               )}
             </div>
 
-            {/* Mobile logout */}
+            {/* Logout Portal */}
             <button 
               onClick={handleLogout}
-              className="md:hidden p-2 text-red-500 hover:bg-red-50 rounded-xl transition-all border border-red-50"
+              className="p-2 md:px-3 text-red-500 hover:bg-red-50 hover:border-red-100 rounded-xl transition-all border border-transparent flex items-center space-x-1.5"
               title="Keluar"
             >
               <LogOut className="w-4 h-4" />
+              <span className="hidden md:inline text-xs font-bold">Logout Portal</span>
             </button>
           </div>
         </header>
@@ -2702,6 +2756,20 @@ export default function App() {
                 </div>
               </div>
               <div className="flex flex-wrap justify-end gap-2 pt-2">
+                <button
+                  disabled={migratingD1}
+                  onClick={runD1LiveSyncFromSupabase}
+                  className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 text-xs font-bold rounded-xl transition-all shadow-sm flex items-center space-x-1"
+                >
+                  {migratingD1 ? (
+                    <>
+                      <RefreshCw className="w-3 h-3 animate-spin mr-1" />
+                      <span>Sedang Sinkronisasi...</span>
+                    </>
+                  ) : (
+                    <span>Sinkronkan Langsung dari Supabase (6.000+ Data)</span>
+                  )}
+                </button>
                 <button
                   disabled={migratingD1}
                   onClick={runD1FullSqlImport}
@@ -2744,6 +2812,66 @@ export default function App() {
             <div className="p-4 bg-blue-50 border border-blue-100 text-blue-700 text-xs rounded-xl flex items-center space-x-2 animate-pulse justify-center">
               <RefreshCw className="w-4 h-4 animate-spin" />
               <span>Menyelaraskan data real-time dengan database...</span>
+            </div>
+          )}
+
+          {/* Cloudflare D1 Connection & Direct Sync Control Panel for Administrators */}
+          {currentUser && hasRole(currentUser.role, 'Administrator') && showD1Banner && (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 relative">
+              <button 
+                onClick={() => setShowD1Banner(false)}
+                className="absolute top-2 right-2 p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors"
+                title="Tutup Status Database"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <div className="space-y-1 pr-8">
+                <div className="flex items-center space-x-2">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isD1Active ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
+                    <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isD1Active ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                  </span>
+                  <h4 className="text-sm font-black text-white">
+                    Status Database: {isD1Active ? 'Cloudflare D1 Aktif (Real-time)' : 'Mode Cadangan Offline (Local)'}
+                  </h4>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-normal max-w-2xl">
+                  {isD1Active 
+                    ? 'Aplikasi berjalan lancar di atas database cloud performa tinggi Cloudflare D1. Sinkronisasi data real-time aktif.' 
+                    : 'Koneksi ke D1 cloud saat ini nonaktif/timeout. Sistem secara otomatis menggunakan memori browser lokal agar operasional tidak terganggu.'}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                <button
+                  id="btn-sync-supabase-d1"
+                  disabled={migratingD1}
+                  onClick={runD1LiveSyncFromSupabase}
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-xs font-bold text-white rounded-xl transition-all shadow-lg shadow-blue-500/10 flex items-center space-x-1.5 cursor-pointer"
+                  title="Ambil seluruh data massal terbaru dari Supabase dan masukkan langsung ke Cloudflare D1 tanpa terminal"
+                >
+                  {migratingD1 ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" />
+                      <span>Sedang Menyinkronkan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Sinkronkan Langsung dari Supabase (6.000+ Data)</span>
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  id="btn-check-d1-schema"
+                  disabled={migratingD1}
+                  onClick={runD1Migration}
+                  className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-xs font-bold text-slate-300 rounded-xl transition-all border border-slate-700 cursor-pointer"
+                  title="Memastikan skema tabel D1 lengkap dan up-to-date"
+                >
+                  <span>Periksa Skema D1</span>
+                </button>
+              </div>
             </div>
           )}
 

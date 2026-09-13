@@ -7,6 +7,8 @@
  * 3. Client OAuth 2.0 (Login menggunakan akun Google pribadi pengguna)
  */
 
+import { getApiUrl } from './api';
+
 // Helper untuk mengubah File/Blob menjadi Base64 string
 const toBase64 = (file: File | Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -157,7 +159,7 @@ export const uploadFileToDrive = async (
       const formData = new FormData();
       formData.append('file', file, filename);
 
-      const response = await fetch('/api/upload-to-drive', {
+      const response = await fetch(getApiUrl('/api/upload-to-drive'), {
         method: 'POST',
         body: formData
       });

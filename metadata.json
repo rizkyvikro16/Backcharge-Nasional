@@ -1,6 +1,6 @@
 {
   "name": "Sistem Backcharge Nasional",
-  "description": "Sistem workflow denda (backcharge) nasional dengan pelacakan dokumen fisik, upload file BAK/foto serah terima, dashboard progres harian, dan sinkronisasi data real-time dengan Supabase.",
+  "description": "Sistem workflow denda (backcharge) nasional dengan pelacakan dokumen fisik, upload file BAK/foto serah terima, dashboard progres harian, dan sinkronisasi data real-time dengan Cloudflare D1.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

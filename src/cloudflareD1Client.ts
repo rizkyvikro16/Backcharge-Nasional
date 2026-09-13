@@ -18,6 +18,7 @@ export interface D1QueryResponse {
 }
 
 let activeMigrationPromise: Promise<void> | null = null;
+let queryQueuePromise: Promise<any> = Promise.resolve();
 
 /**
  * Ensures all required D1 tables are created and seeded if missing.
@@ -277,6 +278,7 @@ export async function importFullMigrationFile(filePath?: string): Promise<{ tota
 
 /**
  * Direct query execution without retry-safety guards.
+ * Grabs raw text first to avoid JSON parse errors on "Rate exceeded." html/plain response.
  */
 async function queryD1Direct(sql: string, params: any[] = []): Promise<any[]> {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID || '';
@@ -303,7 +305,24 @@ async function queryD1Direct(sql: string, params: any[] = []): Promise<any[]> {
     })
   });
 
-  const data: any = await response.json();
+  const text = await response.text();
+
+  if (!response.ok) {
+    if (text.includes("Rate exceeded") || text.includes("rate limit") || response.status === 429) {
+      throw new Error("Rate exceeded. Cloudflare D1 is rate limiting concurrent queries.");
+    }
+    throw new Error(`Cloudflare D1 API Error ${response.status}: ${text}`);
+  }
+
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch (parseErr: any) {
+    if (text.includes("Rate exceeded")) {
+      throw new Error("Rate exceeded. Cloudflare D1 is rate limiting concurrent queries.");
+    }
+    throw new Error(`Gagal memuat JSON dari Cloudflare D1: ${text}`);
+  }
 
   if (!data.success) {
     const errorMsg = data.errors?.[0]?.message || "Gagal mengeksekusi kueri di Cloudflare D1.";
@@ -315,13 +334,23 @@ async function queryD1Direct(sql: string, params: any[] = []): Promise<any[]> {
 }
 
 /**
- * Execute a SQL query on your Cloudflare D1 database with self-healing retry guard for missing tables.
+ * Executes a SQL query with rate-limit self-healing retry guard and exponential backoff delay.
  */
-export async function queryD1(sql: string, params: any[] = []): Promise<any[]> {
+async function queryD1WithRetry(sql: string, params: any[] = [], attempt = 1): Promise<any[]> {
   try {
     return await queryD1Direct(sql, params);
   } catch (err: any) {
     const errText = String(err.message || err).toLowerCase();
+    
+    // Auto-retry on Rate exceeded / Rate limits with jittered backoff
+    const isRateLimit = errText.includes("rate limit") || errText.includes("rate exceeded") || errText.includes("too many requests");
+    if (isRateLimit && attempt <= 5) {
+      const delayMs = attempt * 350 + Math.random() * 200;
+      console.warn(`⚠️ Cloudflare D1 Rate Limit detected. Retrying query (attempt ${attempt}/5) in ${Math.round(delayMs)}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      return queryD1WithRetry(sql, params, attempt + 1);
+    }
+
     if (
       errText.includes("no such table") ||
       errText.includes("no such column") ||
@@ -340,6 +369,20 @@ export async function queryD1(sql: string, params: any[] = []): Promise<any[]> {
     console.error("❌ [CLOUDFLARE D1 ERROR]:", err.message || err);
     throw err;
   }
+}
+
+/**
+ * Execute a SQL query on your Cloudflare D1 database.
+ * Thread-safe for concurrent database requests across different API gateways using a global queue.
+ */
+export async function queryD1(sql: string, params: any[] = []): Promise<any[]> {
+  // Use a global queue to serialize D1 execution and prevent Rate exceeded issues
+  const nextInQueue = () => queryD1WithRetry(sql, params);
+  
+  const resultPromise = queryQueuePromise.then(nextInQueue, nextInQueue);
+  queryQueuePromise = resultPromise.catch(() => {}); // keep queue moving forward
+  
+  return resultPromise;
 }
 
 /**

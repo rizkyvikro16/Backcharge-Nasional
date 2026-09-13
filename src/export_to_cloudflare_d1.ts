@@ -98,11 +98,43 @@ async function runMigrationExport() {
     return `'${escaped}'`;
   };
 
+  // Helper function to fetch all rows using range pagination (bypasses Supabase 1,000/3,000 limit)
+  const fetchAllFromSupabase = async (table: string): Promise<any[]> => {
+    let allData: any[] = [];
+    let start = 0;
+    const limit = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      console.log(`   └─ Mengambil data ${table} baris ${start} sampai ${start + limit - 1}...`);
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .range(start, start + limit - 1);
+        
+      if (error) {
+        throw error;
+      }
+      
+      if (data && data.length > 0) {
+        allData = [...allData, ...data];
+        if (data.length < limit) {
+          hasMore = false;
+        } else {
+          start += limit;
+        }
+      } else {
+        hasMore = false;
+      }
+    }
+    console.log(`   └─ Sukses mengambil total ${allData.length} baris dari ${table}.`);
+    return allData;
+  };
+
   try {
     // 2. Fetch Profiles
     console.log('⏳ Mengekspor tabel `profiles`...');
-    const { data: profiles, error: pErr } = await supabase.from('profiles').select('*');
-    if (pErr) throw pErr;
+    const profiles = await fetchAllFromSupabase('profiles');
     if (profiles && profiles.length > 0) {
       sqlDump += `-- DATA: profiles (${profiles.length} baris)\n`;
       for (const item of profiles) {
@@ -116,8 +148,7 @@ async function runMigrationExport() {
 
     // 3. Fetch Backcharges
     console.log('⏳ Mengekspor tabel `backcharges`...');
-    const { data: backcharges, error: bErr } = await supabase.from('backcharges').select('*');
-    if (bErr) throw bErr;
+    const backcharges = await fetchAllFromSupabase('backcharges');
     if (backcharges && backcharges.length > 0) {
       sqlDump += `-- DATA: backcharges (${backcharges.length} baris)\n`;
       for (const item of backcharges) {
@@ -145,8 +176,7 @@ async function runMigrationExport() {
 
     // 4. Fetch Activity Logs
     console.log('⏳ Mengekspor tabel `activity_logs`...');
-    const { data: logs, error: lErr } = await supabase.from('activity_logs').select('*');
-    if (lErr) throw lErr;
+    const logs = await fetchAllFromSupabase('activity_logs');
     if (logs && logs.length > 0) {
       sqlDump += `-- DATA: activity_logs (${logs.length} baris)\n`;
       for (const item of logs) {
@@ -161,8 +191,7 @@ async function runMigrationExport() {
     // 5. Fetch Contact Inquiries
     console.log('⏳ Mengekspor tabel `contact_inquiries`...');
     try {
-      const { data: inquiries, error: cErr } = await supabase.from('contact_inquiries').select('*');
-      if (cErr) throw cErr;
+      const inquiries = await fetchAllFromSupabase('contact_inquiries');
       if (inquiries && inquiries.length > 0) {
         sqlDump += `-- DATA: contact_inquiries (${inquiries.length} baris)\n`;
         for (const item of inquiries) {
