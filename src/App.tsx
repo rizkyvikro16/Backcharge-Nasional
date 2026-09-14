@@ -561,7 +561,13 @@ export default function App() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showD1Banner, setShowD1Banner] = useState(true);
 
+  const isWorkerHost = typeof window !== 'undefined' && (
+    window.location.hostname.includes("workers.dev") ||
+    window.location.hostname.includes("pages.dev")
+  );
+
   const [isD1Active, setIsD1Active] = useState<boolean>(() => {
+    if (isWorkerHost) return true;
     return localStorage.getItem('backcharge_use_d1') !== 'false';
   });
   const [d1Error, setD1Error] = useState<string | null>(null);
@@ -827,20 +833,22 @@ export default function App() {
         addToast(`Gagal memuat Cloudflare D1: ${err.message}`, 'error');
         setD1Error(err.message || String(err));
         
-        // Auto-fallback to offline/local mode so the app remains completely functional
-        setIsD1Active(false);
-        setTimeout(() => {
-          let bcs = mockDb.getBackcharges();
-          if (currentUser && currentUser.branch !== 'Nasional') {
-            const userBranches = getUserBranches(currentUser.branch);
-            bcs = bcs.filter(t => userBranches.includes(t.branch));
-          }
-          const unpackedData = bcs.map(unpackExtraFields);
-          setTransactions(unpackedData as Backcharge[]);
-          setLogs(mockDb.getLogs());
-          setProfiles(mockDb.getProfiles());
-          setInquiries(mockDb.getContactInquiries());
-        }, 50);
+        // Auto-fallback to offline/local mode only if not running on Cloudflare Workers/Pages
+        if (!isWorkerHost) {
+          setIsD1Active(false);
+          setTimeout(() => {
+            let bcs = mockDb.getBackcharges();
+            if (currentUser && currentUser.branch !== 'Nasional') {
+              const userBranches = getUserBranches(currentUser.branch);
+              bcs = bcs.filter(t => userBranches.includes(t.branch));
+            }
+            const unpackedData = bcs.map(unpackExtraFields);
+            setTransactions(unpackedData as Backcharge[]);
+            setLogs(mockDb.getLogs());
+            setProfiles(mockDb.getProfiles());
+            setInquiries(mockDb.getContactInquiries());
+          }, 50);
+        }
       } finally {
         setLoading(false);
       }

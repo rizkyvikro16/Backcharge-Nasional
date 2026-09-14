@@ -93,7 +93,11 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
 
     const emailTrim = email.trim().toLowerCase();
     
-    const isD1Active = localStorage.getItem('backcharge_use_d1') !== 'false';
+    const isWorkerHost = typeof window !== 'undefined' && (
+      window.location.hostname.includes("workers.dev") ||
+      window.location.hostname.includes("pages.dev")
+    );
+    const isD1Active = isWorkerHost || localStorage.getItem('backcharge_use_d1') !== 'false';
     if (isD1Active) {
       try {
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
