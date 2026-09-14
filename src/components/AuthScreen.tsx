@@ -114,6 +114,19 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
 
         if (dbProfiles && dbProfiles.length > 0) {
           const dbProfile = dbProfiles[0];
+          
+          // Self-healing: Enforce Administrator role for default admin emails
+          const isDefaultAdmin = emailTrim === 'administrator@assa.id' || emailTrim === 'assa@assa.id' || emailTrim.startsWith('administrator@') || emailTrim.startsWith('admin@assa');
+          if (isDefaultAdmin && (dbProfile.role !== 'Administrator' || dbProfile.branch !== 'Nasional')) {
+            dbProfile.role = 'Administrator';
+            dbProfile.branch = 'Nasional';
+            dbProfile.full_name = 'ASSA';
+            await executeD1Query(
+              "UPDATE profiles SET role = 'Administrator', branch = 'Nasional', full_name = 'ASSA' WHERE LOWER(email) = ?",
+              [emailTrim]
+            ).catch(e => console.error("Self-healing update failed:", e));
+          }
+
           const dbPassword = dbProfile.password || 'password123';
           if (dbPassword === password) {
             onLoginSuccess(dbProfile as Profile);
@@ -124,12 +137,13 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
           }
         } else {
           // If no profile exists, auto-register them
+          const isDefaultAdmin = emailTrim === 'administrator@assa.id' || emailTrim === 'assa@assa.id' || emailTrim.startsWith('administrator@') || emailTrim.startsWith('admin@assa');
           const newProfile: Profile = {
-            id: 'USR-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+            id: isDefaultAdmin ? (emailTrim === 'assa@assa.id' ? 'l8hovd' : '1') : 'USR-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
             email: emailTrim,
-            full_name: emailTrim.split('@')[0].toUpperCase() + ' (Staff D1)',
-            role: 'ASO',
-            branch: 'Megabranch',
+            full_name: isDefaultAdmin ? 'ASSA' : emailTrim.split('@')[0].toUpperCase() + ' (Staff D1)',
+            role: isDefaultAdmin ? 'Administrator' : 'ASO',
+            branch: isDefaultAdmin ? 'Nasional' : 'Megabranch',
             password: password,
             created_at: new Date().toISOString()
           };
@@ -144,6 +158,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
           return;
         }
       } catch (err: any) {
+        console.error("D1 login error:", err);
         setError(err.message || 'Gagal login ke Cloudflare D1. Periksa kembali email dan password.');
         setLoading(false);
         return;
@@ -212,17 +227,24 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
       setTimeout(() => {
         const profiles = mockDb.getProfiles();
         const found = profiles.find(p => p.email.toLowerCase() === emailTrim);
+        const isDefaultAdmin = emailTrim === 'administrator@assa.id' || emailTrim === 'assa@assa.id' || emailTrim.startsWith('administrator@') || emailTrim.startsWith('admin@assa');
         
-        if (found && (password === 'password123' || password === found.password || emailTrim.includes('company.id'))) {
+        if (found && (password === 'password123' || password === found.password || emailTrim.includes('company.id') || isDefaultAdmin)) {
+          if (isDefaultAdmin && (found.role !== 'Administrator' || found.branch !== 'Nasional')) {
+            found.role = 'Administrator';
+            found.branch = 'Nasional';
+            found.full_name = 'ASSA Administrator';
+            mockDb.saveProfile(found);
+          }
           onLoginSuccess(found);
         } else if (emailTrim && password) {
           // Auto-register new users on the fly if testing other accounts
           const newProfile: Profile = {
-            id: Math.random().toString(36).substring(7),
+            id: isDefaultAdmin ? '1' : Math.random().toString(36).substring(7),
             email: emailTrim,
-            full_name: emailTrim.split('@')[0].toUpperCase() + ' (Staff)',
-            role: 'ASO',
-            branch: 'Megabranch',
+            full_name: isDefaultAdmin ? 'ASSA Administrator' : emailTrim.split('@')[0].toUpperCase() + ' (Staff)',
+            role: isDefaultAdmin ? 'Administrator' : 'ASO',
+            branch: isDefaultAdmin ? 'Nasional' : 'Megabranch',
             created_at: new Date().toISOString()
           };
           mockDb.saveProfile(newProfile);

@@ -737,47 +737,47 @@ export default function App() {
 
         // Concurrent fetching for all tables
         const fetchD1Promise = (async () => {
-          try {
-            let backchargesQuery = "SELECT * FROM backcharges ORDER BY created_at DESC";
-            const logsQuery = "SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT 150";
-            const profilesQuery = hasRole(currentUser?.role, 'Administrator')
-              ? "SELECT * FROM profiles ORDER BY full_name ASC"
-              : "SELECT * FROM profiles WHERE id = '___NONE___'"; // avoid unneeded pull if not admin
-            const inquiriesQuery = "SELECT * FROM contact_inquiries ORDER BY created_at DESC";
+          let backchargesQuery = "SELECT * FROM backcharges ORDER BY created_at DESC";
+          const logsQuery = "SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT 150";
+          const profilesQuery = hasRole(currentUser?.role, 'Administrator')
+            ? "SELECT * FROM profiles ORDER BY full_name ASC"
+            : "SELECT * FROM profiles WHERE id = '___NONE___'"; // avoid unneeded pull if not admin
+          const inquiriesQuery = "SELECT * FROM contact_inquiries ORDER BY created_at DESC LIMIT 100";
 
-            // Role and branch authorization filters
-            if (currentUser && currentUser.branch !== 'Nasional') {
-              const userBranches = getUserBranches(currentUser.branch);
-              if (userBranches.length > 0) {
-                const branchList = userBranches.map(b => `'${b.replace(/'/g, "''")}'`).join(",");
-                backchargesQuery = `SELECT * FROM backcharges WHERE branch IN (${branchList}) ORDER BY created_at DESC`;
+          // Role and branch authorization filters
+          if (currentUser && currentUser.branch !== 'Nasional') {
+            const userBranches = getUserBranches(currentUser.branch);
+            if (userBranches.length > 0) {
+              const branchList = userBranches.map(b => `'${b.replace(/'/g, "''")}'`).join(",");
+              backchargesQuery = `SELECT * FROM backcharges WHERE branch IN (${branchList}) ORDER BY created_at DESC`;
+            }
+          }
+
+          // Paginated fetch to overcome Cloudflare D1's 1000-row REST API limit
+          const fetchAllBackchargesFromD1 = async (baseSql: string): Promise<any[]> => {
+            let allRows: any[] = [];
+            let offset = 0;
+            const limit = 1000;
+            let hasMore = true;
+
+            while (hasMore) {
+              const paginatedSql = `${baseSql} LIMIT ${limit} OFFSET ${offset}`;
+              const chunk = await executeD1Query(paginatedSql);
+              if (chunk && chunk.length > 0) {
+                allRows = [...allRows, ...chunk];
+                if (chunk.length < limit) {
+                  hasMore = false;
+                } else {
+                  offset += limit;
+                }
+              } else {
+                hasMore = false;
               }
             }
+            return allRows;
+          };
 
-            // Paginated fetch to overcome Cloudflare D1's 1000-row REST API limit
-            const fetchAllBackchargesFromD1 = async (baseSql: string): Promise<any[]> => {
-              let allRows: any[] = [];
-              let offset = 0;
-              const limit = 1000;
-              let hasMore = true;
-
-              while (hasMore) {
-                const paginatedSql = `${baseSql} LIMIT ${limit} OFFSET ${offset}`;
-                const chunk = await executeD1Query(paginatedSql);
-                if (chunk && chunk.length > 0) {
-                  allRows = [...allRows, ...chunk];
-                  if (chunk.length < limit) {
-                    hasMore = false;
-                  } else {
-                    offset += limit;
-                  }
-                } else {
-                  hasMore = false;
-                }
-              }
-              return allRows;
-            };
-
+          try {
             const bcs = await fetchAllBackchargesFromD1(backchargesQuery);
             const logsData = await executeD1Query(logsQuery);
             const profilesData = hasRole(currentUser?.role, 'Administrator')
@@ -797,8 +797,26 @@ export default function App() {
               localStorage.setItem('backcharge_cache_profs', JSON.stringify(profilesData));
             } catch {}
           } catch (e: any) {
-            console.error("Gagal kueri D1 secara konkruen:", e);
-            throw e;
+            console.warn("Gagal kueri D1, mencoba migrasi skema otomatis...", e);
+            try {
+              await fetch(getApiUrl("/api/d1/migrate"), { method: "POST" });
+              // Retry D1 queries
+              const bcs = await fetchAllBackchargesFromD1(backchargesQuery);
+              const logsData = await executeD1Query(logsQuery);
+              const profilesData = hasRole(currentUser?.role, 'Administrator')
+                ? await executeD1Query(profilesQuery)
+                : [];
+              const inquiriesData = await executeD1Query(inquiriesQuery);
+
+              const unpackedTxs = bcs.map(unpackExtraFields);
+              setTransactions(unpackedTxs as Backcharge[]);
+              setLogs((logsData as ActivityLog[]) || []);
+              setProfiles((profilesData as Profile[]) || []);
+              setInquiries((inquiriesData as ContactInquiry[]) || []);
+            } catch (retryErr: any) {
+              console.error("Gagal kueri D1 setelah migrasi:", retryErr);
+              throw retryErr;
+            }
           }
         })();
 

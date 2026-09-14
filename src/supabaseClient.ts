@@ -17,7 +17,9 @@ export const supabase = null;
 // =========================================================================
 
 const INITIAL_PROFILES: Profile[] = [
-  { id: '1', email: 'admin.pusat@company.id', full_name: 'Aris Munandar (HQ Admin)', role: 'Administrator', branch: 'Nasional', created_at: new Date().toISOString() },
+  { id: '1', email: 'administrator@assa.id', full_name: 'ASSA Administrator', role: 'Administrator', branch: 'Nasional', created_at: new Date().toISOString(), password: 'password123' },
+  { id: 'l8hovd', email: 'assa@assa.id', full_name: 'ASSA Admin', role: 'Administrator', branch: 'Nasional', created_at: new Date().toISOString(), password: 'password123' },
+  { id: '1a', email: 'admin.pusat@company.id', full_name: 'Aris Munandar (HQ Admin)', role: 'Administrator', branch: 'Nasional', created_at: new Date().toISOString() },
   { id: '2', email: 'aso.jkt@company.id', full_name: 'Hendra Wijaya (ASO Megabranch)', role: 'ASO Megabranch', branch: 'BSO GSO & AFFCO', created_at: new Date().toISOString() },
   { id: '3', email: 'sales.jkt@company.id', full_name: 'Dewi Lestari (Sales Megabranch)', role: 'Sales Head', branch: 'BSO Sudirman', created_at: new Date().toISOString() },
   { id: '4', email: 'bro.sby@company.id', full_name: 'Bayu Saputra (BRO Sby)', role: 'BRO', branch: 'Surabaya', created_at: new Date().toISOString() },
