@@ -1,21 +1,8 @@
 /**
  * Resolves the backend API URL dynamically.
+ * Always returns relative path for clean routing on both Express and Cloudflare Workers/Pages.
  */
 export const getApiUrl = (path: string): string => {
-  const hostname = window.location.hostname;
-  const cleanPath = path.startsWith("/") ? path : `/${path}`;
-
-  // Direct relative path if running on Workers, Pages, or local container
-  if (
-    hostname.includes("app.backcharge-assa.workers.dev") ||
-    hostname.includes("pages.dev") ||
-    (!hostname.includes("workers.dev") && !hostname.includes("pages.dev"))
-  ) {
-    return cleanPath;
-  }
-  
-  // Default API Worker URL for Cloudflare Pages / external clients
-  const base = "https://app.backcharge-assa.workers.dev";
-  const cleanBase = base.replace(/\/+$/, "");
-  return `${cleanBase}${cleanPath}`;
+  return path.startsWith("/") ? path : `/${path}`;
 };
+

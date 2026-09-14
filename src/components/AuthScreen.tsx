@@ -106,9 +106,15 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
           });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results;
+          const text = await res.text();
+          let d: any = {};
+          try {
+            d = JSON.parse(text);
+          } catch {
+            throw new Error(`Respons tidak valid (${res.status}): ${text.substring(0, 100) || 'Kosong'}`);
+          }
+          if (!d.success) throw new Error(d.error || "Gagal kueri D1");
+          return d.results || [];
         };
 
         const dbProfiles = await executeD1Query(
@@ -326,9 +332,15 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
           });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results;
+          const text = await res.text();
+          let d: any = {};
+          try {
+            d = JSON.parse(text);
+          } catch {
+            throw new Error(`Respons tidak valid (${res.status}): ${text.substring(0, 100) || 'Kosong'}`);
+          }
+          if (!d.success) throw new Error(d.error || "Gagal kueri D1");
+          return d.results || [];
         };
 
         // Check if user already exists

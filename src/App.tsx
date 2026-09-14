@@ -577,7 +577,9 @@ export default function App() {
     setMigratingD1(true);
     try {
       const res = await fetch(getApiUrl("/api/d1/migrate"), { method: "POST" });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try { data = JSON.parse(text); } catch {}
       if (data.success) {
         addToast(data.message || "Migrasi berhasil!", "success");
         setD1Error(null);
@@ -585,7 +587,7 @@ export default function App() {
         try { localStorage.setItem('backcharge_use_d1', 'true'); } catch {}
         fetchData();
       } else {
-        addToast(`Gagal migrasi: ${data.error}`, "error");
+        addToast(`Gagal migrasi: ${data.error || 'Respon tidak valid'}`, "error");
       }
     } catch (e: any) {
       addToast(`Error: ${e.message}`, "error");
@@ -599,7 +601,9 @@ export default function App() {
     try {
       addToast("Memulai pengimporan 100% data SQL (2.125+ Data) ke Cloudflare D1...", "info");
       const res = await fetch(getApiUrl("/api/d1/import-sql"), { method: "POST" });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try { data = JSON.parse(text); } catch {}
       if (data.success) {
         addToast(data.message || "Pengimporan 100% data SQL selesai!", "success");
         setD1Error(null);
@@ -607,7 +611,7 @@ export default function App() {
         try { localStorage.setItem('backcharge_use_d1', 'true'); } catch {}
         fetchData();
       } else {
-        addToast(`Gagal impor data SQL: ${data.error}`, "error");
+        addToast(`Gagal impor data SQL: ${data.error || 'Respon tidak valid'}`, "error");
       }
     } catch (e: any) {
       addToast(`Error: ${e.message}`, "error");
@@ -621,7 +625,9 @@ export default function App() {
     try {
       addToast("Memulai pemindahan & sinkronisasi 100% data langsung dari Supabase ke Cloudflare D1...", "info");
       const res = await fetch(getApiUrl("/api/d1/sync-from-supabase"), { method: "POST" });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try { data = JSON.parse(text); } catch {}
       if (data.success) {
         addToast(data.message || "Sinkronisasi langsung dari Supabase ke D1 sukses!", "success");
         setD1Error(null);
@@ -629,7 +635,7 @@ export default function App() {
         try { localStorage.setItem('backcharge_use_d1', 'true'); } catch {}
         fetchData();
       } else {
-        addToast(`Gagal sinkronisasi data: ${data.error}`, "error");
+        addToast(`Gagal sinkronisasi data: ${data.error || 'Respon tidak valid'}`, "error");
       }
     } catch (e: any) {
       addToast(`Error: ${e.message}`, "error");
@@ -643,21 +649,31 @@ export default function App() {
     const checkD1Status = async () => {
       try {
         const response = await fetch(getApiUrl('/api/d1/status'));
-        const data = await response.json();
+        const text = await response.text();
+        let data: any = {};
+        try { data = JSON.parse(text); } catch {}
+        
         if (data.configured && data.authorized !== false) {
           setIsD1Active(true);
           setD1Error(null);
           try { localStorage.setItem('backcharge_use_d1', 'true'); } catch {}
           fetchData();
         } else {
-          setIsD1Active(false);
-          try { localStorage.setItem('backcharge_use_d1', 'false'); } catch {}
+          if (!isWorkerHost) {
+            setIsD1Active(false);
+            try { localStorage.setItem('backcharge_use_d1', 'false'); } catch {}
+          } else {
+            setIsD1Active(true);
+          }
           if (data.error) {
             setD1Error(data.error);
+          } else if (data.configured === false) {
+            setD1Error("Kredensial Cloudflare D1 belum terkonfigurasi. Sila periksa CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_DATABASE_ID, dan CLOUDFLARE_API_TOKEN di Settings.");
           }
         }
-      } catch {
-        setIsD1Active(false);
+      } catch (err: any) {
+        if (!isWorkerHost) setIsD1Active(false);
+        setD1Error(err.message || String(err));
       }
     };
     checkD1Status();
@@ -736,9 +752,15 @@ export default function App() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sql, params })
           });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results;
+          const text = await res.text();
+          let d: any = {};
+          try {
+            d = JSON.parse(text);
+          } catch {
+            throw new Error(`Respons tidak valid (${res.status}): ${text.substring(0, 100) || 'Kosong'}`);
+          }
+          if (!d.success) throw new Error(d.error || "Gagal kueri D1");
+          return d.results || [];
         };
 
         // Concurrent fetching for all tables
