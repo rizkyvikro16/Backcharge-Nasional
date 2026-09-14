@@ -93,7 +93,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
 
     const emailTrim = email.trim().toLowerCase();
     
-    const isD1Active = localStorage.getItem('backcharge_use_d1') === 'true';
+    const isD1Active = localStorage.getItem('backcharge_use_d1') !== 'false';
     if (isD1Active) {
       try {
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
@@ -291,7 +291,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
       created_at: new Date().toISOString()
     };
 
-    const isD1Active = localStorage.getItem('backcharge_use_d1') === 'true';
+    const isD1Active = localStorage.getItem('backcharge_use_d1') !== 'false';
     if (isD1Active) {
       try {
         const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {

@@ -5,8 +5,12 @@ export const getApiUrl = (path: string): string => {
   const hostname = window.location.hostname;
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
 
-  // Direct relative path if running on the worker domain itself or local environment
-  if (hostname.includes("app.backcharge-assa.workers.dev") || (!hostname.includes("pages.dev") && !hostname.includes("workers.dev"))) {
+  // Direct relative path if running on Workers, Pages, or local container
+  if (
+    hostname.includes("app.backcharge-assa.workers.dev") ||
+    hostname.includes("pages.dev") ||
+    (!hostname.includes("workers.dev") && !hostname.includes("pages.dev"))
+  ) {
     return cleanPath;
   }
   

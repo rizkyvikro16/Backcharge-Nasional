@@ -562,7 +562,7 @@ export default function App() {
   const [showD1Banner, setShowD1Banner] = useState(true);
 
   const [isD1Active, setIsD1Active] = useState<boolean>(() => {
-    return localStorage.getItem('backcharge_use_d1') === 'true';
+    return localStorage.getItem('backcharge_use_d1') !== 'false';
   });
   const [d1Error, setD1Error] = useState<string | null>(null);
   const [migratingD1, setMigratingD1] = useState<boolean>(false);
@@ -642,6 +642,7 @@ export default function App() {
           setIsD1Active(true);
           setD1Error(null);
           try { localStorage.setItem('backcharge_use_d1', 'true'); } catch {}
+          fetchData();
         } else {
           setIsD1Active(false);
           try { localStorage.setItem('backcharge_use_d1', 'false'); } catch {}
@@ -1100,12 +1101,12 @@ export default function App() {
     }
   };
 
-  // Fetch data on login or session restore
+  // Fetch data on login or session restore or D1 status change
   useEffect(() => {
     if (currentUser) {
       fetchData();
     }
-  }, [currentUser]);
+  }, [currentUser, isD1Active]);
 
   // =========================================================================
   // SUPABASE REAL-TIME LISTENER FOR REAL-TIME NOTIFICATIONS
