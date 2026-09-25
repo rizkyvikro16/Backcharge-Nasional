@@ -282,6 +282,8 @@ export default {
 
         // Direct query execution without artificial row restrictions
         let optimizedSql = sql;
+        if (sql && typeof sql === 'string') {
+          const sqlUpper = sql.toUpperCase().trim();
           // Ensure INSERT INTO backcharges handles ON CONFLICT to prevent UNIQUE constraint failed
           if (sqlUpper.startsWith("INSERT INTO BACKCHARGES") && !sqlUpper.includes("ON CONFLICT")) {
             optimizedSql = `${sql.trim()} ON CONFLICT(id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP`;
