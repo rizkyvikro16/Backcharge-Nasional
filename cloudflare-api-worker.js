@@ -239,8 +239,37 @@ export default {
         const { sql, params } = await request.json();
 
         if (!env.DB) {
+          // Fallback: If Cloudflare API credentials are configured in Pages Environment Variables
+          if (env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_DATABASE_ID && env.CLOUDFLARE_API_TOKEN) {
+            try {
+              const cfRes = await fetch(
+                `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/d1/database/${env.CLOUDFLARE_DATABASE_ID}/query`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Authorization": `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ sql, params: params || [] })
+                }
+              );
+              const cfData = await cfRes.json();
+              if (cfData.success && cfData.result && cfData.result[0]) {
+                return new Response(
+                  JSON.stringify({ success: true, results: cfData.result[0].results || [] }),
+                  { headers: { "Content-Type": "application/json", ...corsHeaders } }
+                );
+              }
+            } catch (apiErr) {
+              console.warn("Cloudflare REST API fallback error:", apiErr);
+            }
+          }
+
           return new Response(
-            JSON.stringify({ success: false, error: "Database binding 'DB' tidak ditemukan di Cloudflare Worker/Pages ini." }),
+            JSON.stringify({ 
+              success: false, 
+              error: "Database binding 'DB' tidak ditemukan di Cloudflare Worker/Pages ini. Sila tambahkan D1 Database Binding bernama 'DB' di Settings -> Functions -> D1 database bindings." 
+            }),
             { headers: { "Content-Type": "application/json", ...corsHeaders } }
           );
         }

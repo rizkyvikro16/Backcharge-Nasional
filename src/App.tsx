@@ -731,7 +731,13 @@ export default function App() {
       }
       throw new Error(`Respons D1 tidak valid (${res.status}): ${text.substring(0, 100) || 'Kosong'}`);
     }
-    if (!d.success) throw new Error(d.error || "Gagal kueri D1");
+    if (!d.success) {
+      if (d.error && (d.error.includes("Database binding 'DB'") || d.error.includes("binding 'DB'"))) {
+        console.warn("Cloudflare D1 binding DB not yet attached in Pages settings. Falling back to local cache.");
+        return [];
+      }
+      throw new Error(d.error || "Gagal kueri D1");
+    }
     return d.results || [];
   }, []);
 
