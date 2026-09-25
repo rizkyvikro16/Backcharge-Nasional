@@ -12,7 +12,7 @@ dotenv.config();
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   // Enable CORS middleware so deployed frontend (e.g. Cloudflare Pages) can connect to the Cloud Run backend
   app.use((req, res, next) => {
@@ -25,8 +25,16 @@ async function startServer() {
     next();
   });
 
-  // Middleware to parse incoming JSON bodies for database queries
-  app.use(express.json({ limit: "50mb" }));
+  // Middleware to parse incoming JSON bodies for database queries.
+  // Using type: '*/*' ensures we attempt to parse all text bodies as JSON, bypassing strict Content-Type checks 
+  // that proxy servers might strip or change.
+  app.use(express.json({ 
+    limit: "50mb", 
+    type: '*/*',
+    verify: (req: any, res: any, buf: Buffer) => {
+      req.rawBody = buf.toString();
+    }
+  }));
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
   // Pastikan folder uploads tersedia secara lokal
@@ -43,7 +51,7 @@ async function startServer() {
     limits: { fileSize: 15 * 1024 * 1024 }
   });
 
-  // API Route for Google Drive Upload via Service Account
+  // API Route for High-Speed Google Drive Upload (Service Account + Apps Script Relay + Local Fallback)
   app.post("/api/upload-to-drive", upload.single("file"), async (req, res) => {
     try {
       if (!req.file) {
@@ -59,136 +67,175 @@ async function startServer() {
         return fileUrl;
       };
 
-      // Check if service account credentials are provided
+      // TIER 1: Check if Service Account credentials are provided in Environment
       let credentials: any = null;
-
-      // 1. Check GOOGLE_SERVICE_ACCOUNT_JSON from environment variables (Very safe, recommended for AI Studio Cloud)
       if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
         try {
           credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
         } catch (err: any) {
-          console.warn("Format GOOGLE_SERVICE_ACCOUNT_JSON tidak valid, menggunakan fallback lokal:", err.message);
+          console.warn("[DRIVE] Format GOOGLE_SERVICE_ACCOUNT_JSON tidak valid:", err.message);
         }
-      } 
-      // 2. Check separate email and private key env variables
-      else if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+      } else if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
         credentials = {
           client_email: process.env.GOOGLE_CLIENT_EMAIL,
           private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
         };
-      } 
-      // 3. Fallback to check local credentials file (google-credentials.json)
-      else {
+      } else {
         const credPath = path.join(process.cwd(), "google-credentials.json");
         if (fs.existsSync(credPath)) {
           try {
             credentials = JSON.parse(fs.readFileSync(credPath, "utf8"));
           } catch (err: any) {
-            console.warn("Gagal membaca google-credentials.json, menggunakan fallback lokal:", err.message);
+            console.warn("[DRIVE] Gagal membaca google-credentials.json:", err.message);
           }
         }
       }
 
-      // If credentials still not found, fallback to local server storage
-      if (!credentials || !credentials.client_email || !credentials.private_key) {
-        const localLink = localFallbackSave();
-        return res.status(200).json({
-          success: true,
-          isLocalFallback: true,
-          webViewLink: localLink,
-          message: "Google Drive belum dikonfigurasi. File berhasil disimpan di server lokal."
-        });
+      // If Service Account credentials exist, attempt direct Google Drive API upload
+      if (credentials && credentials.client_email && credentials.private_key) {
+        try {
+          console.log("[DRIVE] Mencoba unggah via Google Service Account API...");
+          const auth = new google.auth.GoogleAuth({
+            credentials: {
+              client_email: credentials.client_email,
+              private_key: credentials.private_key,
+            },
+            scopes: ["https://www.googleapis.com/auth/drive"],
+          });
+
+          const bufferStream = new Readable();
+          bufferStream.push(req.file.buffer);
+          bufferStream.push(null);
+
+          const drive = google.drive({ version: "v3", auth });
+          const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID || credentials.folder_id || "1YDe87vD-540Tupk2gwp9qGfvGNBBoZEQ";
+
+          const fileMetadata: any = {
+            name: req.file.originalname,
+          };
+          if (folderId && folderId.trim() !== "") {
+            fileMetadata.parents = [folderId.trim()];
+          }
+
+          const driveResponse = await drive.files.create({
+            requestBody: fileMetadata,
+            media: {
+              mimeType: req.file.mimetype || "image/jpeg",
+              body: bufferStream,
+            },
+            fields: "id, name, webViewLink",
+          });
+
+          const fileId = driveResponse.data.id;
+          if (fileId) {
+            try {
+              await drive.permissions.create({
+                fileId: fileId,
+                requestBody: { role: "reader", type: "anyone" },
+              });
+            } catch (permErr: any) {
+              console.warn("[DRIVE] Gagal mengatur izin publik:", permErr?.message);
+            }
+
+            const finalLink = driveResponse.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
+            console.log("[DRIVE] Berhasil unggah via Service Account:", finalLink);
+            return res.status(200).json({
+              success: true,
+              isDrive: true,
+              fileId: fileId,
+              webViewLink: finalLink,
+            });
+          }
+        } catch (serviceAccErr: any) {
+          console.warn("[DRIVE] Service Account gagal, melanjutkan ke Google Apps Script Relay...", serviceAccErr?.message);
+        }
       }
 
-      // Initialize Google Auth for service account
-      const auth = new google.auth.GoogleAuth({
-        credentials: {
-          client_email: credentials.client_email,
-          private_key: credentials.private_key,
-        },
-        scopes: ["https://www.googleapis.com/auth/drive"],
+      // TIER 2: Google Apps Script Relay (Sangat stabil & bebas timeout CORS)
+      const appsScriptUrl = process.env.VITE_GOOGLE_APPS_SCRIPT_URL || 
+                            process.env.GOOGLE_APPS_SCRIPT_URL || 
+                            "https://script.google.com/macros/s/AKfycbwtd0ETxA17JRECbuhpPjnQRvmlI8OmExOOmbl5hlxWDY1O33rV99OZ68eVnQ7Sp_n-/exec";
+      const targetFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID || "1YDe87vD-540Tupk2gwp9qGfvGNBBoZEQ";
+
+      if (appsScriptUrl && appsScriptUrl.trim() !== "") {
+        try {
+          console.log("[DRIVE] Mengunggah file ke Google Drive via Apps Script Relay...");
+          const base64Data = req.file.buffer.toString("base64");
+          
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 28000); // 28s timeout
+
+          const gasResponse = await fetch(appsScriptUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "text/plain;charset=utf-8",
+            },
+            body: JSON.stringify({
+              fileBase64: base64Data,
+              fileName: req.file.originalname,
+              mimeType: req.file.mimetype || "image/jpeg",
+              folderId: targetFolderId,
+              parentId: targetFolderId,
+            }),
+            redirect: "follow",
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (gasResponse.ok) {
+            const gasData: any = await gasResponse.json().catch(async () => {
+              const txt = await gasResponse.text();
+              try { return JSON.parse(txt); } catch { return { fileUrl: txt }; }
+            });
+
+            const fileUrl = gasData?.fileUrl || gasData?.url || (gasData?.id ? `https://drive.google.com/file/d/${gasData.id}/view` : null);
+
+            if (fileUrl && (fileUrl.includes("drive.google.com") || fileUrl.includes("google.com") || fileUrl.includes("googleusercontent.com") || fileUrl.startsWith("http"))) {
+              console.log("[DRIVE] Berhasil unggah via Apps Script Relay:", fileUrl);
+              return res.status(200).json({
+                success: true,
+                isDrive: true,
+                fileId: gasData?.id || gasData?.fileId,
+                webViewLink: fileUrl,
+              });
+            } else {
+              console.warn("[DRIVE] Respons Apps Script tidak mengandung URL file valid:", gasData);
+            }
+          } else {
+            console.warn(`[DRIVE] Apps Script Relay mengembalikan status ${gasResponse.status}`);
+          }
+        } catch (gasErr: any) {
+          console.warn("[DRIVE] Gagal unggah via Apps Script Relay:", gasErr?.message);
+        }
+      }
+
+      // TIER 3: Emergency Local Fallback (jika semua koneksi Drive gagal/offline)
+      console.log("[DRIVE] Seluruh metode Google Drive offline, menyimpan ke penyimpanan cadangan lokal...");
+      const localLink = localFallbackSave();
+      return res.status(200).json({
+        success: true,
+        isLocalFallback: true,
+        webViewLink: localLink,
+        message: "Google Drive sedang tidak dapat dijangkau. File berhasil diamankan ke penyimpanan server lokal.",
       });
 
-      // Create readable stream from memory buffer for googleapis upload
-      const bufferStream = new Readable();
-      bufferStream.push(req.file.buffer);
-      bufferStream.push(null);
-
-      const drive = google.drive({ version: "v3", auth });
-
-      // Google Drive Folder ID
-      const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID || credentials.folder_id || "1YDe87vD-540Tupk2gwp9qGfvGNBBoZEQ";
-
-      const fileMetadata: any = {
-        name: req.file.originalname,
-      };
-
-      if (folderId && folderId.trim() !== "") {
-        fileMetadata.parents = [folderId.trim()];
-      }
-
-      try {
-        // 1. Create file on Google Drive
-        const driveResponse = await drive.files.create({
-          requestBody: fileMetadata,
-          media: {
-            mimeType: req.file.mimetype,
-            body: bufferStream,
-          },
-          fields: "id, name, webViewLink",
-        });
-
-        const fileId = driveResponse.data.id;
-        const webViewLink = driveResponse.data.webViewLink;
-
-        if (!fileId) {
-          throw new Error("ID file tidak didapatkan dari Google Drive");
-        }
-
-        // 2. Set public permissions (Anyone with link can view) so anyone can access it from Supabase
-        try {
-          await drive.permissions.create({
-            fileId: fileId,
-            requestBody: {
-              role: "reader",
-              type: "anyone",
-            },
-          });
-        } catch (permErr: any) {
-          console.warn("Gagal mengatur izin publik pada file Google Drive:", permErr);
-        }
-
-        // 3. Format direct link as fallback if webViewLink is missing
-        const finalLink = webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
-
-        return res.status(200).json({
-          success: true,
-          fileId: fileId,
-          webViewLink: finalLink,
-        });
-      } catch (driveErr: any) {
-        console.error("Gagal mengunggah ke Google Drive via API, fallback ke lokal:", driveErr);
-        const localLink = localFallbackSave();
-        return res.status(200).json({
-          success: true,
-          isLocalFallback: true,
-          webViewLink: localLink,
-          message: `Gagal unggah ke Drive (${driveErr.message || driveErr}). File berhasil disimpan di server lokal.`
-        });
-      }
-
     } catch (err: any) {
-      console.error("Error during upload process:", err);
+      console.error("[DRIVE] Error fatal saat proses unggah berkas:", err);
       try {
-        const localLink = `${req.protocol}://${req.get('host')}/uploads/${Date.now()}_${req.file?.originalname.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+        const safeName = `${Date.now()}_${req.file?.originalname ? req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_") : "upload.bin"}`;
+        const filePath = path.join(uploadsDir, safeName);
+        if (req.file?.buffer) {
+          fs.writeFileSync(filePath, req.file.buffer);
+        }
         return res.status(200).json({
           success: true,
           isLocalFallback: true,
-          webViewLink: localLink,
-          message: "Internal error. File disimpan di server lokal."
+          webViewLink: `/uploads/${safeName}`,
+          message: "Penyelamatan darurat lokal berhasil.",
         });
       } catch {
-        return res.status(500).json({ error: err.message || "Internal Server Error" });
+        return res.status(500).json({ error: err?.message || "Gagal mengunggah berkas" });
       }
     }
   });
@@ -242,228 +289,119 @@ async function startServer() {
     }
   });
 
-  // 1d. Direct live Sync & Migrate from Supabase to Cloudflare D1 fully server-side (bypassing local terminal / node installs)
+  // Deprecated migration route - Cloudflare D1 is now the sole native database
   app.post("/api/d1/sync-from-supabase", async (req, res) => {
-    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
-    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
-
-    if (!supabaseUrl || !supabaseAnonKey) {
-      return res.status(400).json({
-        success: false,
-        error: "Konfigurasi Supabase (VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY) tidak ditemukan di Environment Variables backend."
-      });
-    }
-
-    try {
-      console.log("⏳ Starting live full server-side migration from Supabase to Cloudflare D1...");
-      await ensureD1TablesExist();
-
-      // Helper function to fetch all rows from Supabase REST API with offset pagination
-      const fetchAllFromSupabaseRest = async (table: string): Promise<any[]> => {
-        let allData: any[] = [];
-        let offset = 0;
-        const limit = 250;
-        let hasMore = true;
-
-        while (hasMore) {
-          const url = `${supabaseUrl}/rest/v1/${table}?select=*&limit=${limit}&offset=${offset}`;
-          const response = await fetch(url, {
-            headers: {
-              "apikey": supabaseAnonKey,
-              "Authorization": `Bearer ${supabaseAnonKey}`,
-              "Content-Type": "application/json"
-            }
-          });
-
-          if (!response.ok) {
-            const errText = await response.text();
-            throw new Error(`Gagal mengambil data ${table} dari Supabase REST API: ${errText}`);
-          }
-
-          const data: any = await response.json();
-          if (data && data.length > 0) {
-            allData = [...allData, ...data];
-            if (data.length < limit) {
-              hasMore = false;
-            } else {
-              offset += limit;
-            }
-          } else {
-            hasMore = false;
-          }
-        }
-        return allData;
-      };
-
-      // 1. Fetch all data from Supabase first (before clearing D1 to avoid data-loss if Supabase fetch fails)
-      console.log("   ├─ Fetching Profiles...");
-      const profilesList = await fetchAllFromSupabaseRest("profiles");
-      console.log(`   ├─ Profiles fetched: ${profilesList.length} rows.`);
-
-      console.log("   ├─ Fetching Backcharges...");
-      const backchargesList = await fetchAllFromSupabaseRest("backcharges");
-      console.log(`   ├─ Backcharges fetched: ${backchargesList.length} rows.`);
-
-      console.log("   ├─ Fetching Activity Logs...");
-      const logsList = await fetchAllFromSupabaseRest("activity_logs");
-      console.log(`   ├─ Activity Logs fetched: ${logsList.length} rows.`);
-
-      console.log("   ├─ Fetching Contact Inquiries...");
-      let inquiriesList: any[] = [];
-      try {
-        inquiriesList = await fetchAllFromSupabaseRest("contact_inquiries");
-        console.log(`   ├─ Contact Inquiries fetched: ${inquiriesList.length} rows.`);
-      } catch (inqErr) {
-        console.warn("   └─ Table contact_inquiries might not exist yet on Supabase, skipping.");
-      }
-
-      // 2. Clear existing D1 tables to do a fresh sync
-      console.log("🧹 Clearing old tables in Cloudflare D1...");
-      await queryD1("DELETE FROM backcharges;");
-      await queryD1("DELETE FROM profiles;");
-      await queryD1("DELETE FROM activity_logs;");
-      try {
-        await queryD1("DELETE FROM contact_inquiries;");
-      } catch (e) {}
-
-      // Helper to batch insert data into any D1 table using unified SQL multi-row VALUES
-      const batchInsertD1 = async (
-        tableName: string, 
-        columns: string[], 
-        rows: any[][]
-      ) => {
-        if (rows.length === 0) return;
-        
-        // SQLite limits the total number of bound variables in a single SQL statement.
-        // We dynamically calculate a safe batchSize based on the number of columns to prevent SQLITE_ERROR.
-        const maxSqlVariables = 90; 
-        const batchSize = Math.max(1, Math.floor(maxSqlVariables / columns.length));
-        
-        console.log(`🤖 Batch insertion for ${tableName}: Columns: ${columns.length}, Calculated safe batch size: ${batchSize} (Total rows: ${rows.length})`);
-        
-        const colString = columns.join(", ");
-        for (let i = 0; i < rows.length; i += batchSize) {
-          const chunk = rows.slice(i, i + batchSize);
-          const rowPlaceholders = chunk.map(() => `(${columns.map(() => "?").join(", ")})`).join(", ");
-          const sql = `INSERT OR REPLACE INTO ${tableName} (${colString}) VALUES ${rowPlaceholders}`;
-          const params = chunk.flat();
-          try {
-            await queryD1(sql, params);
-          } catch (e: any) {
-            if (e.message?.includes("SQLITE_TOOBIG") || String(e).includes("SQLITE_TOOBIG")) {
-              console.warn(`⚠️ Batch insert failed with SQLITE_TOOBIG. Retrying row-by-row for this chunk...`);
-              for (const row of chunk) {
-                const singleSql = `INSERT OR REPLACE INTO ${tableName} (${colString}) VALUES (${columns.map(() => "?").join(", ")})`;
-                try {
-                  await queryD1(singleSql, row);
-                } catch (err2: any) {
-                  if (err2.message?.includes("SQLITE_TOOBIG") || String(err2).includes("SQLITE_TOOBIG")) {
-                    console.warn(`❌ Single row insert failed with SQLITE_TOOBIG. Truncating large text fields for row ID: ${row[0]}`);
-                    // D1 max payload is 1MB. Truncate any string > 50KB to be extremely safe.
-                    const truncatedRow = row.map(val => (typeof val === 'string' && val.length > 50000) ? val.substring(0, 50000) + "... [TRUNCATED DUE TO CLOUDFLARE D1 SIZE LIMIT]" : val);
-                    await queryD1(singleSql, truncatedRow);
-                  } else {
-                    throw err2;
-                  }
-                }
-              }
-            } else {
-              throw e;
-            }
-          }
-        }
-      };
-
-      // 3. Batch insert into D1
-      // Profiles
-      if (profilesList.length > 0) {
-        console.log("📥 Syncing Profiles into D1 in batches...");
-        const columns = ["id", "email", "full_name", "role", "branch", "created_at"];
-        const rows = profilesList.map(p => [
-          p.id, p.email, p.full_name || '-', p.role || 'BRO', p.branch || 'Nasional', p.created_at || new Date().toISOString()
-        ]);
-        await batchInsertD1("profiles", columns, rows);
-      }
-
-      // Backcharges
-      if (backchargesList.length > 0) {
-        console.log("📥 Syncing Backcharges into D1 in batches...");
-        const columns = [
-          "id", "category", "branch", "no_bak", "no_spk", "no_sap", "no_tilang", "customer_name", "license_plate", "value", 
-          "status_sap", "status_confirm", "status_handover", "no_invoice", "status_payment", "payment_date", 
-          "created_by", "created_at", "updated_at", "file_bak_url", "file_handover_aso_sales_url", 
-          "file_handover_sales_admin_url", "tanggal", "tanggal_handover", "nama_bro", "upload_dok_pendukung", "alasan", 
-          "status_approval", "approved_by", "approved_at", "approval_note", "approval_attachment_1_url", 
-          "approval_attachment_2_url", "approval_attachment_3_url", "regional_approval_status", 
-          "regional_approved_by", "regional_approved_at", "regional_approval_note", "division_approval_status", 
-          "division_approved_by", "division_approved_at", "division_approval_note"
-        ];
-        const rows = backchargesList.map(b => [
-          b.id, b.category || 'Own Risk', b.branch || 'Nasional', b.no_bak || '-', b.no_spk || '-', b.no_sap || '-', b.no_tilang || '-', b.customer_name || '-', b.license_plate || '-', b.value || 0,
-          b.status_sap || 'N/A', b.status_confirm || 'Belum Konfirmasi', b.status_handover || 'Pending', b.no_invoice || '-', b.status_payment || 'Belum Bayar', b.payment_date || null,
-          b.created_by || 'system', b.created_at || new Date().toISOString(), b.updated_at || new Date().toISOString(), b.file_bak_url || null, b.file_handover_aso_sales_url || null,
-          b.file_handover_sales_admin_url || null, b.tanggal || null, b.tanggal_handover || null, b.nama_bro || b.bro_name || '-', b.upload_dok_pendukung || null, b.alasan || b.dok_pendukung_alasan || '-',
-          b.status_approval || 'Belum Approval', b.approved_by || null, b.approved_at || null, b.approval_note || null, b.approval_attachment_1_url || null,
-          b.approval_attachment_2_url || null, b.approval_attachment_3_url || null, b.regional_approval_status || 'Belum Approval',
-          b.regional_approved_by || null, b.regional_approved_at || null, b.regional_approval_note || null, b.division_approval_status || 'Belum Approval',
-          b.division_approved_by || null, b.division_approved_at || null, b.division_approval_note || null
-        ]);
-        await batchInsertD1("backcharges", columns, rows);
-      }
-
-      // Activity Logs
-      if (logsList.length > 0) {
-        console.log("📥 Syncing Activity Logs into D1 in batches...");
-        const columns = ["id", "timestamp", "transaction_id", "performed_by", "action_description"];
-        const rows = logsList.map(l => [
-          l.id, l.timestamp || l.created_at || new Date().toISOString(), l.transaction_id || '-', l.performed_by || 'system', l.action_description || '-'
-        ]);
-        await batchInsertD1("activity_logs", columns, rows);
-      }
-
-      // Contact Inquiries
-      if (inquiriesList.length > 0) {
-        console.log("📥 Syncing Contact Inquiries into D1 in batches...");
-        const columns = ["id", "name", "email", "subject", "message", "status", "created_at", "updated_at"];
-        const rows = inquiriesList.map(c => [
-          c.id, c.name || '-', c.email || '-', c.subject || '-', c.message || '-', c.status || 'Open', c.created_at || new Date().toISOString(), c.updated_at || new Date().toISOString()
-        ]);
-        await batchInsertD1("contact_inquiries", columns, rows);
-      }
-
-      console.log("🎉 Full Live server-side migration from Supabase to Cloudflare D1 finished successfully!");
-      
-      res.json({
-        success: true,
-        message: `Berhasil memindahkan data secara langsung! Total disinkronkan: ${profilesList.length} profil, ${backchargesList.length} denda/backcharges, ${logsList.length} log aktivitas, dan ${inquiriesList.length} keluhan.`,
-        summary: {
-          profiles: profilesList.length,
-          backcharges: backchargesList.length,
-          activity_logs: logsList.length,
-          contact_inquiries: inquiriesList.length
-        }
-      });
-
-    } catch (err: any) {
-      console.error("❌ Gagal sinkronisasi langsung dari Supabase ke D1:", err);
-      res.status(500).json({ success: false, error: err.message || String(err) });
-    }
+    return res.json({
+      success: true,
+      message: "Sistem telah sepenuhnya menggunakan Cloudflare D1 secara langsung."
+    });
   });
 
-  // 2. Secure dynamic SQL execution gateway on D1
-  app.post("/api/d1/query", async (req, res) => {
+  // 2. Secure dynamic SQL execution gateway on D1 (Supporting GET/POST and with/without /api prefix)
+  const handleD1QueryRequest = async (req: any, res: any) => {
     try {
-      const { sql, params } = req.body;
-      if (!sql) {
-        return res.status(400).json({ error: "Kueri SQL diperlukan" });
+      let bodyData = req.body;
+      
+      // 1. Fallback to rawBody if parsed body is empty or not an object
+      if ((!bodyData || (typeof bodyData === "object" && !Object.keys(bodyData).length)) && req.rawBody) {
+        try {
+          bodyData = JSON.parse(req.rawBody);
+        } catch (e) {
+          // Parse as query string fallback
+          try {
+            const urlParams = new URLSearchParams(req.rawBody);
+            const sqlVal = urlParams.get("sql");
+            if (sqlVal) {
+              bodyData = {
+                sql: sqlVal,
+                params: urlParams.get("params")
+              };
+            }
+          } catch {}
+        }
       }
-      const results = await queryD1(sql, params || []);
+
+      // 2. Extract sql from wherever we can find it
+      let sql: string | undefined = undefined;
+      let params: any = undefined;
+
+      if (bodyData && typeof bodyData === "object") {
+        sql = bodyData.sql;
+        params = bodyData.params;
+      }
+
+      if (!sql && req.body && typeof req.body === "object") {
+        sql = req.body.sql;
+        if (params === undefined) params = req.body.params;
+      }
+
+      if (!sql && req.query) {
+        sql = req.query.sql as string;
+        if (params === undefined) params = req.query.params;
+      }
+
+      // 3. Fallback: Check if the raw body string itself is just a JSON string containing sql
+      if (!sql && req.rawBody) {
+        try {
+          const parsed = JSON.parse(req.rawBody);
+          if (parsed && typeof parsed === "object") {
+            sql = parsed.sql;
+            if (params === undefined) params = parsed.params;
+          }
+        } catch {}
+      }
+
+      // 4. Default params to empty array if still undefined
+      if (params === undefined || params === null) {
+        params = [];
+      }
+
+      if (typeof params === "string") {
+        try {
+          params = JSON.parse(params);
+        } catch {
+          params = [params];
+        }
+      }
+
+      if (!Array.isArray(params)) {
+        params = [params];
+      }
+
+      if (!sql) {
+        const debugInfo = {
+          timestamp: new Date().toISOString(),
+          method: req.method,
+          url: req.originalUrl,
+          headers: req.headers,
+          body: req.body,
+          query: req.query,
+          rawBody: req.rawBody || null,
+          bodyData: bodyData
+        };
+        try {
+          fs.writeFileSync(
+            path.join(process.cwd(), "failed-query.log"),
+            JSON.stringify(debugInfo, null, 2)
+          );
+        } catch (err) {}
+
+        console.warn("⚠️ Kueri SQL kosong diterima dari request:", debugInfo);
+        return res.status(400).json({ success: false, error: "Kueri SQL diperlukan" });
+      }
+
+      const results = await queryD1(sql, params);
       res.json({ success: true, results });
     } catch (err: any) {
-      console.error("❌ Error di gateway /api/d1/query:", err.message);
+      console.error("❌ Error di gateway d1/query:", err.message);
       res.status(500).json({ success: false, error: err.message });
     }
-  });
+  };
+
+  app.post("/api/d1/query", handleD1QueryRequest);
+  app.get("/api/d1/query", handleD1QueryRequest);
+  app.post("/d1/query", handleD1QueryRequest);
+  app.get("/d1/query", handleD1QueryRequest);
 
   // Health / Status check endpoint untuk Google Drive Service Account
   app.get("/api/health", (req, res) => {
@@ -477,6 +415,11 @@ async function startServer() {
       serviceAccountConnected: hasServiceAccount,
       folderIdConfigured: !!(process.env.GOOGLE_DRIVE_FOLDER_ID)
     });
+  });
+
+  // Catch-all for API routes to prevent them from falling through to the Vite SPA fallback (which returns HTML)
+  app.use("/api", (req, res) => {
+    res.status(404).json({ success: false, error: `API endpoint not found: ${req.method} ${req.url}` });
   });
 
   // Vite middleware for development

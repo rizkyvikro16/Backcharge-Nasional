@@ -138,6 +138,80 @@ export default {
       );
     }
 
+    // 1b. Google Drive Upload Relay Endpoint
+    if (pathname === "/api/upload-to-drive" && request.method === "POST") {
+      try {
+        const formData = await request.formData();
+        const file = formData.get("file");
+        if (!file || typeof file === "string") {
+          return new Response(JSON.stringify({ error: "Tidak ada file yang diunggah" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", ...corsHeaders }
+          });
+        }
+
+        const appsScriptUrl = env.VITE_GOOGLE_APPS_SCRIPT_URL || 
+                              env.GOOGLE_APPS_SCRIPT_URL || 
+                              "https://script.google.com/macros/s/AKfycbwtd0ETxA17JRECbuhpPjnQRvmlI8OmExOOmbl5hlxWDY1O33rV99OZ68eVnQ7Sp_n-/exec";
+        const targetFolderId = env.GOOGLE_DRIVE_FOLDER_ID || "1YDe87vD-540Tupk2gwp9qGfvGNBBoZEQ";
+
+        const buffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(i, i + chunkSize);
+          binary += String.fromCharCode.apply(null, Array.from(chunk));
+        }
+        const base64Data = btoa(binary);
+
+        const gasResponse = await fetch(appsScriptUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "text/plain;charset=utf-8",
+          },
+          body: JSON.stringify({
+            fileBase64: base64Data,
+            fileName: file.name || "document.jpg",
+            mimeType: file.type || "image/jpeg",
+            folderId: targetFolderId,
+            parentId: targetFolderId,
+          }),
+          redirect: "follow",
+        });
+
+        if (gasResponse.ok) {
+          const gasData = await gasResponse.json().catch(async () => {
+            const txt = await gasResponse.text();
+            try { return JSON.parse(txt); } catch { return { fileUrl: txt }; }
+          });
+          const fileUrl = gasData?.fileUrl || gasData?.url || (gasData?.id ? `https://drive.google.com/file/d/${gasData.id}/view` : null);
+          if (fileUrl) {
+            return new Response(JSON.stringify({
+              success: true,
+              isDrive: true,
+              fileId: gasData?.id || gasData?.fileId,
+              webViewLink: fileUrl
+            }), {
+              headers: { "Content-Type": "application/json", ...corsHeaders }
+            });
+          }
+        }
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Google Apps Script Relay tidak mengembalikan URL yang valid"
+        }), {
+          status: 502,
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        });
+      } catch (uploadErr) {
+        return new Response(JSON.stringify({ success: false, error: uploadErr.message }), {
+          status: 500,
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        });
+      }
+    }
+
     // 2. Schema Migration & Self-Healing Endpoint
     if (pathname === "/api/d1/migrate" && request.method === "POST") {
       try {
@@ -171,14 +245,18 @@ export default {
           );
         }
 
-        // Safety optimization: automatically append LIMIT 1000 if a SELECT on backcharges or activity_logs has no limit
+        // Safety & quota optimization for Cloudflare D1
         let optimizedSql = sql;
         if (sql && typeof sql === 'string') {
           const sqlUpper = sql.toUpperCase().trim();
           if (sqlUpper.startsWith("SELECT ") && !sqlUpper.includes(" LIMIT ")) {
             if (sqlUpper.includes(" FROM BACKCHARGES") || sqlUpper.includes(" FROM ACTIVITY_LOGS")) {
-              optimizedSql = `${sql.trim()} LIMIT 1000`;
+              optimizedSql = `${sql.trim()} LIMIT 50`;
             }
+          }
+          // Ensure INSERT INTO backcharges handles ON CONFLICT to prevent UNIQUE constraint failed
+          if (sqlUpper.startsWith("INSERT INTO BACKCHARGES") && !sqlUpper.includes("ON CONFLICT")) {
+            optimizedSql = `${sql.trim()} ON CONFLICT(id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP`;
           }
         }
 

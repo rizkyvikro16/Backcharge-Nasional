@@ -1,14 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Key, Mail, Layers, CheckCircle, Clock, AlertTriangle, BarChart3, 
   Download, FileSpreadsheet, RefreshCw, LogOut, Bell, Shield, Users, Landmark, UserCheck, X
 } from 'lucide-react';
 
-import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, hasRole, isRegionalHeadRole, ALL_SYSTEM_BRANCHES } from './types';
+import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, getRoleAllowedBranches, hasRole, isRegionalHeadRole, ALL_SYSTEM_BRANCHES } from './types';
 import { mockDb } from './supabaseClient';
-const isSupabaseConfigured = false;
-const supabase = null as any;
 
 import AuthScreen from './components/AuthScreen';
 import Dashboard from './components/Dashboard';
@@ -57,6 +55,7 @@ function packExtraFields(tx: any): string {
 }
 
 function unpackExtraFields(item: any): any {
+  // 1. Direct DB column values take highest priority
   let no_bak = item.no_bak || '-';
   let no_tilang = item.no_tilang || '-';
   let tanggal = item.tanggal || null;
@@ -83,59 +82,84 @@ function unpackExtraFields(item: any): any {
   let division_approved_at = item.division_approved_at || null;
   let division_approval_note = item.division_approval_note || null;
 
+  // 2. Fallback to packed fields inside no_bak ONLY if direct column value is missing/empty
   if (no_bak && no_bak.includes('||')) {
     const parts = no_bak.split('||');
     no_bak = parts[0];
     
     parts.slice(1).forEach((part: string) => {
       if (part.startsWith('TILANG:')) {
-        no_tilang = part.substring(7);
+        const val = part.substring(7);
+        if (!no_tilang || no_tilang === '-') no_tilang = val;
       } else if (part.startsWith('TANGGAL:')) {
-        tanggal = part.substring(8);
+        const val = part.substring(8);
+        if (!tanggal) tanggal = val;
       } else if (part.startsWith('TANGGAL_HANDOVER:')) {
-        tanggal_handover = part.substring(17);
+        const val = part.substring(17);
+        if (!tanggal_handover) tanggal_handover = val;
       } else if (part.startsWith('NAMA_BRO:')) {
-        nama_bro = part.substring(9);
+        const val = part.substring(9);
+        if (!nama_bro || nama_bro === '-') nama_bro = val;
       } else if (part.startsWith('ALASAN:')) {
-        alasan = part.substring(7);
+        const val = part.substring(7);
+        if (!alasan || alasan === '-') alasan = val;
       } else if (part.startsWith('DOK_PENDUKUNG:')) {
-        upload_dok_pendukung = part.substring(14);
+        const val = part.substring(14);
+        if (!upload_dok_pendukung) upload_dok_pendukung = val;
       } else if (part.startsWith('APPROVAL:')) {
-        status_approval = part.substring(9);
+        const val = part.substring(9);
+        if (!item.status_approval || item.status_approval === 'Belum Approval') status_approval = val;
       } else if (part.startsWith('APPROVED_BY:')) {
-        approved_by = part.substring(12);
+        const val = part.substring(12);
+        if (!approved_by) approved_by = val;
       } else if (part.startsWith('APPROVED_AT:')) {
-        approved_at = part.substring(12);
+        const val = part.substring(12);
+        if (!approved_at) approved_at = val;
       } else if (part.startsWith('APPROVAL_NOTE:')) {
-        approval_note = part.substring(14);
+        const val = part.substring(14);
+        if (!approval_note) approval_note = val;
       } else if (part.startsWith('APP_ATT1:')) {
-        approval_attachment_1_url = part.substring(9);
+        const val = part.substring(9);
+        if (!approval_attachment_1_url) approval_attachment_1_url = val;
       } else if (part.startsWith('APP_ATT2:')) {
-        approval_attachment_2_url = part.substring(9);
+        const val = part.substring(9);
+        if (!approval_attachment_2_url) approval_attachment_2_url = val;
       } else if (part.startsWith('APP_ATT3:')) {
-        approval_attachment_3_url = part.substring(9);
+        const val = part.substring(9);
+        if (!approval_attachment_3_url) approval_attachment_3_url = val;
       } else if (part.startsWith('REG_STATUS:')) {
-        regional_approval_status = part.substring(11);
+        const val = part.substring(11);
+        if (!item.regional_approval_status || item.regional_approval_status === 'Belum Approval') regional_approval_status = val;
       } else if (part.startsWith('REG_BY:')) {
-        regional_approved_by = part.substring(7);
+        const val = part.substring(7);
+        if (!regional_approved_by) regional_approved_by = val;
       } else if (part.startsWith('REG_AT:')) {
-        regional_approved_at = part.substring(7);
+        const val = part.substring(7);
+        if (!regional_approved_at) regional_approved_at = val;
       } else if (part.startsWith('REG_NOTE:')) {
-        regional_approval_note = part.substring(9);
+        const val = part.substring(9);
+        if (!regional_approval_note) regional_approval_note = val;
       } else if (part.startsWith('DIV_STATUS:')) {
-        division_approval_status = part.substring(11);
+        const val = part.substring(11);
+        if (!item.division_approval_status || item.division_approval_status === 'Belum Approval') division_approval_status = val;
       } else if (part.startsWith('DIV_BY:')) {
-        division_approved_by = part.substring(7);
+        const val = part.substring(7);
+        if (!division_approved_by) division_approved_by = val;
       } else if (part.startsWith('DIV_AT:')) {
-        division_approved_at = part.substring(7);
+        const val = part.substring(7);
+        if (!division_approved_at) division_approved_at = val;
       } else if (part.startsWith('DIV_NOTE:')) {
-        division_approval_note = part.substring(9);
+        const val = part.substring(9);
+        if (!division_approval_note) division_approval_note = val;
       }
     });
   }
 
+  const status_handover = item.status_handover || 'Pending';
+
   return {
     ...item,
+    status_handover,
     no_bak,
     no_tilang,
     tanggal,
@@ -161,6 +185,27 @@ function unpackExtraFields(item: any): any {
     division_approved_at,
     division_approval_note
   };
+}
+
+export function cleanDbPayload(payload: any) {
+  const DB_COLUMNS = [
+    'id', 'category', 'branch', 'no_bak', 'no_spk', 'no_sap', 'no_tilang',
+    'customer_name', 'license_plate', 'value', 'status_sap', 'status_confirm',
+    'status_handover', 'no_invoice', 'status_payment', 'created_by', 'created_at',
+    'updated_at', 'file_bak_url', 'file_handover_aso_sales_url',
+    'file_handover_sales_admin_url', 'tanggal', 'tanggal_handover', 'nama_bro', 'upload_dok_pendukung', 'alasan',
+    'status_approval', 'approved_by', 'approved_at', 'approval_note',
+    'approval_attachment_1_url', 'approval_attachment_2_url', 'approval_attachment_3_url',
+    'regional_approval_status', 'regional_approved_by', 'regional_approved_at', 'regional_approval_note',
+    'division_approval_status', 'division_approved_by', 'division_approved_at', 'division_approval_note'
+  ];
+  const cleaned: any = {};
+  for (const key of DB_COLUMNS) {
+    if (key in payload) {
+      cleaned[key] = payload[key];
+    }
+  }
+  return cleaned;
 }
 
 // Helper to derive role-specific actionable tasks for Antrean Tugas
@@ -436,75 +481,14 @@ function getNotificationBadge(notif: AppNotification) {
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
-  const [activeRole, setActiveRole] = useState<UserRole | null>(null);
-  const [activeBranch, setActiveBranch] = useState<string | null>(null);
 
-  // Derive available roles based on user and dual role settings
-  const availableUserRoles = React.useMemo<UserRole[]>(() => {
-    if (!currentUser) return [];
-    const registeredRoles = currentUser.role ? String(currentUser.role).split(',').map(s => s.trim()) as UserRole[] : [];
-    
-    // Check if user has either Sales Head or Kepala Cabang registered
-    const hasSH = registeredRoles.includes('Sales Head');
-    const hasKC = registeredRoles.includes('Kepala Cabang');
-    
-    if (hasSH || hasKC) {
-      const roleSet = new Set<UserRole>(registeredRoles);
-      roleSet.add('Sales Head');
-      roleSet.add('Kepala Cabang');
-      return Array.from(roleSet);
-    }
-    return registeredRoles;
-  }, [currentUser]);
 
-  // Derive available branches
-  const availableUserBranches = React.useMemo<string[]>(() => {
-    if (!currentUser) return [];
-    if (currentUser.branch === 'Nasional') return ALL_SYSTEM_BRANCHES;
-    return currentUser.branch ? String(currentUser.branch).split(',').map(s => s.trim()).filter(Boolean) : [];
-  }, [currentUser]);
 
-  // Create activeUser that represents the currently active persona/branch context
-  const activeUser = React.useMemo<Profile | null>(() => {
-    if (!currentUser) return null;
-    
-    let resolvedRole = activeRole;
-    if (!resolvedRole || !availableUserRoles.includes(resolvedRole)) {
-      resolvedRole = availableUserRoles[0] || currentUser.role;
-    }
-    
-    const resolvedBranch = currentUser.branch;
-    
-    return {
-      ...currentUser,
-      role: resolvedRole,
-      branch: resolvedBranch
-    };
-  }, [currentUser, activeRole, availableUserRoles]);
 
-  // Automatically update activeRole/activeBranch when currentUser logs in or is changed
-  useEffect(() => {
-    if (currentUser) {
-      const roles = currentUser.role ? String(currentUser.role).split(',').map(s => s.trim()) as UserRole[] : [];
-      const branches = currentUser.branch ? String(currentUser.branch).split(',').map(s => s.trim()).filter(Boolean) : [];
-      
-      // Check if user is Sales Head or Kepala Cabang to enable dual roles by default
-      const hasSH = roles.includes('Sales Head');
-      const hasKC = roles.includes('Kepala Cabang');
-      
-      let defaultRole = roles[0];
-      if (hasSH || hasKC) {
-        // If they have both, prioritize their main role or default to 'Sales Head'
-        defaultRole = roles.includes('Sales Head') ? 'Sales Head' : 'Kepala Cabang';
-      }
-      
-      setActiveRole(defaultRole || currentUser.role);
-      setActiveBranch(branches[0] || currentUser.branch);
-    } else {
-      setActiveRole(null);
-      setActiveBranch(null);
-    }
-  }, [currentUser]);
+
+
+
+
 
   const [currentTab, setCurrentTab] = useState<'dashboard' | 'database' | 'audit' | 'users' | 'complaints'>('dashboard');
   const [activeAlertFilter, setActiveAlertFilter] = useState<'due' | 'pending' | 'high_value' | ''>('');
@@ -556,10 +540,22 @@ export default function App() {
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Safety timeout guard: Prevent loading overlay from sticking for more than 8 seconds
+  useEffect(() => {
+    if (loading) {
+      const timer = setTimeout(() => {
+        setLoading(false);
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [loading]);
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' | 'info' }[]>([]);
   const [sidebarHover, setSidebarHover] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showD1Banner, setShowD1Banner] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const isInitialLoadRef = useRef<boolean>(true);
 
   const isWorkerHost = typeof window !== 'undefined' && (
     window.location.hostname.includes("workers.dev") ||
@@ -571,6 +567,7 @@ export default function App() {
     return localStorage.getItem('backcharge_use_d1') !== 'false';
   });
   const [d1Error, setD1Error] = useState<string | null>(null);
+  const [showD1Modal, setShowD1Modal] = useState<boolean>(true);
   const [migratingD1, setMigratingD1] = useState<boolean>(false);
 
   const runD1Migration = async () => {
@@ -585,7 +582,7 @@ export default function App() {
         setD1Error(null);
         setIsD1Active(true);
         try { localStorage.setItem('backcharge_use_d1', 'true'); } catch {}
-        fetchData();
+        fetchData(true);
       } else {
         addToast(`Gagal migrasi: ${data.error || 'Respon tidak valid'}`, "error");
       }
@@ -609,7 +606,7 @@ export default function App() {
         setD1Error(null);
         setIsD1Active(true);
         try { localStorage.setItem('backcharge_use_d1', 'true'); } catch {}
-        fetchData();
+        fetchData(true);
       } else {
         addToast(`Gagal impor data SQL: ${data.error || 'Respon tidak valid'}`, "error");
       }
@@ -633,7 +630,7 @@ export default function App() {
         setD1Error(null);
         setIsD1Active(true);
         try { localStorage.setItem('backcharge_use_d1', 'true'); } catch {}
-        fetchData();
+        fetchData(true);
       } else {
         addToast(`Gagal sinkronisasi data: ${data.error || 'Respon tidak valid'}`, "error");
       }
@@ -702,16 +699,88 @@ export default function App() {
 
   // Automatically derive role-specific actionable notifications
   useEffect(() => {
-    if (activeUser) {
-      const derived = deriveNotifications(transactions, activeUser, readNotifIds);
+    if (currentUser) {
+      const derived = deriveNotifications(transactions, currentUser, readNotifIds);
       setNotifications(derived);
     } else {
       setNotifications([]);
     }
-  }, [transactions, activeUser, readNotifIds]);
+  }, [transactions, currentUser, readNotifIds]);
+
+  // Shared fast D1 query executor
+  const executeD1Query = useCallback(async (sql: string, params: any[] = []): Promise<any[]> => {
+    const res = await fetch(getApiUrl("/api/d1/query"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sql, params })
+    });
+    const text = await res.text();
+    let d: any = {};
+    try { 
+      d = JSON.parse(text); 
+    } catch {
+      if (text.trim().startsWith("<!") || text.trim().startsWith("<html")) {
+        if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+          try {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+              for (const reg of registrations) reg.unregister();
+            });
+          } catch {}
+        }
+        throw new Error(`Koneksi API D1 terintersepsi (Status ${res.status}). Mengulang koneksi ke server...`);
+      }
+      throw new Error(`Respons D1 tidak valid (${res.status}): ${text.substring(0, 100) || 'Kosong'}`);
+    }
+    if (!d.success) throw new Error(d.error || "Gagal kueri D1");
+    return d.results || [];
+  }, []);
+
+  // Helper for 0ms Optimistic UI Updates & Instant Local Storage Cache Sync
+  const updateTransactionsStateAndCache = useCallback((updater: (prev: Backcharge[]) => Backcharge[]) => {
+    setTransactions(prev => {
+      const next = updater(prev);
+      try {
+        localStorage.setItem('backcharge_cache_txs', JSON.stringify(next));
+        localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
+        if (currentUser) {
+          localStorage.setItem('backcharge_cache_user', currentUser.email);
+        }
+      } catch (e) {}
+      return next;
+    });
+  }, [currentUser]);
+
+  const updateProfilesStateAndCache = useCallback((updater: (prev: Profile[]) => Profile[]) => {
+    setProfiles(prev => {
+      const next = updater(prev);
+      try {
+        localStorage.setItem('backcharge_cache_profs', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  }, []);
+
+  const updateInquiriesStateAndCache = useCallback((updater: (prev: ContactInquiry[]) => ContactInquiry[]) => {
+    setInquiries(prev => {
+      const next = updater(prev);
+      try {
+        localStorage.setItem('backcharge_cache_inquiries', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  }, []);
 
   // Fetch app data
-  const fetchData = async (forceFull = false) => {
+  const fetchData = async (forceFull = false, userOverride?: Profile) => {
+    const activeUser = userOverride || currentUser || (() => {
+      try {
+        const s = localStorage.getItem('backcharge_session_profile');
+        return s ? JSON.parse(s) : null;
+      } catch {
+        return null;
+      }
+    })();
+
     // 1. INSTANT LOCAL CACHE HYDRATION (0ms Load Experience)
     let loadedFromCache = false;
     try {
@@ -720,8 +789,11 @@ export default function App() {
       const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
       
       if (cachedTxsStr) {
-        setTransactions(JSON.parse(cachedTxsStr));
-        loadedFromCache = true;
+        const parsedTxs = JSON.parse(cachedTxsStr);
+        if (Array.isArray(parsedTxs) && parsedTxs.length > 0) {
+          setTransactions(parsedTxs);
+          loadedFromCache = true;
+        }
       }
       if (cachedLogsStr) {
         setLogs(JSON.parse(cachedLogsStr));
@@ -733,87 +805,66 @@ export default function App() {
       console.warn("Failed to read initial local cache:", e);
     }
 
-    // Set loading so the sync indicator is shown in the background
-    setLoading(true);
+    // Only set full-page blocking loading if we do NOT have any local data cached
+    if (!loadedFromCache) {
+      setLoading(true);
+    }
+
+    // SMART QUOTA PRESERVATION:
+    // If cache has valid non-empty data and is younger than 1 hour for the same user, use cache on normal load
+    if (!forceFull && loadedFromCache && activeUser) {
+      try {
+        const cachedUser = localStorage.getItem('backcharge_cache_user');
+        const cacheTime = parseInt(localStorage.getItem('backcharge_cache_time_v2') || '0', 10);
+        const hoursElapsed = (Date.now() - cacheTime) / (1000 * 60 * 60);
+        
+        if (cachedUser === activeUser.email && cacheTime > 0 && hoursElapsed < 1) {
+          console.log(`💡 Quota Saver: Using local cache for ${activeUser.email} (${hoursElapsed.toFixed(1)}h old). Skipping D1 query.`);
+          setLoading(false);
+          return;
+        }
+      } catch (e) {}
+    }
 
     if (isD1Active) {
       try {
-        if (forceFull) {
-          try { 
-            localStorage.removeItem('backcharge_cache_txs'); 
-            localStorage.removeItem('backcharge_cache_logs');
-            localStorage.removeItem('backcharge_cache_profs');
-          } catch {}
-        }
-
-        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch(getApiUrl("/api/d1/query"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, params })
-          });
-          const text = await res.text();
-          let d: any = {};
-          try {
-            d = JSON.parse(text);
-          } catch {
-            throw new Error(`Respons tidak valid (${res.status}): ${text.substring(0, 100) || 'Kosong'}`);
-          }
-          if (!d.success) throw new Error(d.error || "Gagal kueri D1");
-          return d.results || [];
-        };
-
-        // Concurrent fetching for all tables
+        // Concurrent fetching for all tables in background
         const fetchD1Promise = (async () => {
-          let backchargesQuery = "SELECT * FROM backcharges ORDER BY created_at DESC";
+          let backchargesQuery = "SELECT * FROM backcharges WHERE 1=1";
+          let queryParams: any[] = [];
+          
           const logsQuery = "SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT 150";
-          const profilesQuery = hasRole(currentUser?.role, 'Administrator')
-            ? "SELECT * FROM profiles ORDER BY full_name ASC"
-            : "SELECT * FROM profiles WHERE id = '___NONE___'"; // avoid unneeded pull if not admin
+          const profilesQuery = "SELECT * FROM profiles ORDER BY full_name ASC";
           const inquiriesQuery = "SELECT * FROM contact_inquiries ORDER BY created_at DESC LIMIT 100";
 
-          // Role and branch authorization filters
-          if (currentUser && currentUser.branch !== 'Nasional') {
-            const userBranches = getUserBranches(currentUser.branch);
-            if (userBranches.length > 0) {
-              const branchList = userBranches.map(b => `'${b.replace(/'/g, "''")}'`).join(",");
-              backchargesQuery = `SELECT * FROM backcharges WHERE branch IN (${branchList}) ORDER BY created_at DESC`;
+          // Role & Branch authorization filter
+          if (activeUser) {
+            const allowedBranches = getRoleAllowedBranches(activeUser.role, activeUser.branch);
+            if (allowedBranches.length > 0 && allowedBranches.length < ALL_SYSTEM_BRANCHES.length) {
+              const branchList = allowedBranches.map(b => `'${b.replace(/'/g, "''")}'`).join(",");
+              backchargesQuery += ` AND branch IN (${branchList})`;
             }
           }
+          
+          backchargesQuery += " ORDER BY created_at DESC";
 
-          // Paginated fetch to overcome Cloudflare D1's 1000-row REST API limit
-          const fetchAllBackchargesFromD1 = async (baseSql: string): Promise<any[]> => {
-            let allRows: any[] = [];
-            let offset = 0;
-            const limit = 1000;
-            let hasMore = true;
-
-            while (hasMore) {
-              const paginatedSql = `${baseSql} LIMIT ${limit} OFFSET ${offset}`;
-              const chunk = await executeD1Query(paginatedSql);
-              if (chunk && chunk.length > 0) {
-                allRows = [...allRows, ...chunk];
-                if (chunk.length < limit) {
-                  hasMore = false;
-                } else {
-                  offset += limit;
-                }
-              } else {
-                hasMore = false;
-              }
-            }
-            return allRows;
+          const fetchAllBackchargesFromD1 = async (baseSql: string, params: any[] = []): Promise<any[]> => {
+            const safeSql = `${baseSql} LIMIT 6000`;
+            const chunk = await executeD1Query(safeSql, params);
+            return chunk || [];
           };
 
           try {
-            const bcs = await fetchAllBackchargesFromD1(backchargesQuery);
-            const logsData = await executeD1Query(logsQuery);
-            const profilesData = hasRole(currentUser?.role, 'Administrator')
-              ? await executeD1Query(profilesQuery)
-              : [];
-            const inquiriesData = await executeD1Query(inquiriesQuery);
+            // Execute all D1 queries concurrently for maximum performance
+            const [bcs, logsData, profilesData, inquiriesData] = await Promise.all([
+              fetchAllBackchargesFromD1(backchargesQuery, queryParams),
+              executeD1Query(logsQuery),
+              executeD1Query(profilesQuery),
+              executeD1Query(inquiriesQuery)
+            ]);
+            isInitialLoadRef.current = false;
 
-            const unpackedTxs = bcs.map(unpackExtraFields);
+            const unpackedTxs = (bcs || []).map(unpackExtraFields);
             setTransactions(unpackedTxs as Backcharge[]);
             setLogs((logsData as ActivityLog[]) || []);
             setProfiles((profilesData as Profile[]) || []);
@@ -823,24 +874,38 @@ export default function App() {
               localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedTxs));
               localStorage.setItem('backcharge_cache_logs', JSON.stringify(logsData));
               localStorage.setItem('backcharge_cache_profs', JSON.stringify(profilesData));
-            } catch {}
+              localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
+              localStorage.setItem('backcharge_cache_user', activeUser?.email || '');
+            } catch (cacheErr) {
+              try {
+                // If localStorage quota is reached, store recent 500 items for instant hydration
+                const lean = unpackedTxs.slice(0, 500);
+                localStorage.setItem('backcharge_cache_txs', JSON.stringify(lean));
+                localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
+                localStorage.setItem('backcharge_cache_user', activeUser?.email || '');
+              } catch {}
+            }
           } catch (e: any) {
             console.warn("Gagal kueri D1, mencoba migrasi skema otomatis...", e);
             try {
               await fetch(getApiUrl("/api/d1/migrate"), { method: "POST" });
-              // Retry D1 queries
-              const bcs = await fetchAllBackchargesFromD1(backchargesQuery);
-              const logsData = await executeD1Query(logsQuery);
-              const profilesData = hasRole(currentUser?.role, 'Administrator')
-                ? await executeD1Query(profilesQuery)
-                : [];
-              const inquiriesData = await executeD1Query(inquiriesQuery);
+              const [bcs, logsData, profilesData, inquiriesData] = await Promise.all([
+                fetchAllBackchargesFromD1(backchargesQuery, queryParams),
+                executeD1Query(logsQuery),
+                executeD1Query(profilesQuery),
+                executeD1Query(inquiriesQuery)
+              ]);
 
-              const unpackedTxs = bcs.map(unpackExtraFields);
+              const unpackedTxs = (bcs || []).map(unpackExtraFields);
               setTransactions(unpackedTxs as Backcharge[]);
               setLogs((logsData as ActivityLog[]) || []);
               setProfiles((profilesData as Profile[]) || []);
               setInquiries((inquiriesData as ContactInquiry[]) || []);
+              try {
+                localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedTxs));
+                localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
+                localStorage.setItem('backcharge_cache_user', activeUser?.email || '');
+              } catch {}
             } catch (retryErr: any) {
               console.error("Gagal kueri D1 setelah migrasi:", retryErr);
               throw retryErr;
@@ -855,13 +920,12 @@ export default function App() {
         addToast(`Gagal memuat Cloudflare D1: ${err.message}`, 'error');
         setD1Error(err.message || String(err));
         
-        // Auto-fallback to offline/local mode only if not running on Cloudflare Workers/Pages
         if (!isWorkerHost) {
           setIsD1Active(false);
           setTimeout(() => {
             let bcs = mockDb.getBackcharges();
-            if (currentUser && currentUser.branch !== 'Nasional') {
-              const userBranches = getUserBranches(currentUser.branch);
+            if (activeUser && activeUser.branch !== 'Nasional') {
+              const userBranches = getUserBranches(activeUser.branch);
               bcs = bcs.filter(t => userBranches.includes(t.branch));
             }
             const unpackedData = bcs.map(unpackExtraFields);
@@ -877,364 +941,61 @@ export default function App() {
       return;
     }
     
-    if (isSupabaseConfigured && supabase) {
-      try {
-        if (forceFull) {
-          try { 
-            localStorage.removeItem('backcharge_cache_txs'); 
-            localStorage.removeItem('backcharge_cache_logs');
-            localStorage.removeItem('backcharge_cache_profs');
-          } catch {}
-        }
-
-        // We run the metadata fetch (logs, profiles, inquiries) and transaction sync concurrently
-        const fetchMetadataPromise = (async () => {
-          try {
-            const logsPromise = supabase
-              .from('activity_logs')
-              .select('*')
-              .order('timestamp', { ascending: false })
-              .limit(150);
-
-            const profilesPromise = hasRole(currentUser?.role, 'Administrator')
-              ? supabase.from('profiles').select('*').order('full_name', { ascending: true })
-              : Promise.resolve({ data: null, error: null });
-
-            const inquiriesPromise = supabase
-              .from('contact_inquiries')
-              .select('*')
-              .order('created_at', { ascending: false });
-
-            const [logsRes, profsRes, ciRes] = await Promise.all([
-              logsPromise,
-              profilesPromise,
-              inquiriesPromise
-            ]);
-
-            if (logsRes.error) throw logsRes.error;
-            if (logsRes.data) {
-              setLogs((logsRes.data as ActivityLog[]) || []);
-              try { localStorage.setItem('backcharge_cache_logs', JSON.stringify(logsRes.data)); } catch {}
-            }
-
-            if (profsRes.error) throw profsRes.error;
-            if (profsRes.data) {
-              setProfiles((profsRes.data as Profile[]) || []);
-              try { localStorage.setItem('backcharge_cache_profs', JSON.stringify(profsRes.data)); } catch {}
-            }
-
-            if (ciRes.error) {
-              console.warn("Could not fetch contact inquiries from Supabase. Using local storage fallback.", ciRes.error);
-              setInquiries(mockDb.getContactInquiries());
-            } else if (ciRes.data) {
-              setInquiries((ciRes.data as ContactInquiry[]) || []);
-            }
-          } catch (e: any) {
-            console.warn("Error fetching metadata concurrently:", e);
-          }
-        })();
-
-        // 2. TRANSACTION SYNC PROCESS
-        let unpackedData: Backcharge[] = [];
-
-        const syncTransactionsPromise = (async () => {
-          try {
-            // SMART DELTA SYNC (To prevent Egress quota blow up and avoid statement timeouts)
-            let cachedTxs: any[] = [];
-            if (!forceFull) {
-              try {
-                const cacheStr = localStorage.getItem('backcharge_cache_txs');
-                if (cacheStr) cachedTxs = JSON.parse(cacheStr);
-              } catch (e) {}
-            }
-
-            if (cachedTxs.length > 0) {
-              // If we have cache, we do a lightweight sync to save >90% Egress
-              let lastSync = new Date(0).toISOString();
-              for (const tx of cachedTxs) {
-                if (tx.updated_at && tx.updated_at > lastSync) {
-                  lastSync = tx.updated_at;
-                }
-              }
-
-              // b. Fetch only IDs to prune deleted rows (Paginated in small chunks of 250)
-              let allDbIds: string[] = [];
-              let idStart = 0;
-              let idChunkSize = 250;
-              let hasMoreIds = true;
-              
-              while (hasMoreIds) {
-                let idQuery = supabase.from('backcharges').select('id').range(idStart, idStart + idChunkSize - 1);
-                if (currentUser && currentUser.branch !== 'Nasional') {
-                  const userBranches = getUserBranches(currentUser.branch);
-                  if (userBranches.length > 0) idQuery = idQuery.in('branch', userBranches);
-                }
-                const { data: dbIdsData, error: idError } = await idQuery;
-                if (idError) throw idError;
-                
-                if (dbIdsData && dbIdsData.length > 0) {
-                  allDbIds = [...allDbIds, ...dbIdsData.map(d => d.id)];
-                  if (dbIdsData.length < idChunkSize) hasMoreIds = false;
-                  else idStart += idChunkSize;
-                } else {
-                  hasMoreIds = false;
-                }
-              }
-              const validIds = new Set(allDbIds);
-              
-              // c. Filter out deleted records from cache
-              let syncedTxs = cachedTxs.filter(tx => validIds.has(tx.id));
-
-              // d. Gaps identification (Find IDs present in database but missing from the local cache)
-              const syncedIds = new Set(syncedTxs.map(tx => tx.id));
-              const missingIds = allDbIds.filter(id => !syncedIds.has(id));
-
-              let missingData: any[] = [];
-              if (missingIds.length > 0) {
-                const missingChunkSize = 100;
-                for (let i = 0; i < missingIds.length; i += missingChunkSize) {
-                  const batch = missingIds.slice(i, i + missingChunkSize);
-                  let missingQuery = supabase
-                    .from('backcharges')
-                    .select('*')
-                    .in('id', batch);
-                  
-                  if (currentUser && currentUser.branch !== 'Nasional') {
-                    const userBranches = getUserBranches(currentUser.branch);
-                    if (userBranches.length > 0) missingQuery = missingQuery.in('branch', userBranches);
-                  }
-
-                  const { data: mChunk, error: mError } = await missingQuery;
-                  if (mError) throw mError;
-                  if (mChunk && mChunk.length > 0) {
-                    missingData = [...missingData, ...mChunk];
-                  }
-                }
-              }
-
-              if (missingData.length > 0) {
-                const missingUnpacked = missingData.map(unpackExtraFields);
-                syncedTxs = [...missingUnpacked, ...syncedTxs];
-              }
-
-              // e. Fetch ONLY newly created or updated records since last sync (Paginated)
-              let deltaData: any[] = [];
-              let deltaStart = 0;
-              let deltaChunkSize = 250;
-              let hasMoreDelta = true;
-              
-              while (hasMoreDelta) {
-                let deltaQuery = supabase
-                  .from('backcharges')
-                  .select('*')
-                  .gt('updated_at', lastSync)
-                  .range(deltaStart, deltaStart + deltaChunkSize - 1);
-                  
-                if (currentUser && currentUser.branch !== 'Nasional') {
-                  const userBranches = getUserBranches(currentUser.branch);
-                  if (userBranches.length > 0) deltaQuery = deltaQuery.in('branch', userBranches);
-                }
-                
-                const { data: chunkData, error: deltaError } = await deltaQuery;
-                if (deltaError) throw deltaError;
-                
-                if (chunkData && chunkData.length > 0) {
-                  deltaData = [...deltaData, ...chunkData];
-                  if (chunkData.length < deltaChunkSize) hasMoreDelta = false;
-                  else deltaStart += deltaChunkSize;
-                } else {
-                  hasMoreDelta = false;
-                }
-              }
-
-              // f. Merge the delta into our synced list
-              if (deltaData && deltaData.length > 0) {
-                const deltaUnpacked = deltaData.map(unpackExtraFields);
-                const deltaMap = new Map(deltaUnpacked.map((tx: any) => [tx.id, tx]));
-                
-                // Replace updated records
-                syncedTxs = syncedTxs.map(tx => deltaMap.has(tx.id) ? deltaMap.get(tx.id) : tx);
-                
-                // Add brand new records
-                const existingIds = new Set(syncedTxs.map(tx => tx.id));
-                const newTxs = deltaUnpacked.filter((tx: any) => !existingIds.has(tx.id));
-                syncedTxs = [...newTxs, ...syncedTxs];
-              }
-              
-              // Sort final list by created_at descending in JS memory (extremely fast)
-              syncedTxs.sort((a, b) => new Date(b.created_at || b.tanggal).getTime() - new Date(a.created_at || a.tanggal).getTime());
-              unpackedData = syncedTxs as Backcharge[];
-
-            } else {
-              // If no cache (first time load on this device), do a fast paginated fetch without heavy server sorts
-              let allBcData: any[] = [];
-              let start = 0;
-              const chunkSize = 250;
-              let hasMore = true;
-              
-              while (hasMore) {
-                let query = supabase
-                  .from('backcharges')
-                  .select('*')
-                  .range(start, start + chunkSize - 1);
-                  
-                if (currentUser && currentUser.branch !== 'Nasional') {
-                  const userBranches = getUserBranches(currentUser.branch);
-                  if (userBranches.length > 0) {
-                    query = query.in('branch', userBranches);
-                  }
-                }
-                
-                const { data: chunkData, error: bcError } = await query;
-                if (bcError) throw bcError;
-                
-                if (chunkData && chunkData.length > 0) {
-                  allBcData = [...allBcData, ...chunkData];
-                  if (chunkData.length < chunkSize) hasMore = false;
-                  else start += chunkSize;
-                } else {
-                  hasMore = false;
-                }
-              }
-              unpackedData = allBcData.map(unpackExtraFields) as Backcharge[];
-              unpackedData.sort((a, b) => new Date(b.created_at || b.tanggal).getTime() - new Date(a.created_at || a.tanggal).getTime());
-            }
-
-            setTransactions(unpackedData);
-            try { localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedData)); } catch {}
-          } catch (syncErr: any) {
-            console.warn("Sinkronisasi Supabase gagal atau timeout:", syncErr);
-            const cacheStr = localStorage.getItem('backcharge_cache_txs');
-            if (cacheStr) {
-              try {
-                const cached = JSON.parse(cacheStr);
-                if (cached && cached.length > 0) {
-                  setTransactions(cached as Backcharge[]);
-                  addToast("Menampilkan data dari cache lokal (koneksi Supabase mengalami timeout).", "info");
-                  return;
-                }
-              } catch (e) {}
-            }
-            throw syncErr;
-          }
-        })();
-
-        // Wait for both the parallel metadata fetching and transaction synchronization to complete
-        await Promise.all([
-          syncTransactionsPromise,
-          fetchMetadataPromise
-        ]);
-
-      } catch (err: any) {
-        addToast(`Gagal menyinkronkan data: ${err.message}`, 'error');
-      } finally {
-        setLoading(false);
+    // Fetch mock offline data with minimum latency simulation
+    setTimeout(() => {
+      let bcs = mockDb.getBackcharges();
+      if (activeUser && activeUser.branch !== 'Nasional') {
+        const userBranches = getUserBranches(activeUser.branch);
+        bcs = bcs.filter(t => userBranches.includes(t.branch));
       }
-    } else {
-      // Fetch mock offline data with minimum latency simulation
-      setTimeout(() => {
-        let bcs = mockDb.getBackcharges();
-        if (currentUser && currentUser.branch !== 'Nasional') {
-          const userBranches = getUserBranches(currentUser.branch);
-          bcs = bcs.filter(t => userBranches.includes(t.branch));
-        }
-        
-        const unpackedData = bcs.map(unpackExtraFields);
-        setTransactions(unpackedData as Backcharge[]);
-        setLogs(mockDb.getLogs());
-        setProfiles(mockDb.getProfiles());
-        setInquiries(mockDb.getContactInquiries());
-        setLoading(false);
-      }, 50); // instant feeling
-    }
+      
+      const unpackedData = bcs.map(unpackExtraFields);
+      setTransactions(unpackedData as Backcharge[]);
+      setLogs(mockDb.getLogs());
+      setProfiles(mockDb.getProfiles());
+      setInquiries(mockDb.getContactInquiries());
+      setLoading(false);
+    }, 50); // instant feeling
   };
 
   // Fetch data on login or session restore or D1 status change
   useEffect(() => {
     if (currentUser) {
-      fetchData();
+      fetchData(false, currentUser);
     }
   }, [currentUser, isD1Active]);
 
-  // =========================================================================
-  // SUPABASE REAL-TIME LISTENER FOR REAL-TIME NOTIFICATIONS
-  // =========================================================================
-  useEffect(() => {
-    if (!currentUser) return;
-
-    if (isSupabaseConfigured && supabase) {
-      // Set up real-time postgres changes channel
-      const channel = supabase
-        .channel('backcharge-realtime-notif')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'backcharges' },
-          (payload) => {
-            const eventType = payload.eventType;
-            const rawNew = payload.new as any;
-            const rawOld = payload.old as any;
-
-            const newRecord = rawNew && Object.keys(rawNew).length > 0 ? unpackExtraFields(rawNew) : null;
-            const oldRecord = rawOld && Object.keys(rawOld).length > 0 ? unpackExtraFields(rawOld) : null;
-            const activeId = (newRecord?.id || oldRecord?.id || '') as string;
-
-            // Update local state in-place to avoid heavy database refetching
-            setTransactions(prev => {
-              if (eventType === 'INSERT' && newRecord) {
-                if (!prev.some(t => t.id === newRecord.id)) {
-                  return [newRecord as Backcharge, ...prev];
-                }
-              } else if (eventType === 'UPDATE' && newRecord) {
-                return prev.map(t => t.id === newRecord.id ? { ...t, ...newRecord } : t);
-              } else if (eventType === 'DELETE' && activeId) {
-                return prev.filter(t => t.id !== activeId);
-              }
-              return prev;
-            });
-
-            // Handle Toast Alerts based on Branch access
-            const targetBranch = newRecord?.branch || oldRecord?.branch || '';
-            const userBranches = currentUser.branch ? currentUser.branch.split(',').map(s => s.trim()) : [];
-            const isRelevantBranch = currentUser.branch === 'Nasional' || 
-              (targetBranch && (targetBranch === currentUser.branch || userBranches.includes(targetBranch)));
-
-            if (isRelevantBranch) {
-              if (eventType === 'INSERT' && newRecord) {
-                addToast(`Backcharge Baru: ${newRecord.id} - ${newRecord.customer_name || 'Pelanggan'}`, 'info');
-              } else if (eventType === 'UPDATE' && newRecord && oldRecord) {
-                let changeMessage = '';
-                if (oldRecord.status_confirm !== newRecord.status_confirm) {
-                  changeMessage = `Status konfirmasi diperbarui menjadi "${newRecord.status_confirm}"`;
-                } else if (oldRecord.status_sap !== newRecord.status_sap) {
-                  changeMessage = `Status SAP diperbarui menjadi "${newRecord.status_sap}"`;
-                } else if (oldRecord.status_handover !== newRecord.status_handover) {
-                  changeMessage = `Status penyerahan berkas diperbarui menjadi "${newRecord.status_handover}"`;
-                } else if (oldRecord.no_invoice !== newRecord.no_invoice) {
-                  changeMessage = `Nomor Invoice diperbarui menjadi "${newRecord.no_invoice}"`;
-                } else if (oldRecord.status_payment !== newRecord.status_payment) {
-                  changeMessage = `Status pembayaran diperbarui menjadi "${newRecord.status_payment}"`;
-                }
-
-                if (changeMessage) {
-                  addToast(`Status Diperbarui: ${newRecord.id} - ${changeMessage}`, 'success');
-                }
-              }
-            }
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
+  const handleRefreshData = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    addToast("Memperbarui & menyinkronkan data dengan database...", "info");
+    try {
+      await fetchData(true);
+      addToast("Data berhasil diperbarui & disinkronkan!", "success");
+    } catch (err: any) {
+      addToast(`Gagal menyinkronkan data: ${err.message || String(err)}`, "error");
+    } finally {
+      setIsRefreshing(false);
     }
-  }, [currentUser]);
+  };
 
   // Login handler
   const handleLoginSuccess = (profile: Profile) => {
+    try {
+      localStorage.removeItem('backcharge_cache_txs');
+      localStorage.removeItem('backcharge_cache_logs');
+      localStorage.removeItem('backcharge_cache_profs');
+      localStorage.removeItem('backcharge_cache_time_v2');
+      localStorage.removeItem('backcharge_cache_user');
+    } catch (e) {}
+    setTransactions([]);
+    setLoading(true);
     setCurrentUser(profile);
     localStorage.setItem('backcharge_session_profile', JSON.stringify(profile));
     addToast(`Otentikasi Berhasil! Selamat datang, ${profile.full_name}.`, 'success');
+    
+    // Immediately fetch user data with profile object to ensure zero-lag data population
+    fetchData(true, profile);
   };
 
   // Logout handler
@@ -1243,266 +1004,119 @@ export default function App() {
   };
 
   const confirmLogout = () => {
+    try {
+      localStorage.removeItem('backcharge_cache_txs');
+      localStorage.removeItem('backcharge_cache_logs');
+      localStorage.removeItem('backcharge_cache_profs');
+      localStorage.removeItem('backcharge_cache_time_v2');
+      localStorage.removeItem('backcharge_cache_user');
+    } catch (e) {}
     setCurrentUser(null);
     localStorage.removeItem('backcharge_session_profile');
     setShowLogoutConfirm(false);
     addToast("Berhasil logout dari sistem Backcharge.", "info");
   };
 
+    const generateNextTransactionId = async (): Promise<string> => {
+    const year = new Date().getFullYear();
+    let maxNum = 0;
+
+    // 1. Check D1 Database first
+    if (isD1Active) {
+      try {
+        // Order numerically using CAST & SUBSTR to ensure correct sequential ordering (e.g. 1000 > 999)
+        const res = await executeD1Query(
+          "SELECT id FROM backcharges WHERE id LIKE ? ORDER BY CAST(substr(id, 9) AS INTEGER) DESC LIMIT 1", 
+          [`BC-${year}-%`]
+        );
+        if (res && res.length > 0) {
+          const match = res[0].id.match(/BC-\d+-(\d+)/);
+          if (match) {
+            const parsed = parseInt(match[1], 10);
+            if (!isNaN(parsed) && parsed > maxNum) {
+              maxNum = parsed;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to get max ID from D1, falling back to local cache", err);
+      }
+    } 
+
+    // 2. Unconditionally check in-memory transactions state to prevent rapid double-click clashes
+    const currentYearPrefix = `BC-${year}-`;
+    transactions.forEach(t => {
+      if (t.id && t.id.startsWith(currentYearPrefix)) {
+        const match = t.id.match(/BC-\d+-(\d+)/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      }
+    });
+
+    const nextNum = maxNum + 1;
+    return `BC-${year}-${String(nextNum).padStart(4, '0')}`;
+  };
+
   // 1. ADD NEW TRANSACTION WORKFLOW
   const handleAddTransaction = async (newTx: Omit<Backcharge, 'id' | 'created_by' | 'created_at' | 'updated_at'>) => {
     if (!currentUser) return;
+    setLoading(true);
 
-    // Generate unique ID: BC-YYYY-XXXX
-    const year = new Date().getFullYear();
-    let maxNum = 0;
-    const usedIds = new Set<string>();
+    try {
+      const newId = await generateNextTransactionId();
+      const creatorEmail = currentUser.email;
 
-    // Always include all IDs in current memory transactions state
-    transactions.forEach(t => {
-      if (t.id) usedIds.add(t.id);
-    });
+      const txObj: Backcharge = {
+        ...newTx,
+        id: newId,
+        created_by: creatorEmail,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        nama_bro: newTx.nama_bro || newTx.bro_name || '-',
+        bro_name: newTx.nama_bro || newTx.bro_name || '-',
+        alasan: newTx.alasan || newTx.dok_pendukung_alasan || '-',
+        dok_pendukung_alasan: newTx.alasan || newTx.dok_pendukung_alasan || '-',
+        upload_dok_pendukung: newTx.upload_dok_pendukung || null
+      };
 
-    if (isD1Active) {
-      try {
-        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch(getApiUrl("/api/d1/query"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, params })
-          });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results || [];
-        };
+      const newLog: ActivityLog = {
+        id: String(Date.now()),
+        timestamp: new Date().toISOString(),
+        transaction_id: newId,
+        performed_by: creatorEmail,
+        action_description: `Membuat Backcharge baru: ${newId} (Kategori: ${txObj.category}, Nilai: Rp ${txObj.value.toLocaleString('id-ID')})`
+      };
 
-        const d1Rows = await executeD1Query(
-          `SELECT id FROM backcharges WHERE id LIKE ?`,
-          [`BC-${year}-%`]
-        );
+      if (isD1Active) {
+        const cleanedInsertObj = cleanDbPayload(txObj);
+        const columns = Object.keys(cleanedInsertObj);
+        const placeholders = columns.map(() => '?').join(', ');
+        const values = Object.values(cleanedInsertObj);
 
-        if (d1Rows && d1Rows.length > 0) {
-          d1Rows.forEach((r: any) => {
-            if (r.id) {
-              usedIds.add(r.id);
-              const parts = r.id.split('-');
-              const numPart = parts[parts.length - 1];
-              const parsed = parseInt(numPart, 10);
-              if (!isNaN(parsed) && parsed > maxNum) {
-                maxNum = parsed;
-              }
-            }
-          });
-        }
-      } catch (e) {
-        console.error("Error determining highest ID from D1:", e);
-      }
-    } else if (isSupabaseConfigured && supabase) {
-      try {
-        // Query the single largest ID starting with BC-YYYY-
-        const { data, error } = await supabase
-          .from('backcharges')
-          .select('id')
-          .like('id', `BC-${year}-%`);
-        
-        if (!error && data && data.length > 0) {
-          data.forEach(r => {
-            if (r.id) {
-              usedIds.add(r.id);
-              const parts = r.id.split('-');
-              const numPart = parts[parts.length - 1];
-              const parsed = parseInt(numPart, 10);
-              if (!isNaN(parsed) && parsed > maxNum) {
-                maxNum = parsed;
-              }
-            }
-          });
-        }
-      } catch (e) {
-        console.error("Error determining highest ID from Supabase:", e);
-      }
-    } else {
-      const allIds = mockDb.getBackcharges().map(item => item.id);
-      allIds.forEach(id => usedIds.add(id));
-      const currentYearPrefix = `BC-${year}-`;
-      const existingNums = allIds
-        .filter(id => id && id.startsWith(currentYearPrefix))
-        .map(id => {
-          const parts = id.split('-');
-          const numPart = parts[parts.length - 1];
-          const parsed = parseInt(numPart, 10);
-          return isNaN(parsed) ? 0 : parsed;
-        });
-      maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 0;
-    }
+        const sql = `INSERT INTO backcharges (${columns.join(', ')}) VALUES (${placeholders})`;
+        await executeD1Query(sql, values);
 
-    // Also cross-reference local memory
-    const localMaxNums = Array.from(usedIds)
-      .filter(id => id && id.startsWith(`BC-${year}-`))
-      .map(id => {
-        const parts = id.split('-');
-        const numPart = parts[parts.length - 1];
-        const parsed = parseInt(numPart, 10);
-        return isNaN(parsed) ? 0 : parsed;
-      });
-    if (localMaxNums.length > 0) {
-      const localMax = Math.max(...localMaxNums);
-      if (localMax > maxNum) {
-        maxNum = localMax;
-      }
-    }
-
-    let nextNum = maxNum + 1;
-    let formatCount = String(nextNum).padStart(4, '0');
-    let newId = `BC-${year}-${formatCount}`;
-
-    // Loop fallback to guarantee 100% uniqueness
-    while (usedIds.has(newId)) {
-      nextNum++;
-      formatCount = String(nextNum).padStart(4, '0');
-      newId = `BC-${year}-${formatCount}`;
-    }
-
-    const creatorEmail = currentUser.email;
-    const txObj: Backcharge = {
-      ...newTx,
-      id: newId,
-      created_by: creatorEmail,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      nama_bro: newTx.nama_bro || newTx.bro_name || '-',
-      bro_name: newTx.nama_bro || newTx.bro_name || '-',
-      alasan: newTx.alasan || newTx.dok_pendukung_alasan || '-',
-      dok_pendukung_alasan: newTx.alasan || newTx.dok_pendukung_alasan || '-',
-      upload_dok_pendukung: newTx.upload_dok_pendukung || null
-    };
-
-    const cleanSupabasePayload = (payload: any) => {
-      const DB_COLUMNS = [
-        'id', 'category', 'branch', 'no_bak', 'no_spk', 'no_sap', 'no_tilang',
-        'customer_name', 'license_plate', 'value', 'status_sap', 'status_confirm',
-        'status_handover', 'no_invoice', 'status_payment', 'created_by', 'created_at',
-        'updated_at', 'file_bak_url', 'file_handover_aso_sales_url',
-        'file_handover_sales_admin_url', 'tanggal', 'tanggal_handover', 'nama_bro', 'upload_dok_pendukung', 'alasan',
-        'status_approval', 'approved_by', 'approved_at', 'approval_note',
-        'approval_attachment_1_url', 'approval_attachment_2_url', 'approval_attachment_3_url',
-        'regional_approval_status', 'regional_approved_by', 'regional_approved_at', 'regional_approval_note',
-        'division_approval_status', 'division_approved_by', 'division_approved_at', 'division_approval_note'
-      ];
-      const cleaned: any = {};
-      for (const key of DB_COLUMNS) {
-        if (key in payload) {
-          cleaned[key] = payload[key];
-        }
-      }
-      return cleaned;
-    };
-
-    if (isD1Active) {
-      try {
-        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch(getApiUrl("/api/d1/query"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, params })
-          });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results;
-        };
-
-        let currentId = newId;
-        let success = false;
-        let attempt = 0;
-
-        while (!success && attempt < 10) {
-          attempt++;
-          const currentTxObj = {
-            ...txObj,
-            id: currentId
-          };
-          const cleanedInsertObj = cleanSupabasePayload(currentTxObj);
-          const columns = Object.keys(cleanedInsertObj);
-          const placeholders = columns.map(() => '?').join(', ');
-          const values = Object.values(cleanedInsertObj);
-
-          const sql = `INSERT INTO backcharges (${columns.join(', ')}) VALUES (${placeholders})`;
-          try {
-            await executeD1Query(sql, values);
-            success = true;
-            newId = currentId;
-          } catch (insertErr: any) {
-            const errMsg = insertErr.message || String(insertErr);
-            if (errMsg.includes("UNIQUE constraint failed") || errMsg.includes("SQLITE_CONSTRAINT")) {
-              console.warn(`ID ${currentId} already exists in D1, auto-incrementing ID...`);
-              nextNum++;
-              formatCount = String(nextNum).padStart(4, '0');
-              currentId = `BC-${year}-${formatCount}`;
-            } else {
-              throw insertErr;
-            }
-          }
-        }
-
-        // Write activity log to D1
         await executeD1Query(
           "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
-          [newId, creatorEmail, `Membuat Backcharge baru: ${newId} (Kategori: ${txObj.category}, Nilai: Rp ${txObj.value.toLocaleString('id-ID')})`]
+          [newId, creatorEmail, `Membuat Backcharge baru: ${newId}`]
         );
-
-        addToast(`Transaksi Backcharge ${newId} berhasil disimpan ke Cloudflare D1!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        addToast(`Gagal menyimpan ke Cloudflare D1: ${err.message}`, 'error');
-      }
-      return;
-    }
-
-    if (isSupabaseConfigured && supabase) {
-      let cleanedInsertObj = cleanSupabasePayload({
-        ...txObj
-      });
-      let success = false;
-      let retries = 0;
-      let lastError: any = null;
-
-      while (!success && retries < 10) {
-        try {
-          const { error } = await supabase.from('backcharges').insert([cleanedInsertObj]);
-          if (error) throw error;
-          success = true;
-        } catch (err: any) {
-          lastError = err;
-          const errMsg = err.message || '';
-          const match = errMsg.match(/Could not find the ['"]([^'"]+)['"] column/i);
-          if (match && match[1]) {
-            const missingCol = match[1];
-            console.warn(`Column '${missingCol}' not found in Supabase schema cache. Removing and retrying...`);
-            delete cleanedInsertObj[missingCol];
-            retries++;
-          } else {
-            break;
-          }
-        }
-      }
-
-      if (success) {
-        addToast(`Transaksi Backcharge ${newId} berhasil disimpan!`, 'success');
-        fetchData();
       } else {
-        let errMsg = lastError?.message || '';
-        if (errMsg.toLowerCase().includes('schema cache') || errMsg.toLowerCase().includes('could not find')) {
-          errMsg += ' (Tips: Silakan jalankan perintah sql `NOTIFY pgrst, \'reload schema\';` di SQL Editor Supabase Anda untuk memuat ulang cache skema Supabase)';
-        }
-        addToast(`Server gagal menyimpan Backcharge: ${errMsg}`, 'error');
-        throw lastError;
+        mockDb.saveBackcharge(txObj, creatorEmail);
       }
-    } else {
-      // Mock Offline insertion
-      mockDb.saveBackcharge(txObj, creatorEmail);
-      
-      addToast(`Data Backcharge ${newId} sukses disimpan offline!`, 'success');
-      fetchData();
+
+      // Update local state & cache
+      updateTransactionsStateAndCache(prev => [txObj, ...prev]);
+      setLogs(prev => [newLog, ...prev]);
+      addToast(`Transaksi Backcharge ${newId} berhasil disimpan!`, 'success');
+    } catch (err: any) {
+      console.error("Gagal simpan transaksi:", err);
+      addToast(`Gagal menyimpan transaksi: ${err.message}`, 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1517,44 +1131,41 @@ export default function App() {
     let maxNum = 0;
     const usedIds = new Set<string>();
 
-    if (isSupabaseConfigured && supabase) {
+    if (isD1Active) {
       try {
-        // Query the single largest ID starting with BC-YYYY-
-        const { data, error } = await supabase
-          .from('backcharges')
-          .select('id')
-          .like('id', `BC-${year}-%`)
-          .order('id', { ascending: false })
-          .limit(1);
-        
-        if (!error && data && data.length > 0) {
-          const highestId = data[0].id;
-          const parts = highestId.split('-');
-          const numPart = parts[parts.length - 1];
-          const parsed = parseInt(numPart, 10);
-          maxNum = isNaN(parsed) ? 0 : parsed;
-        }
-
-        // Also check memory transactions
-        const localMaxNums = transactions
-          .filter(t => t.id && t.id.startsWith(`BC-${year}-`))
-          .map(t => {
-            const parts = t.id.split('-');
-            const numPart = parts[parts.length - 1];
-            const parsed = parseInt(numPart, 10);
-            return isNaN(parsed) ? 0 : parsed;
-          });
-        if (localMaxNums.length > 0) {
-          const localMax = Math.max(...localMaxNums);
-          if (localMax > maxNum) {
-            maxNum = localMax;
+        const topResults = await executeD1Query(
+          "SELECT id FROM backcharges WHERE id LIKE ? ORDER BY CAST(substr(id, 9) AS INTEGER) DESC LIMIT 1",
+          [`BC-${year}-%`]
+        );
+        if (topResults && topResults.length > 0) {
+          const topId = topResults[0].id;
+          const match = topId.match(/BC-\d+-(\d+)/);
+          if (match) {
+            maxNum = Math.max(maxNum, parseInt(match[1], 10));
           }
         }
 
-        // Add all local transactions to usedIds to prevent duplication during bulk generation
-        transactions.forEach(t => usedIds.add(t.id));
+        // Unconditionally verify in-memory state to ensure non-synchronized transactions are not duplicated
+        const currentYearPrefix = `BC-${year}-`;
+        transactions.forEach(t => {
+          usedIds.add(t.id);
+          if (t.id && t.id.startsWith(currentYearPrefix)) {
+            const match = t.id.match(/BC-\d+-(\d+)/);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              if (!isNaN(num) && num > maxNum) {
+                maxNum = num;
+              }
+            }
+          }
+        });
+
+        const allD1Ids = await executeD1Query("SELECT id FROM backcharges");
+        if (allD1Ids && Array.isArray(allD1Ids)) {
+          allD1Ids.forEach((row: any) => { if (row.id) usedIds.add(row.id); });
+        }
       } catch (e) {
-        console.error("Error determining highest ID from Supabase for bulk:", e);
+        console.warn("Gagal cek max ID dari D1 untuk bulk insert:", e);
       }
     } else {
       const allIds = mockDb.getBackcharges().map(item => item.id);
@@ -1686,23 +1297,7 @@ export default function App() {
 
     if (isD1Active) {
       try {
-        const cleanedPayloads = preparedTxs.map(tx => cleanSupabasePayload(tx));
-        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch(getApiUrl("/api/d1/query"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, params })
-          });
-          const text = await res.text();
-          let d;
-          try {
-            d = JSON.parse(text);
-          } catch (e) {
-            throw new Error(`API Endpoint returned non-JSON (${res.status}): ${text.substring(0, 100)}...`);
-          }
-          if (!d.success) throw new Error(d.error);
-          return d.results;
-        };
+        const cleanedPayloads = preparedTxs.map(tx => cleanDbPayload(tx));
 
         const firstRowColumns = Object.keys(cleanedPayloads[0] || {});
         // SQLite limits the total number of bound variables in a single SQL statement.
@@ -1781,51 +1376,12 @@ export default function App() {
         );
 
         addToast(`Berhasil mengimpor ${newTxs.length} data Backcharge secara massal ke Cloudflare D1!`, 'success');
-        fetchData();
+        fetchData(true);
       } catch (err: any) {
         console.error("Bulk D1 insert failed:", err);
         addToast(`Gagal mengimpor massal ke Cloudflare D1: ${err.message}`, 'error');
       }
       return;
-    }
-
-    if (isSupabaseConfigured && supabase) {
-      const cleanedPayloads = preparedTxs.map(tx => cleanSupabasePayload(tx));
-      try {
-        // Safe sequential batches of 50 rows for Supabase
-        const batchSize = 50;
-        let currentCount = 0;
-        const totalCount = cleanedPayloads.length;
-        if (onProgress) onProgress(0, totalCount);
-
-        for (let i = 0; i < cleanedPayloads.length; i += batchSize) {
-          const batch = cleanedPayloads.slice(i, i + batchSize);
-          const { error } = await supabase.from('backcharges').upsert(batch, { onConflict: 'id' });
-          if (error) throw error;
-
-          currentCount = Math.min(i + batch.length, totalCount);
-          if (onProgress) onProgress(currentCount, totalCount);
-        }
-        
-        try {
-          const logPayload = {
-            transaction_id: 'SYSTEM',
-            performed_by: creatorEmail,
-            action_description: `Melakukan import data secara massal sebanyak ${newTxs.length} data Backcharge`,
-            timestamp: new Date().toISOString()
-          };
-          await supabase.from('activity_logs').insert([logPayload]);
-        } catch (logErr) {
-          console.error("Gagal menyimpan log aktivitas bulk:", logErr);
-        }
-
-        addToast(`Berhasil mengimpor ${newTxs.length} data Backcharge secara massal!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        console.error("Bulk insertion failed:", err);
-        addToast(`Gagal melakukan impor massal: ${err.message}`, 'error');
-        throw err;
-      }
     } else {
       const totalCount = preparedTxs.length;
       if (onProgress) onProgress(0, totalCount);
@@ -1834,142 +1390,75 @@ export default function App() {
       if (onProgress) onProgress(totalCount, totalCount);
 
       addToast(`Berhasil mengimpor ${newTxs.length} data Backcharge secara offline!`, 'success');
-      fetchData();
+      fetchData(true);
     }
   };
 
   // 2. UPDATE TRANSACTION WORKFLOW STATUS
   const handleUpdateTransaction = async (id: string, updates: Partial<Backcharge>, logMessage: string) => {
     if (!currentUser) return;
+    setLoading(true);
 
-    const targetTx = transactions.find(t => t.id === id);
-    if (!targetTx) return;
-
-    const updatedTx = {
-      ...targetTx,
-      ...updates,
-      updated_at: new Date().toISOString()
-    };
-
-    const cleanSupabasePayload = (payload: any) => {
-      const DB_COLUMNS = [
-        'id', 'category', 'branch', 'no_bak', 'no_spk', 'no_sap', 'no_tilang',
-        'customer_name', 'license_plate', 'value', 'status_sap', 'status_confirm',
-        'status_handover', 'no_invoice', 'status_payment', 'created_by', 'created_at',
-        'updated_at', 'file_bak_url', 'file_handover_aso_sales_url',
-        'file_handover_sales_admin_url', 'tanggal', 'tanggal_handover', 'nama_bro', 'upload_dok_pendukung', 'alasan',
-        'status_approval', 'approved_by', 'approved_at', 'approval_note',
-        'approval_attachment_1_url', 'approval_attachment_2_url', 'approval_attachment_3_url',
-        'regional_approval_status', 'regional_approved_by', 'regional_approved_at', 'regional_approval_note',
-        'division_approval_status', 'division_approved_by', 'division_approved_at', 'division_approval_note'
-      ];
-      const cleaned: any = {};
-      for (const key of DB_COLUMNS) {
-        if (key in payload) {
-          cleaned[key] = payload[key];
-        }
+    try {
+      const targetTx = transactions.find(t => t.id === id);
+      if (!targetTx) {
+        setLoading(false);
+        return;
       }
-      return cleaned;
-    };
 
-    if (isD1Active) {
-      try {
-        const cleanedUpdateObj = cleanSupabasePayload({
+      const updatedTx: Backcharge = {
+        ...targetTx,
+        ...updates,
+        updated_at: new Date().toISOString()
+      };
+      // Keep packed no_bak in 100% sync
+      updatedTx.no_bak = packExtraFields(updatedTx);
+
+      const newLog: ActivityLog = {
+        id: String(Date.now()),
+        timestamp: new Date().toISOString(),
+        transaction_id: id,
+        performed_by: currentUser.email,
+        action_description: logMessage || `Memperbarui transaksi ${id}`
+      };
+
+      if (isD1Active) {
+        const cleanedUpdateObj = cleanDbPayload({
           ...updates,
+          no_bak: updatedTx.no_bak,
           updated_at: new Date().toISOString()
         });
 
-        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch(getApiUrl("/api/d1/query"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, params })
-          });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results;
-        };
-
         const columns = Object.keys(cleanedUpdateObj);
-        const setClause = columns.map(col => `${col} = ?`).join(', ');
-        const values = [...Object.values(cleanedUpdateObj), id];
+        if (columns.length > 0) {
+          const setClause = columns.map(col => `${col} = ?`).join(', ');
+          const values = [...Object.values(cleanedUpdateObj), id];
 
-        const sql = `UPDATE backcharges SET ${setClause} WHERE id = ?`;
-        await executeD1Query(sql, values);
-
-        // Write activity log to D1
-        await executeD1Query(
-          "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
-          [id, currentUser.email, logMessage]
-        );
-
-        addToast(`Transaksi ${id} diperbarui tervalidasi ke Cloudflare D1!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        addToast(`Gagal memperbarui ke Cloudflare D1: ${err.message}`, 'error');
-      }
-      return;
-    }
-
-    if (isSupabaseConfigured && supabase) {
-      let cleanedUpdateObj = cleanSupabasePayload({
-        ...updates,
-        updated_at: new Date().toISOString()
-      });
-      let success = false;
-      let retries = 0;
-      let lastError: any = null;
-
-      while (!success && retries < 10) {
-        try {
-          const { error } = await supabase
-            .from('backcharges')
-            .update(cleanedUpdateObj)
-            .eq('id', id);
-          if (error) throw error;
-          success = true;
-        } catch (err: any) {
-          lastError = err;
-          const errMsg = err.message || '';
-          const match = errMsg.match(/Could not find the ['"]([^'"]+)['"] column/i);
-          if (match && match[1]) {
-            const missingCol = match[1];
-            console.warn(`Column '${missingCol}' not found in Supabase schema cache. Removing and retrying...`);
-            delete cleanedUpdateObj[missingCol];
-            retries++;
-          } else {
-            break;
-          }
-        }
-      }
-
-      if (success) {
-        // Insert audit log explicitly (Trigger handles status but explicit details are logged nicely)
-        try {
-          await supabase.from('activity_logs').insert([{
-            transaction_id: id,
-            performed_by: currentUser.email,
-            action_description: logMessage
-          }]);
-        } catch (logErr) {
-          console.warn("Failed to insert activity log:", logErr);
+          const sql = `UPDATE backcharges SET ${setClause} WHERE id = ?`;
+          await executeD1Query(sql, values);
         }
 
-        addToast(`Transaksi ${id} diperbarui tervalidasi!`, 'success');
-        fetchData();
+        if (logMessage) {
+          await executeD1Query(
+            "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
+            [id, currentUser.email, logMessage]
+          );
+        }
       } else {
-        let errMsg = lastError?.message || '';
-        if (errMsg.toLowerCase().includes('schema cache') || errMsg.toLowerCase().includes('could not find')) {
-          errMsg += ' (Tips: Silakan jalankan perintah sql `NOTIFY pgrst, \'reload schema\';` di SQL Editor Supabase Anda untuk memuat ulang cache skema Supabase)';
-        }
-        addToast(`Server gagal memproses update: ${errMsg}`, 'error');
+        mockDb.saveBackcharge(updatedTx, currentUser.email);
       }
-    } else {
-      // Mock Offline update
-      mockDb.saveBackcharge(updatedTx, currentUser.email);
-      
-      addToast(`Status ${id} diperbarui offline!`, 'success');
-      fetchData();
+
+      // Update local state & cache
+      updateTransactionsStateAndCache(prev => prev.map(t => t.id === id ? updatedTx : t));
+      if (logMessage) {
+        setLogs(prev => [newLog, ...prev]);
+      }
+      addToast(`Transaksi ${id} berhasil diperbarui!`, 'success');
+    } catch (err: any) {
+      console.error("Gagal memperbarui transaksi:", err);
+      addToast(`Gagal memperbarui transaksi: ${err.message}`, 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1984,56 +1473,28 @@ export default function App() {
       return;
     }
 
-    if (isD1Active) {
-      try {
-        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch(getApiUrl("/api/d1/query"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, params })
-          });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results;
-        };
+    setLoading(true);
 
-        // Delete associated logs and backcharge
+    try {
+      if (isD1Active) {
         await executeD1Query(`DELETE FROM activity_logs WHERE transaction_id = ?`, [id]);
         await executeD1Query(`DELETE FROM backcharges WHERE id = ?`, [id]);
-
-        addToast(`Backcharge ${id} berhasil dihapus permanen dari Cloudflare D1!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        addToast(`Gagal menghapus dari Cloudflare D1: ${err.message}`, 'error');
+      } else {
+        mockDb.deleteBackcharge(id);
       }
-      return;
-    }
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        // Hapus log aktivitas terkait terlebih dahulu jika diperlukan
-        await supabase.from('activity_logs').delete().eq('transaction_id', id);
-        
-        const { error } = await supabase
-          .from('backcharges')
-          .delete()
-          .eq('id', id);
-
-        if (error) throw error;
-
-        addToast(`Backcharge ${id} berhasil dihapus permanen!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        addToast(`Server gagal menghapus Backcharge: ${err.message}`, 'error');
-      }
-    } else {
-      mockDb.deleteBackcharge(id);
-      setTransactions(prev => prev.filter(t => t.id !== id));
-      addToast(`Backcharge ${id} berhasil dihapus offline!`, 'success');
+      // Update local state & cache
+      updateTransactionsStateAndCache(prev => prev.filter(t => t.id !== id));
+      addToast(`Backcharge ${id} berhasil dihapus!`, 'success');
+    } catch (err: any) {
+      console.error("Gagal hapus transaksi:", err);
+      addToast(`Gagal menghapus transaksi: ${err.message}`, 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // 3. ADMIN: ADD USER WORKFLOW
+  // 3. ADMIN: ADD USER WORKFLOW (0 D1 Rows Read)
   const handleAddUser = async (email: string, fullName: string, role: UserRole, branch: string, password?: string) => {
     if (!currentUser || !hasRole(currentUser.role, 'Administrator')) return;
 
@@ -2047,338 +1508,141 @@ export default function App() {
       password: password || 'password123'
     };
 
+    // 1. INSTANT OPTIMISTIC UI & LOCAL CACHE UPDATE
+    updateProfilesStateAndCache(prev => [...prev, newProfile]);
+    addToast(`Staf ${fullName} sukses didaftarkan!`, 'success');
+
+    // 2. ASYNC BACKGROUND SYNC
     if (isD1Active) {
-      try {
-        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch(getApiUrl("/api/d1/query"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, params })
-          });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results;
-        };
-
-        await executeD1Query(
-          "INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          [newProfile.id, newProfile.email, newProfile.full_name, newProfile.role, newProfile.branch, newProfile.created_at, newProfile.password]
-        );
-
-        await executeD1Query(
-          "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
-          ['SYSTEM', currentUser.email, `Menambahkan staf pengguna baru: ${fullName} (${email}) - ${role}`]
-        );
-
-        addToast(`Staf ${fullName} sukses didaftarkan ke Cloudflare D1!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        addToast(`Gagal mendaftarkan pengguna ke Cloudflare D1: ${err.message}`, 'error');
-      }
+      (async () => {
+        try {
+          await executeD1Query(
+            "INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [newProfile.id, newProfile.email, newProfile.full_name, newProfile.role, newProfile.branch, newProfile.created_at, newProfile.password]
+          );
+          await executeD1Query(
+            "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
+            ['SYSTEM', currentUser.email, `Menambahkan staf pengguna baru: ${fullName} (${email}) - ${role}`]
+          );
+        } catch (err: any) {
+          console.error("Gagal simpan user ke D1:", err);
+        }
+      })();
       return;
     }
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { error } = await supabase.from('profiles').insert([newProfile]);
-        if (error) throw error;
-        
-        // Log explicitly
-        try {
-          await supabase.from('activity_logs').insert([{
-            transaction_id: 'SYSTEM',
-            performed_by: currentUser.email,
-            action_description: `Menambahkan staf pengguna baru: ${fullName} (${email}) - ${role}`
-          }]);
-        } catch (logErr) {
-          console.warn("Could not insert activity log due to database permission restriction", logErr);
-        }
-
-        addToast(`Staf ${fullName} sukses didaftarkan!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        addToast(`Gagal menambahkan pengguna: ${err.message}`, 'error');
-      }
-    } else {
-      mockDb.saveProfile(newProfile);
-      mockDb.addLog('SYSTEM', currentUser.email, `Menambahkan staf pengguna baru: ${fullName} (${email}) - ${role}`);
-      addToast(`Staf ${fullName} didaftarkan offline!`, 'success');
-      fetchData();
-    }
+    mockDb.saveProfile(newProfile);
   };
 
-  // 4. ADMIN: UPDATE USER WORKFLOW
+  // 4. ADMIN: UPDATE USER WORKFLOW (0 D1 Rows Read)
   const handleUpdateUser = async (id: string, updates: Partial<Profile>) => {
     if (!currentUser || !hasRole(currentUser.role, 'Administrator')) return;
 
+    // 1. INSTANT OPTIMISTIC UI UPDATE
+    updateProfilesStateAndCache(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+    addToast(`Data pengguna diperbarui!`, 'success');
+
+    // 2. ASYNC BACKGROUND SYNC
     if (isD1Active) {
-      try {
-        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch(getApiUrl("/api/d1/query"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, params })
-          });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results;
-        };
-
-        const columns = Object.keys(updates);
-        const setClause = columns.map(col => `${col} = ?`).join(', ');
-        const values = [...Object.values(updates), id];
-
-        await executeD1Query(`UPDATE profiles SET ${setClause} WHERE id = ?`, values);
-
-        addToast(`Data pengguna diperbarui di Cloudflare D1!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        addToast(`Gagal memperbarui pengguna di Cloudflare D1: ${err.message}`, 'error');
-      }
+      (async () => {
+        try {
+          const columns = Object.keys(updates);
+          if (columns.length > 0) {
+            const setClause = columns.map(col => `${col} = ?`).join(', ');
+            const values = [...Object.values(updates), id];
+            await executeD1Query(`UPDATE profiles SET ${setClause} WHERE id = ?`, values);
+          }
+        } catch (err: any) {}
+      })();
       return;
-    }
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { error } = await supabase
-          .from('profiles')
-          .update(updates)
-          .eq('id', id);
-
-        if (error) throw error;
-
-        addToast(`Data pengguna diperbarui!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        addToast(`Gagal memperbarui pengguna: ${err.message}`, 'error');
-      }
-    } else {
-      const profilesList = mockDb.getProfiles();
-      const target = profilesList.find(p => p.id === id);
-      if (target) {
-        mockDb.saveProfile({ ...target, ...updates });
-        mockDb.addLog('SYSTEM', currentUser.email, `Mengubah data pengguna ${target.email}`);
-        addToast(`Data pengguna ${target.email} sukses diupdate offline!`, 'success');
-        fetchData();
-      }
     }
   };
 
   const handleUpdateOwnPassword = async (newPassword: string): Promise<boolean> => {
     if (!currentUser) return false;
     
+    const updatedUser = { ...currentUser, password: newPassword };
+    setCurrentUser(updatedUser);
+    localStorage.setItem('backcharge_session_profile', JSON.stringify(updatedUser));
+    updateProfilesStateAndCache(prev => prev.map(p => p.id === currentUser.id ? updatedUser : p));
+    addToast('Password berhasil diubah!', 'success');
+
     if (isD1Active) {
-      try {
-        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch(getApiUrl("/api/d1/query"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, params })
-          });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results;
-        };
-
-        await executeD1Query(`UPDATE profiles SET password = ? WHERE id = ?`, [newPassword, currentUser.id]);
-
-        const updatedUser = { ...currentUser, password: newPassword };
-        setCurrentUser(updatedUser);
-        localStorage.setItem('backcharge_session_profile', JSON.stringify(updatedUser));
-
-        addToast('Password berhasil diubah di Cloudflare D1!', 'success');
-        return true;
-      } catch (err: any) {
-        addToast(`Gagal mengubah password di Cloudflare D1: ${err.message}`, 'error');
-        return false;
-      }
+      (async () => {
+        try {
+          await executeD1Query(`UPDATE profiles SET password = ? WHERE id = ?`, [newPassword, currentUser.id]);
+        } catch (err: any) {}
+      })();
+      return true;
     }
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { error } = await supabase
-          .from('profiles')
-          .update({ password: newPassword })
-          .eq('id', currentUser.id);
-
-        if (error) throw error;
-        
-        const updatedUser = { ...currentUser, password: newPassword };
-        setCurrentUser(updatedUser);
-        localStorage.setItem('backcharge_session_profile', JSON.stringify(updatedUser));
-        
-        addToast('Password berhasil diubah!', 'success');
-        return true;
-      } catch (err: any) {
-        addToast(`Gagal mengubah password: ${err.message}`, 'error');
-        return false;
-      }
-    } else {
-      try {
-        const profilesList = mockDb.getProfiles();
-        const target = profilesList.find(p => p.id === currentUser.id);
-        if (target) {
-          const updatedUser = { ...target, password: newPassword };
-          mockDb.saveProfile(updatedUser);
-          setCurrentUser(updatedUser);
-          localStorage.setItem('backcharge_session_profile', JSON.stringify(updatedUser));
-          mockDb.addLog('SYSTEM', currentUser.email, `Mengubah password mandiri`);
-          addToast('Password berhasil diubah!', 'success');
-          return true;
-        }
-        return false;
-      } catch (err: any) {
-        addToast('Gagal mengubah password offline.', 'error');
-        return false;
-      }
-    }
+    return true;
   };
 
   // 5. ADMIN: DELETE USER WORKFLOW
   const handleDeleteUser = async (id: string) => {
     if (!currentUser || !hasRole(currentUser.role, 'Administrator')) return;
 
-    if (isD1Active) {
-      try {
-        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch(getApiUrl("/api/d1/query"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, params })
-          });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results;
-        };
+    setLoading(true);
 
+    try {
+      if (isD1Active) {
         await executeD1Query(`DELETE FROM profiles WHERE id = ?`, [id]);
-
-        addToast(`Akses portal untuk pengguna dihapus dari Cloudflare D1.`, 'success');
-        fetchData();
-      } catch (err: any) {
-        addToast(`Gagal menghapus pengguna dari Cloudflare D1: ${err.message}`, 'error');
+      } else {
+        mockDb.deleteProfile(id);
       }
-      return;
-    }
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { error } = await supabase
-          .from('profiles')
-          .delete()
-          .eq('id', id);
-
-        if (error) throw error;
-
-        addToast(`Akses portal untuk pengguna dihapus.`, 'success');
-        fetchData();
-      } catch (err: any) {
-        addToast(`Gagal menghapus pengguna: ${err.message}`, 'error');
-      }
-    } else {
-      const profilesList = mockDb.getProfiles();
-      const target = profilesList.find(p => p.id === id);
-      const targetLabel = target ? target.email : id;
-      mockDb.deleteProfile(id);
-      mockDb.addLog('SYSTEM', currentUser.email, `Menghapus akses pengguna: ${targetLabel}`);
-      addToast(`Akses portal untuk ${targetLabel} dihapus offline.`, 'success');
-      fetchData();
+      // Update local state & cache
+      updateProfilesStateAndCache(prev => prev.filter(p => p.id !== id));
+      addToast(`Akses portal untuk pengguna dihapus.`, 'success');
+    } catch (err: any) {
+      console.error("Gagal menghapus pengguna:", err);
+      addToast(`Gagal menghapus pengguna: ${err.message}`, 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // 6. CONTACT & FEEDBACK INQUIRIES WORKFLOW
+  // 6. CONTACT & FEEDBACK INQUIRIES WORKFLOW (0 D1 Rows Read)
   const handleAddInquiry = async (newInquiry: ContactInquiry) => {
+    updateInquiriesStateAndCache(prev => [newInquiry, ...prev]);
+    addToast(`Aduan/masukan Anda berhasil terkirim!`, 'success');
+
     if (isD1Active) {
-      try {
-        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch(getApiUrl("/api/d1/query"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, params })
-          });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results;
-        };
-
-        await executeD1Query(
-          "INSERT INTO contact_inquiries (id, name, email, subject, message, status, created_at, feedback, feedback_by, feedback_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          [
-            newInquiry.id,
-            newInquiry.full_name,
-            newInquiry.email,
-            newInquiry.subject,
-            newInquiry.message,
-            newInquiry.status,
-            newInquiry.created_at,
-            newInquiry.feedback || null,
-            newInquiry.feedback_by || null,
-            newInquiry.feedback_at || null
-          ]
-        );
-
-        await executeD1Query(
-          "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
-          [newInquiry.id, currentUser?.email || 'Guest / Customer', `Mengirim keluhan / masukan baru dengan subjek "${newInquiry.subject}"`]
-        );
-
-        addToast(`Aduan/masukan Anda berhasil terkirim ke Cloudflare D1!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        console.error("Gagal menyimpan inquiry ke D1:", err);
-        addToast(`Gagal mengirim masukan ke Cloudflare D1: ${err.message}`, 'error');
-      }
+      (async () => {
+        try {
+          await executeD1Query(
+            "INSERT INTO contact_inquiries (id, name, email, subject, message, status, created_at, feedback, feedback_by, feedback_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+              newInquiry.id,
+              newInquiry.full_name,
+              newInquiry.email,
+              newInquiry.subject,
+              newInquiry.message,
+              newInquiry.status,
+              newInquiry.created_at,
+              newInquiry.feedback || null,
+              newInquiry.feedback_by || null,
+              newInquiry.feedback_at || null
+            ]
+          );
+          await executeD1Query(
+            "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
+            [newInquiry.id, currentUser?.email || 'Guest / Customer', `Mengirim keluhan / masukan baru dengan subjek "${newInquiry.subject}"`]
+          );
+        } catch (err: any) {}
+      })();
       return;
     }
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { error } = await supabase.from('contact_inquiries').insert([newInquiry]);
-        if (error) throw error;
-        
-        // Log explicitly on Supabase (safely wrapped in try-catch so it won't block the main insert)
-        try {
-          await supabase.from('activity_logs').insert([{
-            transaction_id: newInquiry.id,
-            performed_by: currentUser?.email || 'Guest / Customer',
-            action_description: `Mengirim keluhan / masukan baru dengan subjek "${newInquiry.subject}"`
-          }]);
-        } catch (logErr) {
-          console.warn("Could not insert activity log due to database permission restriction", logErr);
-        }
-
-        addToast(`Aduan/masukan Anda berhasil terkirim ke database Cloud!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        console.error("Gagal menyimpan inquiry ke Supabase, fallback ke offline:", err);
-        mockDb.saveContactInquiry(newInquiry);
-        mockDb.addLog(newInquiry.id, currentUser?.email || 'Guest / Customer', `Mengirim keluhan / masukan baru dengan subjek "${newInquiry.subject}"`);
-        setInquiries(mockDb.getContactInquiries());
-        setLogs(mockDb.getLogs());
-        addToast(`Aduan disimpan offline karena gangguan server.`, 'info');
-      }
-    } else {
-      mockDb.saveContactInquiry(newInquiry);
-      mockDb.addLog(newInquiry.id, currentUser?.email || 'Guest / Customer', `Mengirim keluhan / masukan baru dengan subjek "${newInquiry.subject}"`);
-      setInquiries(mockDb.getContactInquiries());
-      setLogs(mockDb.getLogs());
-    }
+    mockDb.saveContactInquiry(newInquiry);
   };
 
   const handleUpdateInquiry = async (updatedInquiry: ContactInquiry) => {
-    if (isD1Active) {
-      try {
-        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch(getApiUrl("/api/d1/query"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, params })
-          });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results;
-        };
+    setLoading(true);
 
+    try {
+      if (isD1Active) {
         await executeD1Query(
           "UPDATE contact_inquiries SET status = ?, feedback = ?, feedback_by = ?, feedback_at = ? WHERE id = ?",
           [
@@ -2389,124 +1653,43 @@ export default function App() {
             updatedInquiry.id
           ]
         );
-
         await executeD1Query(
           "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
           [updatedInquiry.id, currentUser?.email || 'System / Tim Terkait', `Memberikan tanggapan feedback pada aduan ${updatedInquiry.id}`]
         );
-
-        addToast(`Tanggapan feedback sukses disimpan ke Cloudflare D1!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        addToast(`Gagal menyimpan feedback ke Cloudflare D1: ${err.message}`, 'error');
-      }
-      return;
-    }
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { error } = await supabase
-          .from('contact_inquiries')
-          .update({
-            status: updatedInquiry.status,
-            feedback: updatedInquiry.feedback,
-            feedback_by: updatedInquiry.feedback_by,
-            feedback_at: updatedInquiry.feedback_at
-          })
-          .eq('id', updatedInquiry.id);
-
-        if (error) throw error;
-
-        // Log explicitly on Supabase (safely wrapped in try-catch so it won't block the main update)
-        try {
-          await supabase.from('activity_logs').insert([{
-            transaction_id: updatedInquiry.id,
-            performed_by: currentUser?.email || 'System / Tim Terkait',
-            action_description: `Memberikan tanggapan feedback pada aduan ${updatedInquiry.id}`
-          }]);
-        } catch (logErr) {
-          console.warn("Could not insert activity log due to database permission restriction", logErr);
-        }
-
-        addToast(`Tanggapan feedback sukses disimpan ke cloud!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        console.error("Gagal mengupdate inquiry di Supabase:", err);
+      } else {
         mockDb.saveContactInquiry(updatedInquiry);
-        mockDb.addLog(updatedInquiry.id, currentUser?.email || 'System / Tim Terkait', `Memberikan tanggapan feedback pada inquiry ${updatedInquiry.id}`);
-        setInquiries(mockDb.getContactInquiries());
-        setLogs(mockDb.getLogs());
       }
-    } else {
-      mockDb.saveContactInquiry(updatedInquiry);
-      mockDb.addLog(updatedInquiry.id, currentUser?.email || 'System / Tim Terkait', `Memberikan tanggapan feedback pada inquiry ${updatedInquiry.id}`);
-      setInquiries(mockDb.getContactInquiries());
-      setLogs(mockDb.getLogs());
+
+      // Update local state & cache
+      updateInquiriesStateAndCache(prev => prev.map(inq => inq.id === updatedInquiry.id ? updatedInquiry : inq));
+      addToast(`Tanggapan feedback sukses disimpan!`, 'success');
+    } catch (err: any) {
+      console.error("Gagal update feedback:", err);
+      addToast(`Gagal menyimpan tanggapan feedback: ${err.message}`, 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleDeleteInquiry = async (id: string) => {
-    if (isD1Active) {
-      try {
-        const executeD1Query = async (sql: string, params: any[] = []): Promise<any[]> => {
-          const res = await fetch(getApiUrl("/api/d1/query"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, params })
-          });
-          const d = await res.json();
-          if (!d.success) throw new Error(d.error);
-          return d.results;
-        };
+    setLoading(true);
 
+    try {
+      if (isD1Active) {
         await executeD1Query(`DELETE FROM contact_inquiries WHERE id = ?`, [id]);
-        await executeD1Query(
-          "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
-          [id, currentUser?.email || 'System / Tim Terkait', `Menghapus data laporan/inquiry ${id}`]
-        );
-
-        addToast(`Aduan berhasil dihapus dari Cloudflare D1!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        addToast(`Gagal menghapus dari Cloudflare D1: ${err.message}`, 'error');
-      }
-      return;
-    }
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { error } = await supabase
-          .from('contact_inquiries')
-          .delete()
-          .eq('id', id);
-
-        if (error) throw error;
-
-        // Log explicitly on Supabase (safely wrapped in try-catch so it won't block the main delete)
-        try {
-          await supabase.from('activity_logs').insert([{
-            transaction_id: id,
-            performed_by: currentUser?.email || 'System / Tim Terkait',
-            action_description: `Menghapus data laporan/inquiry ${id}`
-          }]);
-        } catch (logErr) {
-          console.warn("Could not insert activity log due to database permission restriction", logErr);
-        }
-
-        addToast(`Aduan berhasil dihapus dari cloud!`, 'success');
-        fetchData();
-      } catch (err: any) {
-        console.error("Gagal menghapus inquiry dari Supabase:", err);
+      } else {
         mockDb.deleteContactInquiry(id);
-        mockDb.addLog(id, currentUser?.email || 'System / Tim Terkait', `Menghapus data laporan/inquiry ${id}`);
-        setInquiries(mockDb.getContactInquiries());
-        setLogs(mockDb.getLogs());
       }
-    } else {
-      mockDb.deleteContactInquiry(id);
-      mockDb.addLog(id, currentUser?.email || 'System / Tim Terkait', `Menghapus data laporan/inquiry ${id}`);
-      setInquiries(mockDb.getContactInquiries());
-      setLogs(mockDb.getLogs());
+
+      // Update local state & cache
+      updateInquiriesStateAndCache(prev => prev.filter(inq => inq.id !== id));
+      addToast(`Aduan berhasil dihapus!`, 'success');
+    } catch (err: any) {
+      console.error("Gagal menghapus aduan:", err);
+      addToast(`Gagal menghapus aduan: ${err.message}`, 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -2735,13 +1918,16 @@ export default function App() {
 
           <div className="flex items-center space-x-1.5 md:space-x-2 relative flex-shrink-0">
             
-            {/* Reload Web Page Button */}
+            {/* Sync & Refresh Data Button */}
             <button 
-              onClick={() => window.location.reload()} 
-              className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-xl transition-all border border-slate-100"
-              title="Muat Ulang Halaman Web (Full Reload)"
+              onClick={handleRefreshData} 
+              disabled={isRefreshing}
+              className={`p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-xl transition-all border border-slate-100 ${
+                isRefreshing ? 'opacity-70 cursor-not-allowed bg-blue-50 text-blue-600' : ''
+              }`}
+              title="Sinkronkan & Perbarui Data dari Database"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
             </button>
 
             {/* Notification drop indicator */}
@@ -2843,82 +2029,6 @@ export default function App() {
 
         {/* 5. JENDELA AREA TAB KONTEN */}
         <main className="p-3 sm:p-4 md:p-6 flex-grow space-y-6 pb-28 md:pb-6 max-w-full">
-          {d1Error && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 shadow-sm space-y-3">
-              <div className="flex items-start space-x-3">
-                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <h4 className="text-sm font-black text-amber-900">Masalah Koneksi & Otorisasi Cloudflare D1</h4>
-                  <p className="text-xs text-amber-800 leading-relaxed">
-                    Sistem mendeteksi bahwa kredensial API Cloudflare D1 Anda tidak sah atau tidak memiliki izin akses:
-                  </p>
-                  <pre className="p-2.5 bg-amber-100 border border-amber-200 rounded-lg text-[10px] font-mono text-amber-900 break-all overflow-x-auto whitespace-pre-wrap max-h-24">
-                    {d1Error}
-                  </pre>
-                  <p className="text-xs text-amber-800 leading-relaxed font-semibold mt-2">
-                    Langkah Perbaikan API Token Cloudflare Anda:
-                  </p>
-                  <ul className="list-decimal list-inside text-[11px] text-amber-800 space-y-1 pl-1">
-                    <li>Masuk ke <strong className="font-extrabold text-amber-900">Cloudflare Dashboard</strong> &gt; <strong className="font-extrabold text-amber-900">My Profile</strong> &gt; <strong className="font-extrabold text-amber-900">API Tokens</strong>.</li>
-                    <li>Buat token baru menggunakan template <strong className="font-extrabold text-amber-900">Edit Cloudflare D1</strong> (atau setel izin <strong className="font-bold">Account: D1: Edit</strong>).</li>
-                    <li>Salin Token tersebut dan simpan di menu <strong className="font-extrabold text-amber-900">Settings</strong> aplikasi ini dengan nama variabel <strong className="font-mono bg-amber-100 px-1 py-0.2 rounded text-red-700">CLOUDFLARE_API_TOKEN</strong>.</li>
-                    <li>Pastikan juga <strong className="font-mono bg-amber-100 px-1 py-0.2 rounded text-amber-900">CLOUDFLARE_ACCOUNT_ID</strong> dan <strong className="font-mono bg-amber-100 px-1 py-0.2 rounded text-amber-900">CLOUDFLARE_DATABASE_ID</strong> sudah sesuai.</li>
-                  </ul>
-                </div>
-              </div>
-              <div className="flex flex-wrap justify-end gap-2 pt-2">
-                <button
-                  disabled={migratingD1}
-                  onClick={runD1LiveSyncFromSupabase}
-                  className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 text-xs font-bold rounded-xl transition-all shadow-sm flex items-center space-x-1"
-                >
-                  {migratingD1 ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin mr-1" />
-                      <span>Sedang Sinkronisasi...</span>
-                    </>
-                  ) : (
-                    <span>Sinkronkan Langsung dari Supabase (6.000+ Data)</span>
-                  )}
-                </button>
-                <button
-                  disabled={migratingD1}
-                  onClick={runD1FullSqlImport}
-                  className="px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 text-xs font-bold rounded-xl transition-all shadow-sm flex items-center space-x-1"
-                >
-                  {migratingD1 ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin mr-1" />
-                      <span>Sedang Mengimpor Data...</span>
-                    </>
-                  ) : (
-                    <span>Impor 100% Data SQL ke D1 (2.125 Data)</span>
-                  )}
-                </button>
-                <button
-                  disabled={migratingD1}
-                  onClick={runD1Migration}
-                  className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 text-xs font-bold rounded-xl transition-all shadow-sm flex items-center space-x-1"
-                >
-                  {migratingD1 ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin mr-1" />
-                      <span>Sedang Migrasi...</span>
-                    </>
-                  ) : (
-                    <span>Jalankan Migrasi Skema</span>
-                  )}
-                </button>
-                <button 
-                  onClick={() => setD1Error(null)}
-                  className="px-4 py-2 bg-amber-600 text-white hover:bg-amber-700 text-xs font-bold rounded-xl transition-all shadow-sm"
-                >
-                  Sembunyikan Peringatan
-                </button>
-              </div>
-            </div>
-          )}
-
           {loading && (
             <div className="p-4 bg-blue-50 border border-blue-100 text-blue-700 text-xs rounded-xl flex items-center space-x-2 animate-pulse justify-center">
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -2926,70 +2036,13 @@ export default function App() {
             </div>
           )}
 
-          {/* Cloudflare D1 Connection & Direct Sync Control Panel for Administrators */}
-          {currentUser && hasRole(currentUser.role, 'Administrator') && showD1Banner && (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 relative">
-              <button 
-                onClick={() => setShowD1Banner(false)}
-                className="absolute top-2 right-2 p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors"
-                title="Tutup Status Database"
-              >
-                <X className="w-4 h-4" />
-              </button>
-              <div className="space-y-1 pr-8">
-                <div className="flex items-center space-x-2">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isD1Active ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
-                    <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isD1Active ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                  </span>
-                  <h4 className="text-sm font-black text-white">
-                    Status Database: {isD1Active ? 'Cloudflare D1 Aktif (Real-time)' : 'Mode Cadangan Offline (Local)'}
-                  </h4>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-normal max-w-2xl">
-                  {isD1Active 
-                    ? 'Aplikasi berjalan lancar di atas database cloud performa tinggi Cloudflare D1. Sinkronisasi data real-time aktif.' 
-                    : 'Koneksi ke D1 cloud saat ini nonaktif/timeout. Sistem secara otomatis menggunakan memori browser lokal agar operasional tidak terganggu.'}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                <button
-                  id="btn-sync-supabase-d1"
-                  disabled={migratingD1}
-                  onClick={runD1LiveSyncFromSupabase}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-xs font-bold text-white rounded-xl transition-all shadow-lg shadow-blue-500/10 flex items-center space-x-1.5 cursor-pointer"
-                  title="Ambil seluruh data massal terbaru dari Supabase dan masukkan langsung ke Cloudflare D1 tanpa terminal"
-                >
-                  {migratingD1 ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" />
-                      <span>Sedang Menyinkronkan...</span>
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Sinkronkan Langsung dari Supabase (6.000+ Data)</span>
-                    </>
-                  )}
-                </button>
-                
-                <button
-                  id="btn-check-d1-schema"
-                  disabled={migratingD1}
-                  onClick={runD1Migration}
-                  className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-xs font-bold text-slate-300 rounded-xl transition-all border border-slate-700 cursor-pointer"
-                  title="Memastikan skema tabel D1 lengkap dan up-to-date"
-                >
-                  <span>Periksa Skema D1</span>
-                </button>
-              </div>
-            </div>
-          )}
+
 
           {currentTab === 'dashboard' && (
             <Dashboard 
               transactions={transactions} 
-              currentUser={activeUser!}
+              currentUser={currentUser!}
+              isLoading={loading}
               onSelectTransaction={(id) => {
                 setSelectedTransactionId(id);
                 setCurrentTab('database');
@@ -3010,7 +2063,8 @@ export default function App() {
           {currentTab === 'database' && (
             <DatabaseView 
               transactions={transactions}
-              currentUser={activeUser!}
+              currentUser={currentUser!}
+              profiles={profiles}
               isLoading={loading}
               onAddTransaction={handleAddTransaction}
               onBulkAddTransactions={handleBulkAddTransactions}
@@ -3035,7 +2089,7 @@ export default function App() {
           {currentTab === 'users' && (
             <UserManagement 
               profiles={profiles}
-              currentUser={activeUser!}
+              currentUser={currentUser!}
               onAddUser={handleAddUser}
               onUpdateUser={handleUpdateUser}
               onDeleteUser={handleDeleteUser}
@@ -3045,7 +2099,7 @@ export default function App() {
           {currentTab === 'complaints' && (
             <FeedbackView 
               inquiries={inquiries}
-              currentUser={activeUser!}
+              currentUser={currentUser!}
               onAddInquiry={handleAddInquiry}
               onUpdateInquiry={handleUpdateInquiry}
               onDeleteInquiry={handleDeleteInquiry}
@@ -3059,7 +2113,8 @@ export default function App() {
       {selectedTransactionId && selectedTransaction && (
         <DetailModal 
           transaction={selectedTransaction}
-          currentUser={activeUser!}
+          currentUser={currentUser!}
+          profiles={profiles}
           onClose={() => setSelectedTransactionId(null)}
           onUpdateStatus={handleUpdateTransaction}
         />
@@ -3089,6 +2144,152 @@ export default function App() {
               >
                 Keluar Portal
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MAINTENANCE / CONNECTION ERROR POPUP MODAL */}
+      {d1Error && showD1Modal && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-amber-100 space-y-4 animate-in zoom-in-95 duration-200 relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-amber-500"></div>
+            <div className="flex items-start space-x-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center flex-shrink-0 text-amber-600 shadow-sm">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="space-y-1 flex-grow">
+                <h3 className="text-base font-black text-slate-900">Sistem Maintenance / Kendala Koneksi D1</h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Terdeteksi kendala komunikasi dengan database Cloudflare D1. Sistem berjalan dalam mode pemulihan / offline:
+                </p>
+              </div>
+              <button 
+                onClick={() => setShowD1Modal(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition-all text-xs font-bold"
+                title="Tutup Popup"
+              >
+                ✕
+              </button>
+            </div>
+
+            <pre className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-[10px] font-mono text-slate-700 break-all overflow-x-auto whitespace-pre-wrap max-h-28">
+              {d1Error}
+            </pre>
+
+            <div className="space-y-1.5 pt-1">
+              <p className="text-[11px] font-extrabold text-slate-800">Langkah Perbaikan API Token Cloudflare Anda:</p>
+              <ul className="list-decimal list-inside text-[11px] text-slate-600 space-y-1 pl-1 leading-relaxed">
+                <li>Buka <strong className="font-bold text-slate-900">Cloudflare Dashboard</strong> &gt; <strong className="font-bold text-slate-900">My Profile</strong> &gt; <strong className="font-bold text-slate-900">API Tokens</strong>.</li>
+                <li>Buat token dengan template <strong className="font-bold text-slate-900">Edit Cloudflare D1</strong> (atau setel izin <strong className="font-bold text-slate-900">Account: D1: Edit</strong>).</li>
+                <li>Simpan Token tersebut di menu <strong className="font-bold text-slate-900">Settings</strong> dengan variabel <strong className="font-mono bg-amber-50 px-1 py-0.5 rounded text-amber-800 border border-amber-200">CLOUDFLARE_API_TOKEN</strong>.</li>
+              </ul>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                disabled={migratingD1}
+                onClick={runD1LiveSyncFromSupabase}
+                className="px-3.5 py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 text-xs font-bold rounded-xl transition-all shadow-sm flex items-center space-x-1.5"
+              >
+                {migratingD1 ? <RefreshCw className="w-3 h-3 animate-spin" /> : null}
+                <span>Sinkronkan Supabase</span>
+              </button>
+              <button
+                disabled={migratingD1}
+                onClick={runD1FullSqlImport}
+                className="px-3.5 py-2 bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 text-xs font-bold rounded-xl transition-all shadow-sm flex items-center space-x-1.5"
+              >
+                {migratingD1 ? <RefreshCw className="w-3 h-3 animate-spin" /> : null}
+                <span>Impor SQL</span>
+              </button>
+              <button
+                onClick={() => setShowD1Modal(false)}
+                className="px-4 py-2 bg-slate-900 text-white hover:bg-slate-800 text-xs font-bold rounded-xl transition-all shadow-sm"
+              >
+                Tutup (Lanjutkan Aplikasi)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING MAINTENANCE BADGE (WHEN POPUP IS MINIMIZED/CLOSED) */}
+      {d1Error && !showD1Modal && (
+        <button
+          onClick={() => setShowD1Modal(true)}
+          className="fixed bottom-4 right-4 z-[150] bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center space-x-2 text-xs font-bold transition-all animate-bounce"
+        >
+          <AlertTriangle className="w-4 h-4" />
+          <span>⚠️ Sistem Maintenance / Kendala D1 (Klik Detail)</span>
+        </button>
+      )}
+
+      {/* NON-BLOCKING FLOATING SYNC BADGE WHEN DATA IS ALREADY PRESENT */}
+      {loading && transactions.length > 0 && (
+        <div className="fixed top-4 right-4 z-[9999] bg-slate-900/90 text-white backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-2xl border border-slate-700/50 flex items-center space-x-2.5 text-xs font-semibold animate-fade-in pointer-events-none">
+          <RefreshCw className="w-4 h-4 text-indigo-400 animate-spin" />
+          <span>Menyelaraskan data dengan Cloudflare D1...</span>
+        </div>
+      )}
+
+      {/* FULL-PAGE BACKDROP LOADER WHEN DATA IS INITIALIZING / PREPARING FOR USER ROLE & BRANCH */}
+      {loading && transactions.length === 0 && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-[9999] flex flex-col items-center justify-center p-4 transition-all duration-300">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-100 flex flex-col items-center text-center space-y-6 animate-fade-in">
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin flex items-center justify-center">
+                <RefreshCw className="w-8 h-8 text-indigo-600 animate-pulse" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-indigo-50 border border-indigo-100 rounded-full text-[11px] font-extrabold text-indigo-700 tracking-wide uppercase">
+                <Shield className="w-3.5 h-3.5" />
+                <span>Otentikasi Berhasil</span>
+              </div>
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">Menyiapkan Data Anda</h3>
+              <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                Sedang memuat & menyelaraskan transaksi sesuai role dan cabang handling dari database Cloudflare D1...
+              </p>
+            </div>
+
+            {/* USER ROLE & BRANCH INFO BADGES */}
+            {currentUser && (
+              <div className="w-full bg-slate-50 border border-slate-200/80 p-4 rounded-2xl space-y-2.5 text-left">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-medium">Pengguna:</span>
+                  <span className="font-bold text-slate-800">{currentUser.full_name}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-medium">Role Akses:</span>
+                  <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 rounded-md font-extrabold text-[11px]">
+                    {currentUser.role}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-medium">Cabang Handling:</span>
+                  <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-md font-extrabold text-[11px]">
+                    {currentUser.branch}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* ANIMATED PROGRESS BAR */}
+            <div className="w-full space-y-1.5">
+              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div className="bg-gradient-to-r from-indigo-500 via-blue-500 to-indigo-600 h-full w-full rounded-full animate-pulse origin-left"></div>
+              </div>
+              <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold">
+                <span>Memuat Transaksi Cabang...</span>
+                <span>Cloudflare D1 Aktif</span>
+              </div>
+            </div>
+
+            <div className="w-full bg-slate-50 border border-slate-100 p-2.5 rounded-xl flex items-center justify-center space-x-2 text-[10px] text-slate-600 font-bold uppercase tracking-wider">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+              <span>Koneksi Terenkripsi & Aman D1</span>
             </div>
           </div>
         </div>

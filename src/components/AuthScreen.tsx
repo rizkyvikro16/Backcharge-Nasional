@@ -3,8 +3,6 @@ import { Key, Mail, User, MapPin, UserCheck, Eye, EyeOff, CheckSquare, Square } 
 import { Profile, UserRole, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, WEST_BRANCHES, CENTRAL_BRANCHES, EAST_BRANCHES, isRegionalHeadRole } from '../types';
 import { mockDb } from '../supabaseClient';
 import { getApiUrl } from '../lib/api';
-const isSupabaseConfigured = false;
-const supabase = null as any;
 
 interface AuthScreenProps {
   onLoginSuccess: (profile: Profile) => void;
@@ -111,6 +109,16 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
           try {
             d = JSON.parse(text);
           } catch {
+            if (text.trim().startsWith("<!") || text.trim().startsWith("<html")) {
+              if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+                try {
+                  navigator.serviceWorker.getRegistrations().then(registrations => {
+                    for (const reg of registrations) reg.unregister();
+                  });
+                } catch {}
+              }
+              throw new Error(`Koneksi API D1 terintersepsi (Status ${res.status}). Mengulang koneksi ke server...`);
+            }
             throw new Error(`Respons tidak valid (${res.status}): ${text.substring(0, 100) || 'Kosong'}`);
           }
           if (!d.success) throw new Error(d.error || "Gagal kueri D1");
@@ -146,26 +154,31 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
             throw new Error('Password yang Anda masukkan salah!');
           }
         } else {
-          // If no profile exists, auto-register them
+          // If master admin account doesn't exist yet on fresh DB, initialize it
           const isDefaultAdmin = emailTrim === 'administrator@assa.id' || emailTrim === 'assa@assa.id' || emailTrim.startsWith('administrator@') || emailTrim.startsWith('admin@assa');
-          const newProfile: Profile = {
-            id: isDefaultAdmin ? (emailTrim === 'assa@assa.id' ? 'l8hovd' : '1') : 'USR-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
-            email: emailTrim,
-            full_name: isDefaultAdmin ? 'ASSA' : emailTrim.split('@')[0].toUpperCase() + ' (Staff D1)',
-            role: isDefaultAdmin ? 'Administrator' : 'ASO',
-            branch: isDefaultAdmin ? 'Nasional' : 'Megabranch',
-            password: password,
-            created_at: new Date().toISOString()
-          };
-          
-          await executeD1Query(
-            "INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [newProfile.id, newProfile.email, newProfile.full_name, newProfile.role, newProfile.branch, newProfile.created_at, newProfile.password]
-          );
+          if (isDefaultAdmin) {
+            const newAdminProfile: Profile = {
+              id: emailTrim === 'assa@assa.id' ? 'l8hovd' : '1',
+              email: emailTrim,
+              full_name: 'ASSA',
+              role: 'Administrator',
+              branch: 'Nasional',
+              password: password || 'password123',
+              created_at: new Date().toISOString()
+            };
+            
+            await executeD1Query(
+              "INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              [newAdminProfile.id, newAdminProfile.email, newAdminProfile.full_name, newAdminProfile.role, newAdminProfile.branch, newAdminProfile.created_at, newAdminProfile.password]
+            );
 
-          onLoginSuccess(newProfile);
-          setLoading(false);
-          return;
+            onLoginSuccess(newAdminProfile);
+            setLoading(false);
+            return;
+          }
+
+          // Do NOT create dummy Staff D1 profile. Inform user to register properly via Register tab.
+          throw new Error(`Email "${emailTrim}" belum terdaftar di sistem. Silakan klik tab "Daftar Akun Baru" untuk mendaftar dengan Nama, Role, dan Cabang yang sesuai.`);
         }
       } catch (err: any) {
         console.error("D1 login error:", err);
@@ -175,96 +188,37 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
       }
     }
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        // 1. First check if a profile exists with this email in public.profiles table
-        const { data: dbProfile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('email', emailTrim)
-          .maybeSingle();
-
-        if (dbProfile) {
-          // If a profile exists, verify the password
-          const dbPassword = dbProfile.password || 'password123';
-          if (dbPassword === password) {
-            onLoginSuccess(dbProfile as Profile);
-            setLoading(false);
-            return;
-          }
+    // Offline Local Storage Login Fallback
+    setTimeout(() => {
+      const profiles = mockDb.getProfiles();
+      const found = profiles.find(p => p.email.toLowerCase() === emailTrim);
+      const isDefaultAdmin = emailTrim === 'administrator@assa.id' || emailTrim === 'assa@assa.id' || emailTrim.startsWith('administrator@') || emailTrim.startsWith('admin@assa');
+      
+      if (found && (password === 'password123' || password === found.password || emailTrim.includes('company.id') || isDefaultAdmin)) {
+        if (isDefaultAdmin && (found.role !== 'Administrator' || found.branch !== 'Nasional')) {
+          found.role = 'Administrator';
+          found.branch = 'Nasional';
+          found.full_name = 'ASSA Administrator';
+          mockDb.saveProfile(found);
         }
-
-        // 2. Fallback to standard Supabase Auth if table-password didn't match or profile doesn't exist
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        onLoginSuccess(found);
+      } else if (isDefaultAdmin) {
+        const newAdminProfile: Profile = {
+          id: '1',
           email: emailTrim,
-          password: password,
-        });
-
-        if (authError) {
-          throw new Error('Kombinasi Email atau Password salah! Periksa kembali.');
-        }
-
-        if (authData.user) {
-          // Fetch profile info
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', authData.user.id)
-            .maybeSingle();
-
-          if (profileData) {
-            onLoginSuccess(profileData as Profile);
-          } else {
-            // Create fallback profile if not found
-            const fallbackProfile: Profile = {
-              id: authData.user.id,
-              email: emailTrim,
-              full_name: emailTrim.split('@')[0].toUpperCase(),
-              role: 'ASO',
-              branch: 'Megabranch',
-              created_at: new Date().toISOString()
-            };
-            onLoginSuccess(fallbackProfile);
-          }
-        }
-      } catch (err: any) {
-        setError(err.message || 'Gagal login. Periksa kembali email dan password.');
-      } finally {
-        setLoading(false);
+          full_name: 'ASSA Administrator',
+          role: 'Administrator',
+          branch: 'Nasional',
+          created_at: new Date().toISOString(),
+          password: password || 'password123'
+        };
+        mockDb.saveProfile(newAdminProfile);
+        onLoginSuccess(newAdminProfile);
+      } else {
+        setError(`Email "${emailTrim}" belum terdaftar atau password salah. Silakan periksa kembali atau daftar pada tab "Daftar Akun Baru".`);
       }
-    } else {
-      // Offline Local Storage Login Fallback
-      setTimeout(() => {
-        const profiles = mockDb.getProfiles();
-        const found = profiles.find(p => p.email.toLowerCase() === emailTrim);
-        const isDefaultAdmin = emailTrim === 'administrator@assa.id' || emailTrim === 'assa@assa.id' || emailTrim.startsWith('administrator@') || emailTrim.startsWith('admin@assa');
-        
-        if (found && (password === 'password123' || password === found.password || emailTrim.includes('company.id') || isDefaultAdmin)) {
-          if (isDefaultAdmin && (found.role !== 'Administrator' || found.branch !== 'Nasional')) {
-            found.role = 'Administrator';
-            found.branch = 'Nasional';
-            found.full_name = 'ASSA Administrator';
-            mockDb.saveProfile(found);
-          }
-          onLoginSuccess(found);
-        } else if (emailTrim && password) {
-          // Auto-register new users on the fly if testing other accounts
-          const newProfile: Profile = {
-            id: isDefaultAdmin ? '1' : Math.random().toString(36).substring(7),
-            email: emailTrim,
-            full_name: isDefaultAdmin ? 'ASSA Administrator' : emailTrim.split('@')[0].toUpperCase() + ' (Staff)',
-            role: isDefaultAdmin ? 'Administrator' : 'ASO',
-            branch: isDefaultAdmin ? 'Nasional' : 'Megabranch',
-            created_at: new Date().toISOString()
-          };
-          mockDb.saveProfile(newProfile);
-          onLoginSuccess(newProfile);
-        } else {
-          setError('Email atau Password salah! (Default password: password123)');
-        }
-        setLoading(false);
-      }, 500);
-    }
+      setLoading(false);
+    }, 500);
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -314,7 +268,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
       : regRole;
 
     const newProfile: Profile = {
-      id: 'USR-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'USR-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 7).toUpperCase(),
       email: emailTrim,
       full_name: fullNameTrim,
       role: finalRole as UserRole,
@@ -337,6 +291,16 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
           try {
             d = JSON.parse(text);
           } catch {
+            if (text.trim().startsWith("<!") || text.trim().startsWith("<html")) {
+              if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+                try {
+                  navigator.serviceWorker.getRegistrations().then(registrations => {
+                    for (const reg of registrations) reg.unregister();
+                  });
+                } catch {}
+              }
+              throw new Error(`Koneksi API D1 terintersepsi (Status ${res.status}). Mengulang koneksi ke server...`);
+            }
             throw new Error(`Respons tidak valid (${res.status}): ${text.substring(0, 100) || 'Kosong'}`);
           }
           if (!d.success) throw new Error(d.error || "Gagal kueri D1");
@@ -362,10 +326,8 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
           );
         } catch {}
 
-        setSuccess('Pendaftaran Mandiri Berhasil! Silakan masuk menggunakan tab Login.');
-        setActiveTab('login');
-        setEmail(regEmail);
-        setPassword(regPassword);
+        setSuccess(`Pendaftaran Berhasil! Selamat datang, ${fullNameTrim}.`);
+        onLoginSuccess(newProfile);
         setRegFullName('');
         setRegEmail('');
         setRegPassword('');
@@ -377,45 +339,8 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
       return;
     }
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        // Insert into backend profiles table
-        const { error: dbError } = await supabase
-          .from('profiles')
-          .insert([
-            {
-              id: newProfile.id,
-              email: newProfile.email,
-              full_name: newProfile.full_name,
-              role: newProfile.role,
-              branch: newProfile.branch,
-              password: newProfile.password,
-              created_at: newProfile.created_at
-            }
-          ]);
-
-        if (dbError) {
-          throw new Error('Email sudah terdaftar atau gagal menyimpan profil: ' + dbError.message);
-        }
-
-        // Keep local storage synchronized
-        mockDb.saveProfile(newProfile);
-
-        setSuccess(`Registrasi akun untuk "${fullNameTrim}" berhasil! Silakan masuk di tab Masuk.`);
-        setEmail(emailTrim);
-        setPassword(passwordTrim);
-        setRegFullName('');
-        setRegEmail('');
-        setRegPassword('');
-        setActiveTab('login');
-      } catch (err: any) {
-        setError(err.message || 'Gagal mendaftarkan akun baru.');
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      // Local storage offline registration
-      setTimeout(() => {
+    // Local storage offline registration
+    setTimeout(() => {
         const profiles = mockDb.getProfiles();
         const exists = profiles.find(p => p.email.toLowerCase() === emailTrim);
         if (exists) {
@@ -425,16 +350,13 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
         }
 
         mockDb.saveProfile(newProfile);
-        setSuccess(`Registrasi berhasil! Akun "${fullNameTrim}" siap digunakan. Silakan masuk.`);
-        setEmail(emailTrim);
-        setPassword(passwordTrim);
+        setSuccess(`Registrasi berhasil! Selamat datang, ${fullNameTrim}.`);
+        onLoginSuccess(newProfile);
         setRegFullName('');
         setRegEmail('');
         setRegPassword('');
-        setActiveTab('login');
         setLoading(false);
-      }, 600);
-    }
+      }, 400);
   };
 
   return (

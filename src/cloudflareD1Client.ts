@@ -19,19 +19,21 @@ export interface D1QueryResponse {
 
 let activeMigrationPromise: Promise<void> | null = null;
 let queryQueuePromise: Promise<any> = Promise.resolve();
+let hasInitializedD1Tables = false;
 
 /**
  * Ensures all required D1 tables are created and seeded if missing.
  * Thread-safe for concurrent database requests.
  */
 export async function ensureD1TablesExist(): Promise<void> {
+  if (hasInitializedD1Tables) {
+    return;
+  }
   if (activeMigrationPromise) {
-    console.log("⚙️ Another database migration is already in progress, joining existing promise...");
     return activeMigrationPromise;
   }
 
   activeMigrationPromise = (async () => {
-    console.log("⚙️ Checking and creating missing Cloudflare D1 tables...");
     try {
       // 1. Create profiles
       try {
@@ -163,9 +165,15 @@ export async function ensureD1TablesExist(): Promise<void> {
         }
       }
 
+      // 2.5 Only create the single essential composite index if needed
+      try {
+        await queryD1Direct("CREATE INDEX IF NOT EXISTS idx_backcharges_branch_created ON backcharges(branch, created_at DESC);");
+      } catch (e: any) {
+        console.warn("Index check note:", e.message || e);
+      }
+      
       // 3. Create activity_logs
       try {
-        console.log("Creating table 'activity_logs'...");
         await queryD1Direct(`
           CREATE TABLE IF NOT EXISTS activity_logs (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -175,14 +183,13 @@ export async function ensureD1TablesExist(): Promise<void> {
               action_description TEXT NOT NULL
           );
         `);
-        console.log("Table 'activity_logs' created successfully.");
+        await queryD1Direct("CREATE INDEX IF NOT EXISTS idx_activity_logs_tx_id ON activity_logs(transaction_id);");
       } catch (e: any) {
-        console.error("❌ Error creating table 'activity_logs':", e.message || e);
+        console.error("❌ Error with table 'activity_logs':", e.message || e);
       }
-
+      
       // 4. Create contact_inquiries
       try {
-        console.log("Creating table 'contact_inquiries'...");
         await queryD1Direct(`
           CREATE TABLE IF NOT EXISTS contact_inquiries (
               id TEXT PRIMARY KEY,
@@ -195,12 +202,12 @@ export async function ensureD1TablesExist(): Promise<void> {
               updated_at TEXT DEFAULT CURRENT_TIMESTAMP
           );
         `);
-        console.log("Table 'contact_inquiries' created successfully.");
       } catch (e: any) {
-        console.error("❌ Error creating table 'contact_inquiries':", e.message || e);
+        console.error("❌ Error with table 'contact_inquiries':", e.message || e);
       }
 
-      console.log("✅ Missing Cloudflare D1 tables successfully initialized!");
+      console.log("✅ Cloudflare D1 tables initialized (Minimal write footprint).");
+      hasInitializedD1Tables = true;
     } catch (err: any) {
       console.error("❌ Failed to auto-migrate Cloudflare D1 tables:", err.message);
     } finally {

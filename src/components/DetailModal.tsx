@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   X, Upload, Download, FileText, 
   Image, Eye,
-  Cloud, Loader2, ExternalLink
+  Cloud, Loader2, ExternalLink, User
 } from 'lucide-react';
 import { Backcharge, Profile, isRegionalHeadRole, hasRole } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
@@ -10,6 +10,7 @@ import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAp
 interface DetailModalProps {
   transaction: Backcharge;
   currentUser: Profile;
+  profiles?: Profile[];
   onClose: () => void;
   onUpdateStatus: (id: string, updates: Partial<Backcharge>, logMessage: string) => void;
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -33,10 +34,65 @@ const getDrivePreviewUrl = (url: string): string => {
 export default function DetailModal({ 
   transaction, 
   currentUser, 
+  profiles = [],
   onClose, 
   onUpdateStatus,
   addToast
 }: DetailModalProps) {
+  
+  const formatPenginput = (createdBy?: string): string => {
+    if (!createdBy || createdBy === '-' || createdBy === '') return '-';
+    const cleanCreatedBy = createdBy.trim();
+
+    // 1. Search in profiles from props
+    if (profiles && profiles.length > 0) {
+      const found = profiles.find(p => 
+        (p.email && p.email.toLowerCase().trim() === cleanCreatedBy.toLowerCase()) ||
+        (p.id && String(p.id) === cleanCreatedBy) ||
+        (p.full_name && p.full_name.toLowerCase().trim() === cleanCreatedBy.toLowerCase())
+      );
+      if (found && found.full_name && found.full_name.trim() !== '') {
+        return found.full_name.trim();
+      }
+    }
+
+    // 2. Search in currentUser
+    if (currentUser) {
+      if (
+        (currentUser.email && currentUser.email.toLowerCase().trim() === cleanCreatedBy.toLowerCase()) ||
+        (currentUser.id && String(currentUser.id) === cleanCreatedBy) ||
+        (currentUser.full_name && currentUser.full_name.toLowerCase().trim() === cleanCreatedBy.toLowerCase())
+      ) {
+        if (currentUser.full_name && currentUser.full_name.trim() !== '') {
+          return currentUser.full_name.trim();
+        }
+      }
+    }
+
+    // 3. Search in localStorage profiles cache
+    try {
+      const stored = localStorage.getItem('bc_profiles');
+      if (stored) {
+        const parsed: Profile[] = JSON.parse(stored);
+        const found = parsed.find(p => 
+          (p.email && p.email.toLowerCase().trim() === cleanCreatedBy.toLowerCase()) ||
+          (p.full_name && p.full_name.toLowerCase().trim() === cleanCreatedBy.toLowerCase())
+        );
+        if (found && found.full_name && found.full_name.trim() !== '') {
+          return found.full_name.trim();
+        }
+      }
+    } catch (e) {}
+
+    // 4. If it's already a full name (not email format)
+    if (!cleanCreatedBy.includes('@')) {
+      return cleanCreatedBy;
+    }
+
+    // 5. Fallback from email prefix if no profile record found
+    const prefix = cleanCreatedBy.split('@')[0];
+    return prefix.replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  };
   
   const [actionLoading, setActionLoading] = useState(false);
   const [showActionForm, setShowActionForm] = useState<'sap' | 'invoice' | 'sales_admin_handover' | 'handover_courier' | 'approval' | 'regional_approval' | 'division_approval' | 'paid' | null>(null);
@@ -704,9 +760,15 @@ export default function DetailModal({
   };
 
   const handleApprovalSubmit = () => {
-    const isKacabUser = hasRole(currentUser.role, 'Kepala Cabang') || hasRole(currentUser.role, 'kacab');
-    const isSHUser = hasRole(currentUser.role, 'Sales Head') || hasRole(currentUser.role, 'Sales / Sales Head');
-    const roleTitle = isKacabUser ? 'Kepala Cabang' : isSHUser ? 'Sales Head' : currentUser.role;
+    let roleTitle = currentUser.role;
+    if (transaction.category === 'Maintenance' || transaction.category === 'TPL') {
+      roleTitle = 'Kepala Cabang';
+    } else if (['Own Risk', 'Ekspedisi', 'ETLE', 'Unclaimable Insurance', 'Dokumen Kendaraan'].includes(transaction.category)) {
+      roleTitle = 'Sales Head';
+    }
+    if (hasRole(currentUser.role, 'Administrator')) {
+      roleTitle = 'Administrator (' + roleTitle + ')';
+    }
 
     const confirmMessage = `PERINGATAN STATUS KRITIS!\n\nApakah Anda yakin ingin menyimpan keputusan Approval Backcharge ini dengan status: "${modalApprovalStatus.toUpperCase()}"?\n\nPerubahan ini akan dicatat secara resmi atas nama ${currentUser.full_name || currentUser.email} (${roleTitle}).`;
     if (!window.confirm(confirmMessage)) {
@@ -797,11 +859,11 @@ export default function DetailModal({
     (isDivisionHeadView && txValue > 15000000);
 
   const isSuperAdmin = hasRole(currentUser.role, 'Administrator');
-  const isRegionalHeadUser = isRegionalHeadView;
-  const isDivisionHeadUser = isDivisionHeadView;
-  const isKacabUser = isKacabRole && !isRegionalHeadUser && !isDivisionHeadUser;
-  const isSalesHeadUser = isSalesHeadRole && !isRegionalHeadUser && !isDivisionHeadUser;
-  const isAdminUser = isAdminView && !isRegionalHeadUser && !isDivisionHeadUser && !isKacabRole && !isSalesHeadRole;
+  const isRegionalHeadUser = isRegionalHeadView || isSuperAdmin;
+  const isDivisionHeadUser = isDivisionHeadView || isSuperAdmin;
+  const isKacabUser = isKacabRole;
+  const isSalesHeadUser = isSalesHeadRole;
+  const isAdminUser = isAdminView || isSuperAdmin;
 
   const isRegionalHeadReq = isMaintenance 
     ? (txValue > 7500000) 
@@ -1018,6 +1080,21 @@ export default function DetailModal({
                     </div>
                   </div>
                 )}
+              </div>
+
+              <div>
+                <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Penginput Data Backcharge</span>
+                <div className="flex items-center space-x-2.5 mt-1 p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                    <User className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-extrabold text-slate-900 text-xs truncate">
+                      {formatPenginput(transaction.created_by)}
+                    </p>
+                    <p className="text-[10px] text-slate-500 font-mono truncate">{transaction.created_by || '-'}</p>
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -1428,7 +1505,9 @@ export default function DetailModal({
                           </span>
                         </div>
                         <p className="text-[9px] text-slate-500 mt-0.5 font-medium">
-                          {step.label.includes("Serah Terima Berkas") 
+                          {idx === 0 ? (
+                            <span>Data di-input oleh <strong className="text-slate-300 font-bold">{formatPenginput(transaction.created_by)}</strong> ({transaction.created_by || '-'}) pada {new Date(transaction.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                          ) : step.label.includes("Serah Terima Berkas") 
                             ? (step.completed 
                                 ? `Dokumen baru telah di-input oleh ASO & berkas fisik Backcharge diserahkan langsung ke Admin${transaction.tanggal_handover ? ` pada ${transaction.tanggal_handover}` : ''}` 
                                 : step.active 
@@ -1441,6 +1520,12 @@ export default function DetailModal({
                                   : 'Menunggu tahap sebelumnya')
                           }
                         </p>
+                        {idx === 0 && (
+                          <div className="mt-1 flex items-center gap-1.5 text-[9px] text-blue-300 bg-blue-950/70 border border-blue-800/70 px-2 py-0.5 rounded-md w-fit font-medium">
+                            <User className="w-2.5 h-2.5 text-blue-400 flex-shrink-0" />
+                            <span>Penginput: <strong className="text-white font-bold">{formatPenginput(transaction.created_by)}</strong></span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -2659,7 +2744,7 @@ export default function DetailModal({
               <div className="space-y-10">
                 <p className="font-extrabold text-slate-400 uppercase">DIBUAT OLEH (ASO)</p>
                 <div className="border-t border-slate-300 pt-1.5 font-bold">
-                  <p className="text-slate-900">{transaction.created_by.split('@')[0].toUpperCase()}</p>
+                  <p className="text-slate-900">{formatPenginput(transaction.created_by).toUpperCase()}</p>
                   <p className="text-slate-400">Staff Cabang {transaction.branch}</p>
                 </div>
               </div>

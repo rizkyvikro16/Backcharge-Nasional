@@ -14,6 +14,7 @@ import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL
 interface DashboardProps {
   transactions: Backcharge[];
   currentUser?: Profile;
+  isLoading?: boolean;
   onSelectTransaction?: (id: string) => void;
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   onUpdatePassword?: (newPassword: string) => Promise<boolean>;
@@ -37,6 +38,7 @@ const getCategoryColorClass = (cat: BackchargeCategory) => {
 export default function Dashboard({ 
   transactions, 
   currentUser, 
+  isLoading = false,
   onSelectTransaction, 
   addToast, 
   onUpdatePassword,
@@ -46,6 +48,24 @@ export default function Dashboard({
   // Role helper
   const userRole = currentUser?.role || 'ASO';
   const isAdmin = userRole === 'Admin' || userRole === 'Admin Head';
+
+  // Branch mapping - filtered according to user role / branch access
+  const userBranches = useMemo(() => {
+    return currentUser?.branch && currentUser?.branch !== 'Nasional'
+      ? getUserBranches(currentUser.branch)
+      : null;
+  }, [currentUser]);
+
+  const branchList = useMemo(() => {
+    const availableBranchOptionsVal = userBranches && userBranches.length > 0
+      ? (ALL_SYSTEM_BRANCHES.filter(b => userBranches.some(ub => ub.toLowerCase() === b.toLowerCase())).length > 0
+          ? ALL_SYSTEM_BRANCHES.filter(b => userBranches.some(ub => ub.toLowerCase() === b.toLowerCase()))
+          : userBranches)
+      : ALL_SYSTEM_BRANCHES;
+    return availableBranchOptionsVal;
+  }, [userBranches]);
+
+  const availableBranchOptions = branchList;
 
   // Local/global settings
   const [startDate, setStartDate] = useState<string>('');
@@ -75,6 +95,24 @@ export default function Dashboard({
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailAddress, setEmailAddress] = useState(currentUser?.email || '');
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+
+  // Sync selected branch filter with user's primary branch on login
+  React.useEffect(() => {
+    if (currentUser) {
+      if (currentUser.branch && currentUser.branch !== 'Nasional') {
+        const branches = getUserBranches(currentUser.branch);
+        if (branches.length === 1) {
+          // Default to their only branch if they only handle exactly 1 branch
+          setSelectedBranchFilter(branches[0]);
+        } else {
+          // If they handle multiple branches (e.g., Regional, Megabranch, or custom list), show consolidated data
+          setSelectedBranchFilter('');
+        }
+      } else {
+        setSelectedBranchFilter('');
+      }
+    }
+  }, [currentUser]);
 
   // Change password modal states
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
@@ -146,11 +184,13 @@ export default function Dashboard({
       if (selectedBranchFilter) {
         const allowedBranches = getUserBranches(selectedBranchFilter);
         matchesBranch = allowedBranches.includes(t.branch) || Boolean(t.branch && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase());
+      } else if (userBranches && userBranches.length > 0) {
+        matchesBranch = userBranches.some(ub => ub.toLowerCase() === t.branch?.toLowerCase());
       }
       
       return matchesStartDate && matchesEndDate && matchesBranch;
     });
-  }, [transactions, startDate, endDate, selectedBranchFilter]);
+  }, [transactions, startDate, endDate, selectedBranchFilter, userBranches]);
 
   // 2. Trend Calculations relative to "Periode Lalu"
   const { activeCount, activeValue, priorCount, priorValue } = useMemo(() => {
@@ -179,6 +219,8 @@ export default function Dashboard({
         if (selectedBranchFilter) {
           const allowedBranches = getUserBranches(selectedBranchFilter);
           matchesBranch = allowedBranches.includes(t.branch) || Boolean(t.branch && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase());
+        } else if (userBranches && userBranches.length > 0) {
+          matchesBranch = userBranches.some(ub => ub.toLowerCase() === t.branch?.toLowerCase());
         }
         return matchesDate && matchesBranch;
       });
@@ -200,6 +242,8 @@ export default function Dashboard({
         if (selectedBranchFilter) {
           const allowedBranches = getUserBranches(selectedBranchFilter);
           matchesBranch = allowedBranches.includes(t.branch) || Boolean(t.branch && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase());
+        } else if (userBranches && userBranches.length > 0) {
+          matchesBranch = userBranches.some(ub => ub.toLowerCase() === t.branch?.toLowerCase());
         }
         return matchesDate && matchesBranch;
       });
@@ -209,7 +253,7 @@ export default function Dashboard({
     }
 
     return { activeCount: actCount, activeValue: actValue, priorCount: pCount, priorValue: pValue };
-  }, [transactions, startDate, endDate, selectedBranchFilter, filteredTransactions]);
+  }, [transactions, startDate, endDate, selectedBranchFilter, filteredTransactions, userBranches]);
 
   const getPercentChange = (current: number, prior: number) => {
     if (prior === 0) {
@@ -228,24 +272,6 @@ export default function Dashboard({
                            (isRegionalHeadRole(currentUser?.role as string)) || 
                            hasRole(currentUser?.role, 'RBU') || 
                            hasRole(currentUser?.role, 'RH');
-
-  // Branch mapping - filtered according to user role / branch access
-  const userBranches = useMemo(() => {
-    return currentUser?.branch && currentUser?.branch !== 'Nasional'
-      ? getUserBranches(currentUser.branch)
-      : null;
-  }, [currentUser]);
-
-  const branchList = useMemo(() => {
-    const availableBranchOptionsVal = userBranches && userBranches.length > 0
-      ? (ALL_SYSTEM_BRANCHES.filter(b => userBranches.some(ub => ub.toLowerCase() === b.toLowerCase())).length > 0
-          ? ALL_SYSTEM_BRANCHES.filter(b => userBranches.some(ub => ub.toLowerCase() === b.toLowerCase()))
-          : userBranches)
-      : ALL_SYSTEM_BRANCHES;
-    return availableBranchOptionsVal;
-  }, [userBranches]);
-
-  const availableBranchOptions = branchList;
 
   const [selectedBsoFilter, setSelectedBsoFilter] = useState<string>('Semua BSO');
   const [bsoSearchInput, setBsoSearchInput] = useState<string>('');
@@ -402,13 +428,14 @@ export default function Dashboard({
 
       const stepInvoice = t.no_invoice && t.no_invoice !== '-' && t.no_invoice !== '';
       const stepPayment = t.status_payment === 'Lunas';
+      const isNotBill = t.status_sap === 'Not Bill';
 
       // Populate Category Pipeline
       if (catPipelines[cat]) {
         catPipelines[cat].stage1Input++;
         if (t.status_handover === 'Pending') {
           catPipelines[cat].stage2InAso++;
-        } else if (stepInvoice || stepPayment) {
+        } else if (stepInvoice || stepPayment || isNotBill) {
           // Excluded from stage 4 to 7 bottleneck but counted in stage1Input
         } else if (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') {
           if (isPendingL1) {
@@ -429,6 +456,8 @@ export default function Dashboard({
         s2InAso++;
       } else if (stepInvoice || stepPayment) {
         s8Payment++;
+      } else if (isNotBill) {
+        // Not Bill items do not count as outstanding invoice for Admin (stage 7)
       } else if (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') {
         if (isPendingL1) {
           s4ApproveL1++;
@@ -461,9 +490,9 @@ export default function Dashboard({
       return isNaN(ms) ? 0 : Math.max(0, Math.floor((nowMsVal - ms) / (1000 * 60 * 60 * 24)));
     };
 
-    const dsCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && getTxAgeDaysVal(t) > 15).length;
-    const poCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && getTxAgeDaysVal(t) > 7).length;
-    const o30Count = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && getTxAgeDaysVal(t) > 30).length;
+    const dsCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && t.status_sap !== 'Not Bill' && getTxAgeDaysVal(t) > 15).length;
+    const poCount = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && t.status_sap !== 'Not Bill' && getTxAgeDaysVal(t) > 7).length;
+    const o30Count = filteredTransactions.filter(t => t.status_payment === 'Belum Bayar' && t.status_sap !== 'Not Bill' && getTxAgeDaysVal(t) > 30).length;
 
     return {
       totalCount: totalCountVal,
@@ -1033,6 +1062,127 @@ export default function Dashboard({
     });
   }, [filteredTransactions, selectedDrillDownBranch, drillDownSearch]);
 
+  if (isLoading) {
+    return (
+      <div className="space-y-6 pb-12 font-sans animate-pulse">
+        {/* HEADER BAR SKELETON */}
+        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm mb-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="space-y-2">
+              <div className="h-7 bg-slate-200/80 rounded-xl w-72 md:w-96" />
+              <div className="h-4 bg-slate-200/50 rounded-lg w-52" />
+            </div>
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-slate-200/60 rounded-xl" />
+              <div className="space-y-1.5 text-right">
+                <div className="h-4 bg-slate-200/70 rounded-md w-24 ml-auto" />
+                <div className="h-3 bg-slate-200/40 rounded-md w-16 ml-auto" />
+              </div>
+              <div className="w-10 h-10 bg-slate-200/80 rounded-full" />
+            </div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+            <div className="h-3 bg-slate-200/50 rounded w-32" />
+            <div className="h-3 bg-slate-200/50 rounded w-40" />
+          </div>
+        </div>
+
+        {/* 1. FILTER GLOBAL & ALERTS SKELETON */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <div className="lg:col-span-5 bg-white p-4 rounded-3xl border border-slate-200 shadow-md space-y-4">
+            <div className="h-4 bg-slate-200/60 rounded w-40" />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <div className="h-3 bg-slate-200/40 rounded w-12" />
+                <div className="h-10 bg-slate-200/60 rounded-xl" />
+              </div>
+              <div className="space-y-1">
+                <div className="h-3 bg-slate-200/40 rounded w-12" />
+                <div className="h-10 bg-slate-200/60 rounded-xl" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="h-3 bg-slate-200/40 rounded w-28" />
+              <div className="h-10 bg-slate-200/60 rounded-xl" />
+            </div>
+          </div>
+
+          <div className="lg:col-span-7 bg-white p-4 rounded-3xl border border-slate-200 shadow-md space-y-3">
+            <div className="h-4 bg-slate-200/60 rounded w-44" />
+            <div className="grid grid-cols-3 gap-3">
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+            </div>
+          </div>
+        </div>
+
+        {/* 2. STATS SUMMARIES SKELETON */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex justify-between items-center">
+              <div className="h-3 bg-slate-200/50 rounded w-20" />
+              <div className="w-8 h-8 bg-slate-200/60 rounded-full" />
+            </div>
+            <div className="h-7 bg-slate-200/80 rounded-xl w-24" />
+            <div className="h-3 bg-slate-200/40 rounded w-16" />
+          </div>
+          <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex justify-between items-center">
+              <div className="h-3 bg-slate-200/50 rounded w-20" />
+              <div className="w-8 h-8 bg-slate-200/60 rounded-full" />
+            </div>
+            <div className="h-7 bg-slate-200/80 rounded-xl w-28" />
+            <div className="h-3 bg-slate-200/40 rounded w-20" />
+          </div>
+          <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex justify-between items-center">
+              <div className="h-3 bg-slate-200/50 rounded w-20" />
+              <div className="w-8 h-8 bg-slate-200/60 rounded-full" />
+            </div>
+            <div className="h-7 bg-slate-200/80 rounded-xl w-20" />
+            <div className="h-3 bg-slate-200/40 rounded w-14" />
+          </div>
+          <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex justify-between items-center">
+              <div className="h-3 bg-slate-200/50 rounded w-20" />
+              <div className="w-8 h-8 bg-slate-200/60 rounded-full" />
+            </div>
+            <div className="h-7 bg-slate-200/80 rounded-xl w-32" />
+            <div className="h-3 bg-slate-200/40 rounded w-24" />
+          </div>
+        </div>
+
+        {/* 3. CHARTS SKELETON */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-8 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex justify-between items-center">
+              <div className="h-5 bg-slate-200/60 rounded w-48" />
+              <div className="h-3 bg-slate-200/40 rounded w-24" />
+            </div>
+            <div className="h-64 bg-slate-200/30 rounded-2xl flex items-center justify-center">
+              <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+            </div>
+          </div>
+          <div className="lg:col-span-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+            <div className="h-5 bg-slate-200/60 rounded w-40" />
+            <div className="space-y-3">
+              {Array.from({ length: 4 }).map((_, idx) => (
+                <div key={idx} className="flex justify-between items-center">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-2.5 h-2.5 bg-slate-200 rounded-full" />
+                    <div className="h-3 bg-slate-200/50 rounded w-20" />
+                  </div>
+                  <div className="h-4 bg-slate-200/70 rounded w-12" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-12 font-sans text-slate-800">
       
@@ -1121,7 +1271,9 @@ export default function Dashboard({
                   ? 'Semua Cabang (Nasional)'
                   : currentUser?.branch === 'Megabranch' || hasRole(currentUser?.role, 'ASO Megabranch')
                   ? 'Semua BSO Megabranch (8 BSO)'
-                  : `Semua Cabang Otoritas (${availableBranchOptions.length} Cabang)`}
+                  : availableBranchOptions.length === 1 
+                    ? `Cabang ${availableBranchOptions[0]}`
+                    : `Semua Cabang Otoritas (${availableBranchOptions.length} Cabang)`}
               </option>
               {availableBranchOptions.map((b) => (
                 <option key={b} value={b}>

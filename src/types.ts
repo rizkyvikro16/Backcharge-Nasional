@@ -6,6 +6,7 @@ export const BRANCH_LIST = [
   'Lampung', 
   'Makassar', 
   'Malang', 
+  'Manado',
   'Medan', 
   'Padang', 
   'Palembang', 
@@ -28,6 +29,18 @@ export const MEGABRANCH_LIST = [
 
 export const ALL_SYSTEM_BRANCHES = Array.from(new Set([...BRANCH_LIST, ...MEGABRANCH_LIST]));
 
+export const REGIONAL_WEST_BRANCHES = [
+  'BSO Banten', 'BSO Bekasi', 'BSO Daan Mogot', 'BSO Pondok Pinang', 'BSO Sunter', 'Lampung', 'Medan', 'Padang', 'Palembang', 'Pekanbaru'
+];
+
+export const REGIONAL_CENTRAL_BRANCHES = [
+  'Bandung', 'BSO GSO & AFFCO', 'BSO Sudirman', 'Malang', 'Semarang', 'Solo', 'Surabaya'
+];
+
+export const REGIONAL_EAST_BRANCHES = [
+  'Bali', 'Balikpapan', 'Banjarmasin', 'Makassar', 'Manado', 'BSO Pontianak'
+];
+
 export function getUserBranches(branch: string): string[] {
   if (!branch) return [];
   if (branch === 'Nasional') return ALL_SYSTEM_BRANCHES;
@@ -43,6 +56,34 @@ export function getUserBranches(branch: string): string[] {
     }
   });
   return Array.from(expanded);
+}
+
+export function getRoleAllowedBranches(role?: string, branch?: string): string[] {
+  if (!role && !branch) return ALL_SYSTEM_BRANCHES;
+  
+  // Administrator, Division Head, or 'Nasional' branch gets access to all branches
+  if (role === 'Administrator' || role === 'Division Head' || branch === 'Nasional') {
+    return ALL_SYSTEM_BRANCHES;
+  }
+
+  // Regional Head roles mapping
+  if (role === 'Regional Head West') {
+    return REGIONAL_WEST_BRANCHES;
+  }
+  if (role === 'Regional Head Central') {
+    return REGIONAL_CENTRAL_BRANCHES;
+  }
+  if (role === 'Regional Head East') {
+    return REGIONAL_EAST_BRANCHES;
+  }
+
+  // If specific branch string is provided (e.g. 'Semarang' or 'BSO Sunter, BSO Bekasi')
+  if (branch) {
+    const userBranches = getUserBranches(branch);
+    if (userBranches.length > 0) return userBranches;
+  }
+
+  return ALL_SYSTEM_BRANCHES;
 }
 
 export type UserRole = 
@@ -169,7 +210,7 @@ export interface DashboardFilter {
 
 export const WEST_BRANCHES = ['Lampung', 'Medan', 'Padang', 'Palembang', 'Pekanbaru'];
 export const CENTRAL_BRANCHES = ['Bandung', 'BSO Pontianak'];
-export const EAST_BRANCHES = ['Bali', 'Balikpapan', 'Banjarmasin', 'Makassar', 'Malang', 'Semarang', 'Solo', 'Surabaya'];
+export const EAST_BRANCHES = ['Bali', 'Balikpapan', 'Banjarmasin', 'Makassar', 'Malang', 'Manado', 'Semarang', 'Solo', 'Surabaya'];
 
 export interface ContactInquiry {
   id: string;
