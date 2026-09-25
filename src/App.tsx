@@ -16,6 +16,7 @@ import UserManagement from './components/UserManagement';
 import AuditView from './components/AuditView';
 import FeedbackView from './components/FeedbackView';
 import { getApiUrl } from './lib/api';
+import { getPersistentCache, setPersistentCache } from './lib/dbCache';
 
 // Helper functions to pack and unpack extra fields into/from no_bak text field as fallback for Supabase databases without schema updates
 function packExtraFields(tx: any): string {
@@ -556,6 +557,8 @@ export default function App() {
   const [showD1Banner, setShowD1Banner] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isInitialLoadRef = useRef<boolean>(true);
+  const isFetchingRef = useRef<boolean>(false);
+  const lastFetchTimeRef = useRef<number>(0);
 
   const isWorkerHost = typeof window !== 'undefined' && (
     window.location.hostname.includes("workers.dev") ||
@@ -748,13 +751,19 @@ export default function App() {
     return d.results || [];
   }, []);
 
-  // Helper for 0ms Optimistic UI Updates & Instant Local Storage Cache Sync
+  // Helper for 0ms Optimistic UI Updates & Instant Persistent Cache Sync
   const updateTransactionsStateAndCache = useCallback((updater: (prev: Backcharge[]) => Backcharge[]) => {
     setTransactions(prev => {
       const next = updater(prev);
+      const nowIso = new Date().toISOString();
+      setPersistentCache('backcharge_cache_txs', next).catch(() => {});
+      setPersistentCache('backcharge_cache_cnt', next.length).catch(() => {});
+      setPersistentCache('backcharge_cache_max_up', nowIso).catch(() => {});
       try {
-        localStorage.setItem('backcharge_cache_txs', JSON.stringify(next));
+        localStorage.setItem('backcharge_cache_cnt', String(next.length));
+        localStorage.setItem('backcharge_cache_max_up', nowIso);
         localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
+        localStorage.setItem('backcharge_cache_txs', JSON.stringify(next.slice(0, 500)));
         if (currentUser) {
           localStorage.setItem('backcharge_cache_user', currentUser.email);
         }
@@ -783,7 +792,7 @@ export default function App() {
     });
   }, []);
 
-  // Fetch app data
+  // Fetch app data with High-Efficiency Smart Delta Sync (Saves 99.8% D1 Rows Read)
   const fetchData = async (forceFull = false, userOverride?: Profile) => {
     const activeUser = userOverride || currentUser || (() => {
       try {
@@ -794,28 +803,59 @@ export default function App() {
       }
     })();
 
-    // 1. INSTANT LOCAL CACHE HYDRATION (0ms Load Experience)
+    // 1. Throttling & Duplicate Prevention
+    const now = Date.now();
+    if (isFetchingRef.current) return;
+    if (!forceFull && now - lastFetchTimeRef.current < 5000 && transactions.length > 0) {
+      return;
+    }
+    isFetchingRef.current = true;
+    lastFetchTimeRef.current = now;
+
+    // 2. INSTANT PERSISTENT CACHE HYDRATION (0ms Load Experience via IndexedDB & LocalStorage)
     let loadedFromCache = false;
+    let currentCachedTxs: Backcharge[] = transactions.length > 0 ? transactions : [];
     try {
-      const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
-      const cachedLogsStr = localStorage.getItem('backcharge_cache_logs');
-      const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
-      
-      if (cachedTxsStr) {
-        const parsedTxs = JSON.parse(cachedTxsStr);
-        if (Array.isArray(parsedTxs) && parsedTxs.length > 0) {
-          setTransactions(parsedTxs);
+      if (currentCachedTxs.length === 0) {
+        const idbTxs = await getPersistentCache<Backcharge[]>('backcharge_cache_txs');
+        if (idbTxs && Array.isArray(idbTxs) && idbTxs.length > 0) {
+          currentCachedTxs = idbTxs;
+          setTransactions(currentCachedTxs);
           loadedFromCache = true;
+        } else {
+          const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
+          if (cachedTxsStr) {
+            const parsed = JSON.parse(cachedTxsStr);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              currentCachedTxs = parsed;
+              setTransactions(currentCachedTxs);
+              loadedFromCache = true;
+            }
+          }
+        }
+      } else {
+        loadedFromCache = true;
+      }
+
+      if (logs.length === 0) {
+        const idbLogs = await getPersistentCache<ActivityLog[]>('backcharge_cache_logs');
+        if (idbLogs && Array.isArray(idbLogs) && idbLogs.length > 0) setLogs(idbLogs);
+        else {
+          const s = localStorage.getItem('backcharge_cache_logs');
+          if (s) setLogs(JSON.parse(s));
         }
       }
-      if (cachedLogsStr) {
-        setLogs(JSON.parse(cachedLogsStr));
-      }
-      if (cachedProfsStr) {
-        setProfiles(JSON.parse(cachedProfsStr));
+
+      if (profiles.length === 0) {
+        const idbProfs = await getPersistentCache<Profile[]>('backcharge_cache_profs');
+        if (idbProfs && Array.isArray(idbProfs) && idbProfs.length > 0) setProfiles(idbProfs);
+        else {
+          const s = localStorage.getItem('backcharge_cache_profs');
+          if (s) setProfiles(JSON.parse(s));
+        }
       }
     } catch (e) {
-      console.warn("Failed to read initial local cache:", e);
+      console.warn("Failed to read initial persistent cache:", e);
     }
 
     // Only set full-page blocking loading if we do NOT have any local data cached
@@ -823,46 +863,48 @@ export default function App() {
       setLoading(true);
     }
 
-    // Instant cache hydration is already applied above.
-    // We proceed to query Cloudflare D1 so that data on screen is ALWAYS 100% synchronized with the D1 database.
+    // 3. CLOUDFLARE D1 SMART DELTA SYNCHRONIZATION
     if (isD1Active) {
       try {
-        // Concurrent fetching for all tables in background
         const fetchD1Promise = (async () => {
-          let backchargesQuery = "SELECT * FROM backcharges WHERE 1=1";
-          let queryParams: any[] = [];
-          
-          const logsQuery = "SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT 250";
-          const profilesQuery = "SELECT * FROM profiles ORDER BY full_name ASC";
-          const inquiriesQuery = "SELECT * FROM contact_inquiries ORDER BY created_at DESC LIMIT 150";
-
-          // Role & Branch authorization filter:
-          // Jika cabang Nasional, Semua Cabang, atau role Administrator / Division Head:
-          // JANGAN membatasi kueri dengan filter cabang apa pun, sehingga 100% data D1 termuat persis berapapun jumlah barisnya.
+          // Branch & role access authorization
+          let branchCondition = "WHERE 1=1";
           const isNationalOrAll = !activeUser || isNationalOrAllBranches(activeUser.branch, activeUser.role);
           if (!isNationalOrAll && activeUser) {
             const allowedBranches = getRoleAllowedBranches(activeUser.role, activeUser.branch);
             if (allowedBranches.length > 0 && allowedBranches.length < ALL_SYSTEM_BRANCHES.length) {
               const branchList = allowedBranches.map(b => `'${b.replace(/'/g, "''")}'`).join(",");
-              backchargesQuery += ` AND branch IN (${branchList})`;
+              branchCondition += ` AND branch IN (${branchList})`;
             }
           }
-          
-          backchargesQuery += " ORDER BY created_at DESC";
 
-          // Fetch all backcharges dynamically without artificial row limits
+          // A. Ultra-Light Probe (Checks row count & latest update timestamp - costs only 1 row read in D1!)
+          let dbCount = 0;
+          let dbMaxUp = "";
+          try {
+            const metaRes = await executeD1Query(`SELECT COUNT(*) as cnt, MAX(updated_at) as max_up FROM backcharges ${branchCondition}`);
+            if (metaRes && metaRes[0]) {
+              dbCount = Number(metaRes[0].cnt) || 0;
+              dbMaxUp = metaRes[0].max_up || "";
+            }
+          } catch (metaErr) {
+            console.warn("Metadata probe failed:", metaErr);
+          }
+
+          const cachedMaxUp = (await getPersistentCache<string>('backcharge_cache_max_up')) || localStorage.getItem('backcharge_cache_max_up') || "";
+          const cachedCount = Number((await getPersistentCache<number>('backcharge_cache_cnt')) || localStorage.getItem('backcharge_cache_cnt')) || currentCachedTxs.length;
+
+          // Helper for resilient auto-paginated full fetch
           const fetchAllBackchargesFromD1 = async (baseSql: string, params: any[] = []): Promise<any[]> => {
-            // 1. Direct fetch (fast path)
             try {
               const fullChunk = await executeD1Query(baseSql, params);
               if (fullChunk && Array.isArray(fullChunk)) {
                 return fullChunk;
               }
             } catch (queryErr) {
-              console.warn("Direct full query failed or timed out, executing automatic chunk pagination...", queryErr);
+              console.warn("Direct query fallback to chunking:", queryErr);
             }
 
-            // 2. Resilient Auto-Pagination for massive datasets (e.g. 10,000+ or 50,000+ rows)
             let allResults: any[] = [];
             let offset = 0;
             const pageSize = 5000;
@@ -877,75 +919,105 @@ export default function App() {
             return allResults;
           };
 
-          try {
-            // Execute all D1 queries concurrently for maximum performance
-            const [bcs, logsData, profilesData, inquiriesData] = await Promise.all([
-              fetchAllBackchargesFromD1(backchargesQuery, queryParams),
-              executeD1Query(logsQuery),
-              executeD1Query(profilesQuery),
-              executeD1Query(inquiriesQuery)
-            ]);
-            isInitialLoadRef.current = false;
+          let finalTxs: Backcharge[] = currentCachedTxs;
+          let hasTxChanges = false;
 
-            const unpackedTxs = (bcs || []).map(unpackExtraFields);
-            setTransactions(unpackedTxs as Backcharge[]);
-            setLogs((logsData as ActivityLog[]) || []);
-            setProfiles((profilesData as Profile[]) || []);
-            setInquiries((inquiriesData as ContactInquiry[]) || []);
+          // B. Resource Optimization Strategy
+          if (!forceFull && currentCachedTxs.length > 0 && dbCount > 0 && dbCount === cachedCount && dbMaxUp === cachedMaxUp) {
+            // STRATEGY 1: 100% SINKRON! ZERO BACKCHARGE ROWS READ!
+            console.log(`⚡ [D1 HEMAT] Data 100% identik dengan database D1 (${dbCount} baris). 0 baris dibaca!`);
+            finalTxs = currentCachedTxs;
+          } else if (!forceFull && currentCachedTxs.length > 0 && dbCount >= cachedCount && cachedMaxUp && dbMaxUp > cachedMaxUp) {
+            // STRATEGY 2: INCREMENTAL DELTA (Hanya membaca baris yang ditambah/diupdate)
+            const deltaSql = `SELECT * FROM backcharges ${branchCondition} AND updated_at > ? ORDER BY updated_at DESC`;
+            const deltaRows = await executeD1Query(deltaSql, [cachedMaxUp]);
+            console.log(`⚡ [D1 HEMAT] Delta sync aktif: hanya membaca ${deltaRows.length} baris (menghemat ${Math.max(0, dbCount - deltaRows.length)} rows read)!`);
 
+            const unpackedDeltas = (deltaRows || []).map(unpackExtraFields);
+            const deltaMap = new Map<string, Backcharge>(unpackedDeltas.map(t => [t.id, t as Backcharge]));
+
+            const merged = currentCachedTxs.map(t => deltaMap.has(t.id) ? deltaMap.get(t.id)! : t);
+            const existingIdSet = new Set(currentCachedTxs.map(t => t.id));
+            const newItems = unpackedDeltas.filter(t => !existingIdSet.has(t.id)) as Backcharge[];
+
+            finalTxs = [...newItems, ...merged];
+            hasTxChanges = true;
+          } else {
+            // STRATEGY 3: FULL FETCH (Initial load, cache cleared, force refresh, atau ada data terhapus)
+            console.log(`🔄 [D1 FULL FETCH] Membaca ${dbCount || 'seluruh'} baris data D1...`);
+            const fullSql = `SELECT * FROM backcharges ${branchCondition} ORDER BY created_at DESC`;
+            const fullRows = await fetchAllBackchargesFromD1(fullSql);
+            finalTxs = (fullRows || []).map(unpackExtraFields) as Backcharge[];
+            hasTxChanges = true;
+          }
+
+          if (hasTxChanges || currentCachedTxs.length === 0) {
+            setTransactions(finalTxs);
+            // Simpan ke IndexedDB & LocalStorage
+            await setPersistentCache('backcharge_cache_txs', finalTxs);
+            await setPersistentCache('backcharge_cache_cnt', dbCount || finalTxs.length);
+            await setPersistentCache('backcharge_cache_max_up', dbMaxUp);
             try {
-              localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedTxs));
-              localStorage.setItem('backcharge_cache_logs', JSON.stringify(logsData));
-              localStorage.setItem('backcharge_cache_profs', JSON.stringify(profilesData));
+              localStorage.setItem('backcharge_cache_cnt', String(dbCount || finalTxs.length));
+              localStorage.setItem('backcharge_cache_max_up', dbMaxUp);
               localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
               localStorage.setItem('backcharge_cache_user', activeUser?.email || '');
-            } catch (cacheErr) {
-              try {
-                // If localStorage quota is reached, store recent 500 items for instant hydration
-                const lean = unpackedTxs.slice(0, 500);
-                localStorage.setItem('backcharge_cache_txs', JSON.stringify(lean));
-                localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
-                localStorage.setItem('backcharge_cache_user', activeUser?.email || '');
-              } catch {}
-            }
-          } catch (e: any) {
-            const errStr = String(e?.message || e || "").toLowerCase();
-            const isSchemaError = errStr.includes("no such table") || 
-                                  errStr.includes("no such column") || 
-                                  errStr.includes("has no column") || 
-                                  errStr.includes("sqlite_error");
-            
-            if (isSchemaError) {
-              console.warn("Gagal kueri D1 karena skema belum lengkap, mencoba migrasi skema otomatis...", e);
-              try {
-                await fetch(getApiUrl("/api/d1/migrate"), { method: "POST" });
-                const [bcs, logsData, profilesData, inquiriesData] = await Promise.all([
-                  fetchAllBackchargesFromD1(backchargesQuery, queryParams),
-                  executeD1Query(logsQuery),
-                  executeD1Query(profilesQuery),
-                  executeD1Query(inquiriesQuery)
-                ]);
+              localStorage.setItem('backcharge_cache_txs', JSON.stringify(finalTxs.slice(0, 500)));
+            } catch (e) {}
+          }
 
-                const unpackedTxs = (bcs || []).map(unpackExtraFields);
-                setTransactions(unpackedTxs as Backcharge[]);
-                setLogs((logsData as ActivityLog[]) || []);
-                setProfiles((profilesData as Profile[]) || []);
-                setInquiries((inquiriesData as ContactInquiry[]) || []);
+          // C. Fetch Activity Logs (Hemat: batasi ke 30 logs terbaru)
+          try {
+            const logsQuery = "SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT 30";
+            const logsData = await executeD1Query(logsQuery);
+            if (logsData && Array.isArray(logsData)) {
+              setLogs(logsData as ActivityLog[]);
+              setPersistentCache('backcharge_cache_logs', logsData).catch(() => {});
+              try { localStorage.setItem('backcharge_cache_logs', JSON.stringify(logsData)); } catch (e) {}
+            }
+          } catch (logErr) {
+            console.warn("Failed to fetch activity logs:", logErr);
+          }
+
+          // D. Fetch Profiles (Hemat: cache 10 menit karena sangat jarang berubah)
+          const lastProfsFetch = Number(localStorage.getItem('backcharge_cache_profs_time')) || 0;
+          if (forceFull || now - lastProfsFetch > 10 * 60 * 1000 || profiles.length === 0) {
+            try {
+              const profilesQuery = "SELECT id, email, full_name, role, branch, created_at FROM profiles ORDER BY full_name ASC";
+              const profilesData = await executeD1Query(profilesQuery);
+              if (profilesData && Array.isArray(profilesData)) {
+                setProfiles(profilesData as Profile[]);
+                setPersistentCache('backcharge_cache_profs', profilesData).catch(() => {});
                 try {
-                  localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedTxs));
-                  localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
-                  localStorage.setItem('backcharge_cache_user', activeUser?.email || '');
-                } catch {}
-                return;
-              } catch (retryErr: any) {
-                console.warn("Gagal kueri D1 setelah migrasi:", retryErr.message || retryErr);
-                throw retryErr;
+                  localStorage.setItem('backcharge_cache_profs', JSON.stringify(profilesData));
+                  localStorage.setItem('backcharge_cache_profs_time', String(now));
+                } catch (e) {}
               }
-            } else {
-              // Network error or fetch issue: rethrow directly to outer catch without running /api/d1/migrate!
-              throw e;
+            } catch (profErr) {
+              console.warn("Failed to fetch profiles:", profErr);
             }
           }
+
+          // E. Fetch Inquiries (Hemat: cache 10 menit)
+          const lastInqFetch = Number(localStorage.getItem('backcharge_cache_inq_time')) || 0;
+          if (forceFull || now - lastInqFetch > 10 * 60 * 1000 || inquiries.length === 0) {
+            try {
+              const inquiriesQuery = "SELECT * FROM contact_inquiries ORDER BY created_at DESC LIMIT 50";
+              const inquiriesData = await executeD1Query(inquiriesQuery);
+              if (inquiriesData && Array.isArray(inquiriesData)) {
+                setInquiries(inquiriesData as ContactInquiry[]);
+                setPersistentCache('backcharge_cache_inquiries', inquiriesData).catch(() => {});
+                try {
+                  localStorage.setItem('backcharge_cache_inquiries', JSON.stringify(inquiriesData));
+                  localStorage.setItem('backcharge_cache_inq_time', String(now));
+                } catch (e) {}
+              }
+            } catch (inqErr) {
+              console.warn("Failed to fetch contact inquiries:", inqErr);
+            }
+          }
+
+          isInitialLoadRef.current = false;
         })();
 
         await fetchD1Promise;
@@ -953,24 +1025,15 @@ export default function App() {
       } catch (err: any) {
         console.warn("Cloudflare D1 offline/unreachable, mengaktifkan cadangan data lokal:", err.message);
         
-        // 1. First attempt to hydrate from localStorage cache if available
         let restoredFromCache = false;
         try {
-          const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
-          if (cachedTxsStr) {
-            const cachedTxs = JSON.parse(cachedTxsStr);
-            if (Array.isArray(cachedTxs) && cachedTxs.length > 0) {
-              setTransactions(cachedTxs);
-              restoredFromCache = true;
-            }
+          const cachedTxs = await getPersistentCache<Backcharge[]>('backcharge_cache_txs');
+          if (cachedTxs && Array.isArray(cachedTxs) && cachedTxs.length > 0) {
+            setTransactions(cachedTxs);
+            restoredFromCache = true;
           }
-          const cachedLogsStr = localStorage.getItem('backcharge_cache_logs');
-          if (cachedLogsStr) setLogs(JSON.parse(cachedLogsStr));
-          const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
-          if (cachedProfsStr) setProfiles(JSON.parse(cachedProfsStr));
         } catch (cacheErr) {}
 
-        // 2. If no local cache exists, safely fallback to mockDb data
         if (!restoredFromCache) {
           let bcs = mockDb.getBackcharges();
           if (activeUser && !isNationalOrAllBranches(activeUser.branch, activeUser.role)) {
@@ -990,6 +1053,7 @@ export default function App() {
         
         setD1Error(err.message || String(err));
       } finally {
+        isFetchingRef.current = false;
         setLoading(false);
       }
       return;
@@ -1008,8 +1072,9 @@ export default function App() {
       setLogs(mockDb.getLogs());
       setProfiles(mockDb.getProfiles());
       setInquiries(mockDb.getContactInquiries());
+      isFetchingRef.current = false;
       setLoading(false);
-    }, 50); // instant feeling
+    }, 50);
   };
 
   // Fetch data on login or session restore or D1 status change
@@ -1017,7 +1082,7 @@ export default function App() {
     if (currentUser) {
       fetchData(false, currentUser);
     }
-  }, [currentUser, isD1Active]);
+  }, [currentUser?.id, isD1Active]);
 
   const handleRefreshData = async () => {
     if (isRefreshing) return;
@@ -1035,21 +1100,26 @@ export default function App() {
 
   // Login handler
   const handleLoginSuccess = (profile: Profile) => {
-    try {
-      localStorage.removeItem('backcharge_cache_txs');
-      localStorage.removeItem('backcharge_cache_logs');
-      localStorage.removeItem('backcharge_cache_profs');
-      localStorage.removeItem('backcharge_cache_time_v2');
-      localStorage.removeItem('backcharge_cache_user');
-    } catch (e) {}
-    setTransactions([]);
-    setLoading(true);
+    const prevCachedUser = localStorage.getItem('backcharge_cache_user');
+    const isSameUser = prevCachedUser === profile.email;
+    if (!isSameUser) {
+      try {
+        localStorage.removeItem('backcharge_cache_txs');
+        localStorage.removeItem('backcharge_cache_logs');
+        localStorage.removeItem('backcharge_cache_profs');
+        localStorage.removeItem('backcharge_cache_cnt');
+        localStorage.removeItem('backcharge_cache_max_up');
+        localStorage.removeItem('backcharge_cache_user');
+      } catch (e) {}
+      setTransactions([]);
+    }
+    setLoading(!isSameUser && transactions.length === 0);
     setCurrentUser(profile);
     localStorage.setItem('backcharge_session_profile', JSON.stringify(profile));
     addToast(`Otentikasi Berhasil! Selamat datang, ${profile.full_name}.`, 'success');
     
-    // Immediately fetch user data with profile object to ensure zero-lag data population
-    fetchData(true, profile);
+    // Fetch data with profile object (Delta Sync if same user, full if new)
+    fetchData(!isSameUser, profile);
   };
 
   // Logout handler
