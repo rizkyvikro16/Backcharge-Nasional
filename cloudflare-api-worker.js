@@ -280,15 +280,8 @@ export default {
           );
         }
 
-        // Safety & quota optimization for Cloudflare D1
+        // Direct query execution without artificial row restrictions
         let optimizedSql = sql;
-        if (sql && typeof sql === 'string') {
-          const sqlUpper = sql.toUpperCase().trim();
-          if (sqlUpper.startsWith("SELECT ") && !sqlUpper.includes(" LIMIT ")) {
-            if (sqlUpper.includes(" FROM BACKCHARGES") || sqlUpper.includes(" FROM ACTIVITY_LOGS")) {
-              optimizedSql = `${sql.trim()} LIMIT 50`;
-            }
-          }
           // Ensure INSERT INTO backcharges handles ON CONFLICT to prevent UNIQUE constraint failed
           if (sqlUpper.startsWith("INSERT INTO BACKCHARGES") && !sqlUpper.includes("ON CONFLICT")) {
             optimizedSql = `${sql.trim()} ON CONFLICT(id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP`;
