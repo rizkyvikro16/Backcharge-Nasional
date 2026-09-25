@@ -5,7 +5,7 @@ import {
   Download, FileSpreadsheet, RefreshCw, LogOut, Bell, Shield, Users, Landmark, UserCheck, X
 } from 'lucide-react';
 
-import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, getRoleAllowedBranches, hasRole, isRegionalHeadRole, ALL_SYSTEM_BRANCHES } from './types';
+import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, getRoleAllowedBranches, isNationalOrAllBranches, hasRole, isRegionalHeadRole, ALL_SYSTEM_BRANCHES } from './types';
 import { mockDb } from './supabaseClient';
 
 import AuthScreen from './components/AuthScreen';
@@ -823,22 +823,8 @@ export default function App() {
       setLoading(true);
     }
 
-    // SMART QUOTA PRESERVATION:
-    // If cache has valid non-empty data and is younger than 1 hour for the same user, use cache on normal load
-    if (!forceFull && loadedFromCache && activeUser) {
-      try {
-        const cachedUser = localStorage.getItem('backcharge_cache_user');
-        const cacheTime = parseInt(localStorage.getItem('backcharge_cache_time_v2') || '0', 10);
-        const hoursElapsed = (Date.now() - cacheTime) / (1000 * 60 * 60);
-        
-        if (cachedUser === activeUser.email && cacheTime > 0 && hoursElapsed < 1) {
-          console.log(`💡 Quota Saver: Using local cache for ${activeUser.email} (${hoursElapsed.toFixed(1)}h old). Skipping D1 query.`);
-          setLoading(false);
-          return;
-        }
-      } catch (e) {}
-    }
-
+    // Instant cache hydration is already applied above.
+    // We proceed to query Cloudflare D1 so that data on screen is ALWAYS 100% synchronized with the D1 database.
     if (isD1Active) {
       try {
         // Concurrent fetching for all tables in background
@@ -846,12 +832,15 @@ export default function App() {
           let backchargesQuery = "SELECT * FROM backcharges WHERE 1=1";
           let queryParams: any[] = [];
           
-          const logsQuery = "SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT 150";
+          const logsQuery = "SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT 250";
           const profilesQuery = "SELECT * FROM profiles ORDER BY full_name ASC";
-          const inquiriesQuery = "SELECT * FROM contact_inquiries ORDER BY created_at DESC LIMIT 100";
+          const inquiriesQuery = "SELECT * FROM contact_inquiries ORDER BY created_at DESC LIMIT 150";
 
-          // Role & Branch authorization filter
-          if (activeUser) {
+          // Role & Branch authorization filter:
+          // Jika cabang Nasional, Semua Cabang, atau role Administrator / Division Head:
+          // JANGAN membatasi kueri dengan filter cabang apa pun, sehingga 100% data D1 termuat persis berapapun jumlah barisnya.
+          const isNationalOrAll = !activeUser || isNationalOrAllBranches(activeUser.branch, activeUser.role);
+          if (!isNationalOrAll && activeUser) {
             const allowedBranches = getRoleAllowedBranches(activeUser.role, activeUser.branch);
             if (allowedBranches.length > 0 && allowedBranches.length < ALL_SYSTEM_BRANCHES.length) {
               const branchList = allowedBranches.map(b => `'${b.replace(/'/g, "''")}'`).join(",");
@@ -861,10 +850,31 @@ export default function App() {
           
           backchargesQuery += " ORDER BY created_at DESC";
 
+          // Fetch all backcharges dynamically without artificial row limits
           const fetchAllBackchargesFromD1 = async (baseSql: string, params: any[] = []): Promise<any[]> => {
-            const safeSql = `${baseSql} LIMIT 6000`;
-            const chunk = await executeD1Query(safeSql, params);
-            return chunk || [];
+            // 1. Direct fetch (fast path)
+            try {
+              const fullChunk = await executeD1Query(baseSql, params);
+              if (fullChunk && Array.isArray(fullChunk)) {
+                return fullChunk;
+              }
+            } catch (queryErr) {
+              console.warn("Direct full query failed or timed out, executing automatic chunk pagination...", queryErr);
+            }
+
+            // 2. Resilient Auto-Pagination for massive datasets (e.g. 10,000+ or 50,000+ rows)
+            let allResults: any[] = [];
+            let offset = 0;
+            const pageSize = 5000;
+            while (true) {
+              const pagedSql = `${baseSql} LIMIT ${pageSize} OFFSET ${offset}`;
+              const chunk = await executeD1Query(pagedSql, params);
+              if (!chunk || chunk.length === 0) break;
+              allResults = allResults.concat(chunk);
+              if (chunk.length < pageSize) break;
+              offset += pageSize;
+            }
+            return allResults;
           };
 
           try {
@@ -963,7 +973,7 @@ export default function App() {
         // 2. If no local cache exists, safely fallback to mockDb data
         if (!restoredFromCache) {
           let bcs = mockDb.getBackcharges();
-          if (activeUser && activeUser.branch !== 'Nasional') {
+          if (activeUser && !isNationalOrAllBranches(activeUser.branch, activeUser.role)) {
             const userBranches = getUserBranches(activeUser.branch);
             bcs = bcs.filter(t => userBranches.includes(t.branch));
           }
@@ -988,7 +998,7 @@ export default function App() {
     // Fetch mock offline data with minimum latency simulation
     setTimeout(() => {
       let bcs = mockDb.getBackcharges();
-      if (activeUser && activeUser.branch !== 'Nasional') {
+      if (activeUser && !isNationalOrAllBranches(activeUser.branch, activeUser.role)) {
         const userBranches = getUserBranches(activeUser.branch);
         bcs = bcs.filter(t => userBranches.includes(t.branch));
       }

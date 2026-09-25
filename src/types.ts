@@ -41,9 +41,24 @@ export const REGIONAL_EAST_BRANCHES = [
   'Bali', 'Balikpapan', 'Banjarmasin', 'Makassar', 'Manado', 'BSO Pontianak'
 ];
 
+export function isNationalOrAllBranches(branch?: string, role?: string): boolean {
+  if (role === 'Administrator' || role === 'Division Head') return true;
+  if (!branch) return true;
+  const bLower = branch.trim().toLowerCase();
+  return (
+    bLower === 'nasional' ||
+    bLower === 'semua cabang' ||
+    bLower === 'semua' ||
+    bLower === 'all' ||
+    bLower === 'all branches' ||
+    bLower === 'pusat' ||
+    bLower === 'head office'
+  );
+}
+
 export function getUserBranches(branch: string): string[] {
   if (!branch) return [];
-  if (branch === 'Nasional') return ALL_SYSTEM_BRANCHES;
+  if (isNationalOrAllBranches(branch)) return ALL_SYSTEM_BRANCHES;
   const parts = branch.split(',').map(s => s.trim()).filter(Boolean);
   const expanded = new Set<string>();
   parts.forEach(part => {
@@ -61,8 +76,8 @@ export function getUserBranches(branch: string): string[] {
 export function getRoleAllowedBranches(role?: string, branch?: string): string[] {
   if (!role && !branch) return ALL_SYSTEM_BRANCHES;
   
-  // Administrator, Division Head, or 'Nasional' branch gets access to all branches
-  if (role === 'Administrator' || role === 'Division Head' || branch === 'Nasional') {
+  // Administrator, Division Head, or 'Nasional' / 'Semua Cabang' gets access to all branches
+  if (isNationalOrAllBranches(branch, role)) {
     return ALL_SYSTEM_BRANCHES;
   }
 

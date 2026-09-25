@@ -9,7 +9,7 @@ import {
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, BackchargeCategory, hasRole, isRegionalHeadRole } from '../types';
+import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, isNationalOrAllBranches, BackchargeCategory, hasRole, isRegionalHeadRole } from '../types';
 
 interface DashboardProps {
   transactions: Backcharge[];
@@ -182,9 +182,14 @@ export default function Dashboard({
         matchesEndDate = transactionDate <= endDate;
       }
       if (selectedBranchFilter) {
-        const allowedBranches = getUserBranches(selectedBranchFilter);
-        matchesBranch = allowedBranches.includes(t.branch) || Boolean(t.branch && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase());
-      } else if (userBranches && userBranches.length > 0) {
+        const isAllSelected = isNationalOrAllBranches(selectedBranchFilter);
+        if (!isAllSelected) {
+          const allowedBranches = getUserBranches(selectedBranchFilter);
+          matchesBranch = allowedBranches.includes(t.branch) || Boolean(t.branch && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase());
+        } else {
+          matchesBranch = true;
+        }
+      } else if (userBranches && userBranches.length > 0 && !isNationalOrAllBranches(currentUser?.branch, currentUser?.role)) {
         matchesBranch = userBranches.some(ub => ub.toLowerCase() === t.branch?.toLowerCase());
       }
       

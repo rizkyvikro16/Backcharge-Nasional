@@ -4,7 +4,7 @@ import {
   Upload, FileText, Check, AlertCircle, AlertTriangle, RefreshCw, X, Trash2,
   Loader2, Edit, Info, ChevronDown, CheckCircle2, XCircle, User
 } from 'lucide-react';
-import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, hasRole, isRegionalHeadRole } from '../types';
+import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, isNationalOrAllBranches, hasRole, isRegionalHeadRole } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -1231,8 +1231,9 @@ export default function DatabaseView({
         t.no_invoice.toLowerCase().includes(searchLower);
 
       const matchesCategory = !selectedCategory || t.category === selectedCategory;
+      const isAllBranch = !selectedBranch || isNationalOrAllBranches(selectedBranch);
       const selectedBranchList = selectedBranch ? getUserBranches(selectedBranch).map(b => b.toLowerCase()) : [];
-      const matchesBranch = !selectedBranch || 
+      const matchesBranch = isAllBranch || 
         (Boolean(t.branch) && selectedBranchList.includes(t.branch.toLowerCase())) ||
         (Boolean(t.branch) && t.branch.toLowerCase() === selectedBranch.toLowerCase()) || 
         (selectedBranch.includes(',') && selectedBranch.split(',').map(s => s.trim().toLowerCase()).includes(t.branch ? t.branch.toLowerCase() : ''));
