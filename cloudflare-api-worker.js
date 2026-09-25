@@ -216,7 +216,13 @@ export default {
     if (pathname === "/api/d1/migrate" && request.method === "POST") {
       try {
         if (!env.DB) {
-          throw new Error("Database binding 'DB' tidak ditemukan.");
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              error: "Database binding 'DB' belum terhubung di Cloudflare Pages (Settings -> Functions -> D1 database bindings)." 
+            }),
+            { headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
         }
 
         await ensureD1SchemaWorker(env.DB);

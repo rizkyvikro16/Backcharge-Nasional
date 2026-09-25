@@ -56,9 +56,13 @@ export async function ensureD1TablesExist(): Promise<void> {
 
       // Self-healing: Ensure password column exists in profiles for existing D1 databases
       try {
-        await queryD1Direct(`ALTER TABLE profiles ADD COLUMN password TEXT DEFAULT 'password123';`);
+        const profInfo = await queryD1Direct("PRAGMA table_info(profiles);");
+        const profCols = new Set((profInfo || []).map((col: any) => col.name));
+        if (!profCols.has("password")) {
+          await queryD1Direct(`ALTER TABLE profiles ADD COLUMN password TEXT DEFAULT 'password123';`);
+        }
       } catch (alterProfileErr: any) {
-        // Column already exists, safe to ignore
+        // Safe to ignore if table does not exist or column already present
       }
 
       // Seed default profiles if empty
@@ -156,13 +160,23 @@ export async function ensureD1TablesExist(): Promise<void> {
         "division_approval_note TEXT"
       ];
 
-      for (const colDef of extraColumns) {
-        try {
-          await queryD1Direct(`ALTER TABLE backcharges ADD COLUMN ${colDef};`);
-          console.log(`Successfully ran self-healing: ADD COLUMN ${colDef} to backcharges.`);
-        } catch (alterErr: any) {
-          // Column already exists or table issue, safe to ignore
+      try {
+        const tableInfo = await queryD1Direct("PRAGMA table_info(backcharges);");
+        const existingColumns = new Set((tableInfo || []).map((col: any) => col.name));
+        
+        for (const colDef of extraColumns) {
+          const colName = colDef.split(" ")[0];
+          if (!existingColumns.has(colName)) {
+            try {
+              await queryD1Direct(`ALTER TABLE backcharges ADD COLUMN ${colDef};`);
+              console.log(`Successfully ran self-healing: ADD COLUMN ${colDef} to backcharges.`);
+            } catch (alterErr: any) {
+              // Column already exists or table issue, safe to ignore
+            }
+          }
         }
+      } catch (pragmaErr: any) {
+        // Table might not exist yet, handled by CREATE TABLE
       }
 
       // 2.5 Only create the single essential composite index if needed

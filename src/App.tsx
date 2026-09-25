@@ -709,11 +709,18 @@ export default function App() {
 
   // Shared fast D1 query executor
   const executeD1Query = useCallback(async (sql: string, params: any[] = []): Promise<any[]> => {
-    const res = await fetch(getApiUrl("/api/d1/query"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sql, params })
-    });
+    let res: Response;
+    try {
+      res = await fetch(getApiUrl("/api/d1/query"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sql, params })
+      });
+    } catch (networkErr: any) {
+      console.warn("Koneksi D1 gagal:", networkErr?.message || networkErr);
+      throw new Error(`Koneksi D1 tidak dapat dijangkau: ${networkErr?.message || 'Network error'}`);
+    }
+
     const text = await res.text();
     let d: any = {};
     try { 
@@ -892,29 +899,41 @@ export default function App() {
               } catch {}
             }
           } catch (e: any) {
-            console.warn("Gagal kueri D1, mencoba migrasi skema otomatis...", e);
-            try {
-              await fetch(getApiUrl("/api/d1/migrate"), { method: "POST" });
-              const [bcs, logsData, profilesData, inquiriesData] = await Promise.all([
-                fetchAllBackchargesFromD1(backchargesQuery, queryParams),
-                executeD1Query(logsQuery),
-                executeD1Query(profilesQuery),
-                executeD1Query(inquiriesQuery)
-              ]);
-
-              const unpackedTxs = (bcs || []).map(unpackExtraFields);
-              setTransactions(unpackedTxs as Backcharge[]);
-              setLogs((logsData as ActivityLog[]) || []);
-              setProfiles((profilesData as Profile[]) || []);
-              setInquiries((inquiriesData as ContactInquiry[]) || []);
+            const errStr = String(e?.message || e || "").toLowerCase();
+            const isSchemaError = errStr.includes("no such table") || 
+                                  errStr.includes("no such column") || 
+                                  errStr.includes("has no column") || 
+                                  errStr.includes("sqlite_error");
+            
+            if (isSchemaError) {
+              console.warn("Gagal kueri D1 karena skema belum lengkap, mencoba migrasi skema otomatis...", e);
               try {
-                localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedTxs));
-                localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
-                localStorage.setItem('backcharge_cache_user', activeUser?.email || '');
-              } catch {}
-            } catch (retryErr: any) {
-              console.error("Gagal kueri D1 setelah migrasi:", retryErr);
-              throw retryErr;
+                await fetch(getApiUrl("/api/d1/migrate"), { method: "POST" });
+                const [bcs, logsData, profilesData, inquiriesData] = await Promise.all([
+                  fetchAllBackchargesFromD1(backchargesQuery, queryParams),
+                  executeD1Query(logsQuery),
+                  executeD1Query(profilesQuery),
+                  executeD1Query(inquiriesQuery)
+                ]);
+
+                const unpackedTxs = (bcs || []).map(unpackExtraFields);
+                setTransactions(unpackedTxs as Backcharge[]);
+                setLogs((logsData as ActivityLog[]) || []);
+                setProfiles((profilesData as Profile[]) || []);
+                setInquiries((inquiriesData as ContactInquiry[]) || []);
+                try {
+                  localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedTxs));
+                  localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
+                  localStorage.setItem('backcharge_cache_user', activeUser?.email || '');
+                } catch {}
+                return;
+              } catch (retryErr: any) {
+                console.warn("Gagal kueri D1 setelah migrasi:", retryErr.message || retryErr);
+                throw retryErr;
+              }
+            } else {
+              // Network error or fetch issue: rethrow directly to outer catch without running /api/d1/migrate!
+              throw e;
             }
           }
         })();
@@ -922,25 +941,44 @@ export default function App() {
         await fetchD1Promise;
         setD1Error(null);
       } catch (err: any) {
-        console.error("Auto-falling back to offline backup because Cloudflare D1 failed:", err.message);
-        addToast(`Gagal memuat Cloudflare D1: ${err.message}`, 'error');
-        setD1Error(err.message || String(err));
+        console.warn("Cloudflare D1 offline/unreachable, mengaktifkan cadangan data lokal:", err.message);
         
+        // 1. First attempt to hydrate from localStorage cache if available
+        let restoredFromCache = false;
+        try {
+          const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
+          if (cachedTxsStr) {
+            const cachedTxs = JSON.parse(cachedTxsStr);
+            if (Array.isArray(cachedTxs) && cachedTxs.length > 0) {
+              setTransactions(cachedTxs);
+              restoredFromCache = true;
+            }
+          }
+          const cachedLogsStr = localStorage.getItem('backcharge_cache_logs');
+          if (cachedLogsStr) setLogs(JSON.parse(cachedLogsStr));
+          const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
+          if (cachedProfsStr) setProfiles(JSON.parse(cachedProfsStr));
+        } catch (cacheErr) {}
+
+        // 2. If no local cache exists, safely fallback to mockDb data
+        if (!restoredFromCache) {
+          let bcs = mockDb.getBackcharges();
+          if (activeUser && activeUser.branch !== 'Nasional') {
+            const userBranches = getUserBranches(activeUser.branch);
+            bcs = bcs.filter(t => userBranches.includes(t.branch));
+          }
+          const unpackedData = bcs.map(unpackExtraFields);
+          setTransactions(unpackedData as Backcharge[]);
+          setLogs(mockDb.getLogs());
+          setProfiles(mockDb.getProfiles());
+          setInquiries(mockDb.getContactInquiries());
+        }
+
         if (!isWorkerHost) {
           setIsD1Active(false);
-          setTimeout(() => {
-            let bcs = mockDb.getBackcharges();
-            if (activeUser && activeUser.branch !== 'Nasional') {
-              const userBranches = getUserBranches(activeUser.branch);
-              bcs = bcs.filter(t => userBranches.includes(t.branch));
-            }
-            const unpackedData = bcs.map(unpackExtraFields);
-            setTransactions(unpackedData as Backcharge[]);
-            setLogs(mockDb.getLogs());
-            setProfiles(mockDb.getProfiles());
-            setInquiries(mockDb.getContactInquiries());
-          }, 50);
         }
+        
+        setD1Error(err.message || String(err));
       } finally {
         setLoading(false);
       }
