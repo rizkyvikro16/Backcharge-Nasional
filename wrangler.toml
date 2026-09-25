@@ -8,5 +8,5 @@ pages_build_output_dir = "dist"
 # Di Cloudflare Pages Dashboard: Settings -> Functions -> D1 database bindings -> Variable: DB
 [[d1_databases]]
 binding = "DB"
-database_name = "backcharge-d1"
-database_id = ""
+database_name = "backcharge-db"
+database_id = "155712d3-90aa-439c-a7db-af868f08f681"

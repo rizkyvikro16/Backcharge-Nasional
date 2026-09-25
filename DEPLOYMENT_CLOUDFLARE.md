@@ -31,23 +31,24 @@ Pada halaman **Set up builds and deployments**, masukkan konfigurasi berikut:
 
 ## 3. Tambahkan Database Binding Cloudflare D1 (Wajib)
 
-Aplikasi menggunakan edge database Cloudflare D1 dengan binding bernama `DB`.
+Aplikasi menggunakan database Cloudflare D1 dengan binding bernama `DB`.
 
-### Langkah A: Buat Database D1 (Jika Belum Ada)
-1. Di sidebar Cloudflare, buka **Storage & Databases** -> **D1 SQL Database**.
-2. Klik **Create database**, beri nama misalnya: `backcharge-d1`.
-3. Klik **Create**.
+### PILIH DATABASE YANG SUDAH BERISI DATA (PENTING!):
+Di akun Cloudflare Anda, sudah ada database D1 utama yang menyimpan seluruh **6.237+ data transaksi Backcharge** yaitu:
+* **Nama Database**: `backcharge-db`
+* **UUID Database**: `155712d3-90aa-439c-a7db-af868f08f681`
 
-### Langkah B: Sambungkan ke Cloudflare Pages
+> ⚠️ **JANGAN membuat database baru yang kosong**, karena database baru memiliki 0 data. Cukup pilih database `backcharge-db` yang sudah ada!
+
+### Langkah Menyambungkan ke Cloudflare Pages:
 1. Masuk ke project Pages Anda (`backcharge-nasional`).
-2. Masuk ke tab **Settings** -> **Functions**.
+2. Masuk ke tab **Settings** -> **Functions** (atau **Bindings**).
 3. Gulir ke bawah ke bagian **D1 database bindings**.
-4. Klik **Add binding**:
-   * **Variable name**: `DB` (Wajib huruf besar semua)
-   * **D1 database**: Pilih database D1 yang Anda buat (`backcharge-d1`)
+4. Klik **Add binding** (atau edit binding yang sudah ada):
+   * **Variable name**: `DB` (Wajib huruf kapital dua huruf)
+   * **D1 database**: Pilih **`backcharge-db`** (UUID: `155712d3-90aa-439c-a7db-af868f08f681`)
 5. Klik **Save**.
-
-*Catatan: Saat aplikasi pertama kali dibuka di Cloudflare Pages, Worker secara otomatis menjalankan migrasi mandiri (self-healing migration) dan membuat seluruh tabel database (backcharges, profiles, activity_logs, contact_inquiries) secara instan tanpa perlu menjalankan SQL manual.*
+6. Buka tab **Deployments** -> klik titik tiga (`...`) pada deployment terbaru -> klik **Retry deployment** agar binding aktif.
 
 ---
 
