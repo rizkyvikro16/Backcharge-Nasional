@@ -26,15 +26,20 @@ async function startServer() {
   });
 
   // Middleware to parse incoming JSON bodies for database queries.
-  // Using type: '*/*' ensures we attempt to parse all text bodies as JSON, bypassing strict Content-Type checks 
-  // that proxy servers might strip or change.
-  app.use(express.json({ 
-    limit: "50mb", 
-    type: '*/*',
-    verify: (req: any, res: any, buf: Buffer) => {
-      req.rawBody = buf.toString();
+  // We skip multipart/form-data so multer can process file uploads without JSON parse syntax errors.
+  app.use((req, res, next) => {
+    const contentType = req.headers["content-type"] || "";
+    if (contentType.toLowerCase().includes("multipart/form-data")) {
+      return next();
     }
-  }));
+    return express.json({ 
+      limit: "50mb", 
+      type: '*/*',
+      verify: (req: any, res: any, buf: Buffer) => {
+        req.rawBody = buf.toString();
+      }
+    })(req, res, next);
+  });
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
   // Pastikan folder uploads tersedia secara lokal

@@ -1173,7 +1173,7 @@ export default function DetailModal({
                         if (transaction.file_bak_url) {
                           setLightboxFile({ url: transaction.file_bak_url, title: `${labels.bak}: ${transaction.id}`, docName: labels.bak });
                         } else {
-                          alert("file atau foto belum di upload");
+                          if (addToast) { addToast("File atau foto belum diunggah", "info"); } else { alert("File atau foto belum diunggah"); }
                         }
                       }}
                       className="text-[10px] font-bold text-slate-700 truncate cursor-pointer hover:text-blue-600 hover:underline"
@@ -1188,7 +1188,7 @@ export default function DetailModal({
                         if (transaction.file_bak_url) {
                           setLightboxFile({ url: transaction.file_bak_url, title: `${labels.bak}: ${transaction.id}`, docName: labels.bak });
                         } else {
-                          alert("file atau foto belum di upload");
+                          if (addToast) { addToast("File atau foto belum diunggah", "info"); } else { alert("File atau foto belum diunggah"); }
                         }
                       }}
                       className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
@@ -1234,7 +1234,7 @@ export default function DetailModal({
                         if (transaction.file_handover_aso_sales_url) {
                           setLightboxFile({ url: transaction.file_handover_aso_sales_url, title: `${labels.asoSales}: ${transaction.id}`, docName: labels.asoSales });
                         } else {
-                          alert("file atau foto belum di upload");
+                          if (addToast) { addToast("File atau foto belum diunggah", "info"); } else { alert("File atau foto belum diunggah"); }
                         }
                       }}
                       className="text-[10px] font-bold text-slate-700 truncate cursor-pointer hover:text-purple-600 hover:underline"
@@ -1249,7 +1249,7 @@ export default function DetailModal({
                         if (transaction.file_handover_aso_sales_url) {
                           setLightboxFile({ url: transaction.file_handover_aso_sales_url, title: `${labels.asoSales}: ${transaction.id}`, docName: labels.asoSales });
                         } else {
-                          alert("file atau foto belum di upload");
+                          if (addToast) { addToast("File atau foto belum diunggah", "info"); } else { alert("File atau foto belum diunggah"); }
                         }
                       }}
                       className="p-1.5 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 transition-colors"
@@ -1282,7 +1282,7 @@ export default function DetailModal({
                         if (transaction.upload_dok_pendukung) {
                           setLightboxFile({ url: transaction.upload_dok_pendukung, title: `Dokumen Pendukung: ${transaction.id}`, docName: "Dokumen_Pendukung" });
                         } else {
-                          alert("file atau foto belum di upload");
+                          if (addToast) { addToast("File atau foto belum diunggah", "info"); } else { alert("File atau foto belum diunggah"); }
                         }
                       }}
                       className="text-[10px] font-bold text-slate-700 truncate cursor-pointer hover:text-amber-600 hover:underline"
@@ -1296,7 +1296,7 @@ export default function DetailModal({
                         if (transaction.upload_dok_pendukung) {
                           setLightboxFile({ url: transaction.upload_dok_pendukung, title: `Dokumen Pendukung: ${transaction.id}`, docName: "Dokumen_Pendukung" });
                         } else {
-                          alert("file atau foto belum di upload");
+                          if (addToast) { addToast("File atau foto belum diunggah", "info"); } else { alert("File atau foto belum diunggah"); }
                         }
                       }}
                       className="p-1.5 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100 transition-colors"
@@ -1775,9 +1775,10 @@ export default function DetailModal({
                                                 const fileNameToUpload = getFormattedFileName(docName, transaction, file.name);
                                                 const driveUrl = await uploadFileToDrive(file, fileNameToUpload, googleToken);
                                                 item.setter(driveUrl);
+                                                if (addToast) addToast("Dokumen berhasil diunggah ke Google Drive!", "success");
                                               } catch (err: any) {
                                                 console.error("Gagal mengunggah ke Google Drive:", err);
-                                                alert("Gagal mengunggah otomatis ke Google Drive. Disimpan secara lokal.");
+                                                if (addToast) { addToast("File diamankan ke penyimpanan lokal.", "info"); }
                                                 const reader = new FileReader();
                                                 reader.onloadend = () => {
                                                   item.setter(reader.result as string);
@@ -2272,9 +2273,10 @@ export default function DetailModal({
                                 try {
                                   const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
                                   setLocalHandoverSalesAdminFile(driveUrl);
+                                  if (addToast) addToast("Dokumen berhasil diunggah ke Google Drive!", "success");
                                 } catch (err: any) {
                                   console.error("Gagal mengunggah ke Google Drive:", err);
-                                  alert("Gagal mengunggah otomatis ke Google Drive. Disimpan secara lokal.");
+                                  if (addToast) { addToast("File diamankan ke penyimpanan lokal.", "info"); }
                                   const reader = new FileReader();
                                   reader.onloadend = () => {
                                     setLocalHandoverSalesAdminFile(reader.result as string);
@@ -2544,9 +2546,10 @@ export default function DetailModal({
                                   try {
                                     const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
                                     setLocalHandoverSalesAdminFile(driveUrl);
+                                  if (addToast) addToast("Dokumen berhasil diunggah ke Google Drive!", "success");
                                   } catch (err: any) {
                                     console.error("Gagal mengunggah ke Google Drive:", err);
-                                    alert("Gagal mengunggah otomatis ke Google Drive. Disimpan secara lokal.");
+                                    if (addToast) { addToast("File diamankan ke penyimpanan lokal.", "info"); }
                                     const reader = new FileReader();
                                     reader.onloadend = () => {
                                       setLocalHandoverSalesAdminFile(reader.result as string);
@@ -2611,7 +2614,11 @@ export default function DetailModal({
                     <button 
                       onClick={() => {
                         if (!localHandoverSalesAdminFile) {
-                          alert('Foto bukti serah terima wajib diunggah!');
+                          if (addToast) {
+                            addToast('Foto bukti serah terima wajib diunggah!', 'error');
+                          } else {
+                            alert('Foto bukti serah terima wajib diunggah!');
+                          }
                           return;
                         }
                         setActionLoading(true);

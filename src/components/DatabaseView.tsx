@@ -218,6 +218,9 @@ export default function DatabaseView({
         const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
         setFile(driveUrl);
         setFormError(null);
+        if (addToast) {
+          addToast("Dokumen berhasil diunggah ke Google Drive!", "success");
+        }
       } catch (err: any) {
         console.error("Auto Google Drive upload failed, falling back to local base64.", err);
         // Fallback to local Base64
@@ -227,9 +230,7 @@ export default function DatabaseView({
         };
         reader.readAsDataURL(file);
         if (addToast) {
-          addToast("Gagal mengunggah otomatis ke Google Drive. File disimpan secara lokal.", "info");
-        } else {
-          alert("Gagal mengunggah otomatis ke Google Drive. File disimpan secara lokal.");
+          addToast("File diamankan ke penyimpanan lokal.", "info");
         }
       } finally {
         setUploadingToDrive(prev => ({ ...prev, [uploadKey]: false }));
@@ -1090,6 +1091,9 @@ export default function DatabaseView({
       try {
         const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
         setFile(driveUrl);
+        if (addToast) {
+          addToast("Dokumen berhasil diunggah ke Google Drive!", "success");
+        }
       } catch (err: any) {
         console.error("Auto Google Drive upload failed, falling back to local base64.", err);
         const reader = new FileReader();
@@ -1098,9 +1102,7 @@ export default function DatabaseView({
         };
         reader.readAsDataURL(file);
         if (addToast) {
-          addToast("Gagal mengunggah otomatis ke Google Drive. File disimpan secara lokal.", "info");
-        } else {
-          alert("Gagal mengunggah otomatis ke Google Drive. File disimpan secara lokal.");
+          addToast("File diamankan ke penyimpanan lokal.", "info");
         }
       } finally {
         setUploadingToDrive(prev => ({ ...prev, [uploadKey]: false }));

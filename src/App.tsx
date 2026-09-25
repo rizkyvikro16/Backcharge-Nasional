@@ -2117,6 +2117,7 @@ export default function App() {
           profiles={profiles}
           onClose={() => setSelectedTransactionId(null)}
           onUpdateStatus={handleUpdateTransaction}
+          addToast={addToast}
         />
       )}
 

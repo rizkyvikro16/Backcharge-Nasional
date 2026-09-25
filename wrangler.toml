@@ -1,0 +1,12 @@
+name = "backcharge-nasional"
+compatibility_date = "2024-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+pages_build_output_dir = "dist"
+
+# Binding database Cloudflare D1
+# Di Cloudflare Pages Dashboard: Settings -> Functions -> D1 database bindings -> Variable: DB
+[[d1_databases]]
+binding = "DB"
+database_name = "backcharge-d1"
+database_id = ""
