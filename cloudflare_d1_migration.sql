@@ -83,6 +83,20 @@ CREATE TABLE IF NOT EXISTS contact_inquiries (
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Indexes for ultra-low row read consumption & instant lookups
+CREATE INDEX IF NOT EXISTS idx_backcharges_created_at ON backcharges (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_backcharges_updated_at ON backcharges (updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_backcharges_branch ON backcharges (branch);
+CREATE INDEX IF NOT EXISTS idx_backcharges_branch_created ON backcharges (branch, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_backcharges_branch_updated ON backcharges (branch, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_backcharges_status_payment ON backcharges (status_payment);
+CREATE INDEX IF NOT EXISTS idx_backcharges_status_approval ON backcharges (status_approval);
+CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles (email);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_timestamp ON activity_logs (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_id ON activity_logs (id DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_tx ON activity_logs (transaction_id);
+CREATE INDEX IF NOT EXISTS idx_contact_inquiries_created ON contact_inquiries (created_at DESC);
+
 -- DATA: profiles (124 baris)
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-RQ96LO0', 'stockhead.mp@assarent.co.id', 'MOCHAMAD MIFTAHUL AKBAR',

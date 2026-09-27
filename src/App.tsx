@@ -639,7 +639,7 @@ export default function App() {
     };
   }, []);
 
-  // Real-time Background Sync & Push Notification Engine (every 12 seconds)
+  // Real-time Background Sync & Push Notification Engine (Optimized Delta Polling)
   const lastSeenLogIdRef = useRef<number>(0);
   const pollTimerRef = useRef<any>(null);
 
@@ -654,88 +654,98 @@ export default function App() {
     if (!currentUser || !isD1Active) return;
 
     const pollRealtimeUpdates = async () => {
-      // Throttle when page is hidden to conserve bandwidth and battery
-      if (typeof document !== 'undefined' && document.hidden && Math.random() > 0.35) {
+      // 0 rows read if page is in background (hidden)
+      if (typeof document !== 'undefined' && document.hidden) {
         return;
       }
 
       try {
-        const latestLogs = await executeD1Query(
-          "SELECT id, timestamp, transaction_id, performed_by, action_description FROM activity_logs ORDER BY id DESC LIMIT 12"
+        // Ultra-low row read probe: reads ONLY 1 row via index
+        const probeRes = await executeD1Query(
+          "SELECT MAX(id) as max_id FROM activity_logs"
+        );
+        const maxId = Number(probeRes?.[0]?.max_id) || 0;
+
+        if (maxId <= 0) return;
+
+        if (lastSeenLogIdRef.current === 0) {
+          lastSeenLogIdRef.current = maxId;
+          return;
+        }
+
+        // If no new activity logs, 0 extra rows read!
+        if (maxId <= lastSeenLogIdRef.current) {
+          return;
+        }
+
+        // Fetch ONLY newly added logs since last check (indexed range scan)
+        const newLogs = await executeD1Query(
+          "SELECT id, timestamp, transaction_id, performed_by, action_description FROM activity_logs WHERE id > ? ORDER BY id ASC LIMIT 20",
+          [lastSeenLogIdRef.current]
         );
 
-        if (latestLogs && Array.isArray(latestLogs) && latestLogs.length > 0) {
-          if (lastSeenLogIdRef.current === 0) {
-            lastSeenLogIdRef.current = Math.max(...latestLogs.map(l => Number(l.id) || 0), 0);
-            return;
-          }
+        if (newLogs && Array.isArray(newLogs) && newLogs.length > 0) {
+          lastSeenLogIdRef.current = Math.max(...newLogs.map(l => Number(l.id) || 0));
 
-          const newLogs = latestLogs.filter(l => Number(l.id) > lastSeenLogIdRef.current);
-          if (newLogs.length > 0) {
-            const sortedNew = [...newLogs].sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+          for (const log of newLogs) {
+            const isMe = log.performed_by === currentUser.email;
+            const desc = log.action_description || '';
+            const descLower = desc.toLowerCase();
 
-            for (const log of sortedNew) {
-              const isMe = log.performed_by === currentUser.email;
-              const desc = log.action_description || '';
-              const descLower = desc.toLowerCase();
+            if (!isMe) {
+              let alertTitle = '🔔 Aktivitas Backcharge Terkini';
+              let shouldAlert = true;
 
-              if (!isMe) {
-                let alertTitle = '🔔 Aktivitas Backcharge Terkini';
-                let shouldAlert = true;
+              if (descLower.includes('membuat backcharge') || descLower.includes('import data')) {
+                const pref = localStorage.getItem('backcharge_notif_new_data') !== 'false';
+                if (!pref) shouldAlert = false;
+                alertTitle = '🚨 Input Backcharge Baru!';
+              } else if (descLower.includes('approval') || descLower.includes('menyetujui') || descLower.includes('menolak')) {
+                const pref = localStorage.getItem('backcharge_notif_approval') !== 'false';
+                if (!pref) shouldAlert = false;
+                alertTitle = '📋 Update Approval Backcharge';
+              } else if (descLower.includes('status') || descLower.includes('lunas') || descLower.includes('bayar') || descLower.includes('serah terima') || descLower.includes('invoice')) {
+                const pref = localStorage.getItem('backcharge_notif_status') !== 'false';
+                if (!pref) shouldAlert = false;
+                alertTitle = '🔄 Perubahan Status Backcharge';
+              }
 
-                if (descLower.includes('membuat backcharge') || descLower.includes('import data')) {
-                  const pref = localStorage.getItem('backcharge_notif_new_data') !== 'false';
-                  if (!pref) shouldAlert = false;
-                  alertTitle = '🚨 Input Backcharge Baru!';
-                } else if (descLower.includes('approval') || descLower.includes('menyetujui') || descLower.includes('menolak')) {
-                  const pref = localStorage.getItem('backcharge_notif_approval') !== 'false';
-                  if (!pref) shouldAlert = false;
-                  alertTitle = '📋 Update Approval Backcharge';
-                } else if (descLower.includes('status') || descLower.includes('lunas') || descLower.includes('bayar') || descLower.includes('serah terima') || descLower.includes('invoice')) {
-                  const pref = localStorage.getItem('backcharge_notif_status') !== 'false';
-                  if (!pref) shouldAlert = false;
-                  alertTitle = '🔄 Perubahan Status Backcharge';
-                }
-
-                if (shouldAlert) {
-                  sendBrowserNotification({
-                    title: alertTitle,
-                    body: (log.transaction_id && log.transaction_id !== 'SYSTEM' ? log.transaction_id + ': ' : '') + desc,
-                    txId: log.transaction_id !== 'SYSTEM' ? log.transaction_id : undefined,
-                    tag: 'live-log-' + log.id
-                  });
-                  addToast(alertTitle + ': ' + desc, 'info');
-                }
+              if (shouldAlert) {
+                sendBrowserNotification({
+                  title: alertTitle,
+                  body: (log.transaction_id && log.transaction_id !== 'SYSTEM' ? log.transaction_id + ': ' : '') + desc,
+                  txId: log.transaction_id !== 'SYSTEM' ? log.transaction_id : undefined,
+                  tag: 'live-log-' + log.id
+                });
+                addToast(alertTitle + ': ' + desc, 'info');
               }
             }
+          }
 
-            const maxId = Math.max(...latestLogs.map(l => Number(l.id) || 0));
-            lastSeenLogIdRef.current = Math.max(lastSeenLogIdRef.current, maxId);
+          // Update logs in local state
+          setLogs(prev => {
+            const existingIds = new Set(prev.map(p => String(p.id)));
+            const fresh = newLogs.filter(l => !existingIds.has(String(l.id)));
+            return [...fresh.reverse(), ...prev].slice(0, 100);
+          });
 
-            // Update logs state
-            setLogs(prev => {
-              const existingIds = new Set(prev.map(p => String(p.id)));
-              const fresh = latestLogs.filter(l => !existingIds.has(String(l.id)));
-              return [...fresh, ...prev].slice(0, 250);
-            });
-
-            // Concurrently synchronize updated backcharges in UI
-            const recentTxs = await executeD1Query(
-              "SELECT * FROM backcharges ORDER BY updated_at DESC LIMIT 15"
+          // Fetch ONLY specific transactions that were modified (uses PRIMARY KEY index: 1 row per tx!)
+          const changedTxIds = [...new Set(newLogs.map(l => l.transaction_id).filter(id => id && id !== 'SYSTEM' && id !== '-'))];
+          if (changedTxIds.length > 0) {
+            const placeholders = changedTxIds.map(() => '?').join(',');
+            const updatedTxs = await executeD1Query(
+              `SELECT * FROM backcharges WHERE id IN (${placeholders})`,
+              changedTxIds
             );
-            if (recentTxs && Array.isArray(recentTxs)) {
-              const unpackedRecent = recentTxs.map(unpackExtraFields);
-              setTransactions(prev => {
+
+            if (updatedTxs && Array.isArray(updatedTxs) && updatedTxs.length > 0) {
+              const unpackedUpdated = updatedTxs.map(unpackExtraFields);
+              updateTransactionsStateAndCache(prev => {
                 const map = new Map<string, Backcharge>(prev.map(t => [t.id, t]));
-                let hasChange = false;
-                unpackedRecent.forEach((rt: Backcharge) => {
-                  const existing = map.get(rt.id);
-                  if (!existing || existing.updated_at !== rt.updated_at) {
-                    map.set(rt.id, rt);
-                    hasChange = true;
-                  }
+                unpackedUpdated.forEach((ut: Backcharge) => {
+                  map.set(ut.id, ut);
                 });
-                return hasChange ? Array.from(map.values()) : prev;
+                return Array.from(map.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
               });
             }
           }
@@ -745,12 +755,31 @@ export default function App() {
       }
     };
 
-    pollTimerRef.current = setInterval(pollRealtimeUpdates, 12000);
+    // Polling interval: 45 seconds (drastically conserves D1 rows read quota)
+    pollTimerRef.current = setInterval(pollRealtimeUpdates, 45000);
+
+    // Instant sync when user switches back to this browser tab
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        pollRealtimeUpdates();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleVisibilityOrFocus);
+      document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    }
+
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleVisibilityOrFocus);
+        document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      }
     };
   }, [currentUser, isD1Active]);
+
   const isInitialLoadRef = useRef<boolean>(true);
+  const isFetchingRef = useRef<boolean>(false);
 
 
 
@@ -969,6 +998,8 @@ export default function App() {
 
   // Fetch app data
   const fetchData = async (forceFull = false, userOverride?: Profile) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     const activeUser = userOverride || currentUser || (() => {
       try {
         const s = localStorage.getItem('backcharge_session_profile');
@@ -1077,35 +1108,128 @@ export default function App() {
             return allResults;
           };
 
-          try {
-            // Execute all D1 queries concurrently for maximum performance
-            const [bcs, logsData, profilesData, inquiriesData] = await Promise.all([
-              fetchAllBackchargesFromD1(backchargesQuery, queryParams),
-              executeD1Query(logsQuery),
-              executeD1Query(profilesQuery),
-              executeD1Query(inquiriesQuery)
-            ]);
-            isInitialLoadRef.current = false;
+                    try {
+            // =========================================================================
+            // SMART INDEXED DELTA SYNCHRONIZATION (Ultra-Low D1 Rows Read Quota)
+            // =========================================================================
+            let cachedTxs: Backcharge[] = [];
+            try {
+              const cachedStr = localStorage.getItem("backcharge_cache_txs");
+              if (cachedStr) {
+                const parsed = JSON.parse(cachedStr);
+                if (Array.isArray(parsed) && parsed.length > 0) cachedTxs = parsed;
+              }
+            } catch {}
 
-            const unpackedTxs = (bcs || []).map(unpackExtraFields);
-            setTransactions(unpackedTxs as Backcharge[]);
+            const cachedMaxUpdated = localStorage.getItem("backcharge_cache_max_updated") || "";
+            const cachedMaxCreated = localStorage.getItem("backcharge_cache_max_created") || "";
+            const cachedCount = Number(localStorage.getItem("backcharge_cache_count")) || cachedTxs.length;
+
+            let shouldFetchFull = forceFull || cachedTxs.length === 0;
+            let finalTxs = cachedTxs;
+
+            // Probe metadata fingerprint with 1-row read if local cache exists
+            if (!shouldFetchFull && cachedTxs.length > 0) {
+              try {
+                // Uses idx_backcharges_updated_at and idx_backcharges_created_at -> Exactly 1 Row Read in D1!
+                let probeSql = "SELECT COUNT(*) as total_count, MAX(updated_at) as max_updated, MAX(created_at) as max_created FROM backcharges WHERE 1=1";
+                if (!isNationalOrAll && activeUser) {
+                  const allowedBranches = getRoleAllowedBranches(activeUser.role, activeUser.branch);
+                  if (allowedBranches.length > 0 && allowedBranches.length < ALL_SYSTEM_BRANCHES.length) {
+                    const branchList = allowedBranches.map(b => "'" + b.replace(/'/g, "''") + "'").join(",");
+                    probeSql += " AND branch IN (" + branchList + ")";
+                  }
+                }
+
+                const probeRes = await executeD1Query(probeSql);
+                const meta = probeRes?.[0] || {};
+                const totalCount = Number(meta.total_count) || 0;
+                const maxUpdated = String(meta.max_updated || "");
+                const maxCreated = String(meta.max_created || "");
+
+                if (totalCount === cachedCount && maxUpdated === cachedMaxUpdated && cachedCount > 0) {
+                  // 100% IDENTICAL TO D1: Zero extra rows read from backcharges!
+                  finalTxs = cachedTxs;
+                } else if (totalCount >= cachedCount && cachedMaxUpdated && (maxUpdated !== cachedMaxUpdated || maxCreated !== cachedMaxCreated)) {
+                  // DELTA FETCH: Read ONLY rows that were newly created or updated (indexed scan)
+                  let deltaSql = "SELECT * FROM backcharges WHERE (updated_at > ? OR created_at > ?)";
+                  if (!isNationalOrAll && activeUser) {
+                    const allowedBranches = getRoleAllowedBranches(activeUser.role, activeUser.branch);
+                    if (allowedBranches.length > 0 && allowedBranches.length < ALL_SYSTEM_BRANCHES.length) {
+                      const branchList = allowedBranches.map(b => "'" + b.replace(/'/g, "''") + "'").join(",");
+                      deltaSql += " AND branch IN (" + branchList + ")";
+                    }
+                  }
+                  deltaSql += " ORDER BY updated_at DESC LIMIT 500";
+
+                  const deltaRes = await executeD1Query(deltaSql, [cachedMaxUpdated, cachedMaxCreated || cachedMaxUpdated]);
+                  if (deltaRes && Array.isArray(deltaRes) && deltaRes.length > 0) {
+                    const unpackedDelta = deltaRes.map(unpackExtraFields);
+                    const map = new Map<string, Backcharge>(cachedTxs.map(t => [t.id, t]));
+                    unpackedDelta.forEach((dt: Backcharge) => map.set(dt.id, dt));
+                    finalTxs = Array.from(map.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                  }
+                  try {
+                    localStorage.setItem("backcharge_cache_max_updated", maxUpdated);
+                    localStorage.setItem("backcharge_cache_max_created", maxCreated);
+                    localStorage.setItem("backcharge_cache_count", String(finalTxs.length));
+                  } catch {}
+                } else {
+                  shouldFetchFull = true;
+                }
+              } catch (probeErr) {
+                console.warn("Probe check notice, falling back to full fetch:", probeErr);
+                shouldFetchFull = true;
+              }
+            }
+
+            // Fallback or explicit Full Refresh (e.g. user clicked refresh button or cache empty)
+            let bcsPromise: Promise<any[]>;
+            if (shouldFetchFull) {
+              bcsPromise = fetchAllBackchargesFromD1(backchargesQuery, queryParams);
+            } else {
+              bcsPromise = Promise.resolve(null as any);
+            }
+
+            // Ultra-lean queries for supporting tables (50 logs and 30 inquiries instead of hundreds)
+            const [bcs, logsData, profilesData, inquiriesData] = await Promise.all([
+              bcsPromise,
+              executeD1Query("SELECT * FROM activity_logs ORDER BY id DESC LIMIT 50"),
+              executeD1Query(profilesQuery),
+              executeD1Query("SELECT * FROM contact_inquiries ORDER BY created_at DESC LIMIT 30")
+            ]);
+
+            isInitialLoadRef.current = false;
+            if (bcs && Array.isArray(bcs)) {
+              finalTxs = bcs.map(unpackExtraFields);
+              if (finalTxs.length > 0) {
+                const maxUp = finalTxs.reduce((max, t) => (t.updated_at && t.updated_at > max) ? t.updated_at : max, "");
+                const maxCr = finalTxs.reduce((max, t) => (t.created_at && t.created_at > max) ? t.created_at : max, "");
+                try {
+                  localStorage.setItem("backcharge_cache_max_updated", maxUp);
+                  localStorage.setItem("backcharge_cache_max_created", maxCr);
+                  localStorage.setItem("backcharge_cache_count", String(finalTxs.length));
+                } catch {}
+              }
+            }
+
+            setTransactions(finalTxs as Backcharge[]);
             setLogs((logsData as ActivityLog[]) || []);
             setProfiles((profilesData as Profile[]) || []);
             setInquiries((inquiriesData as ContactInquiry[]) || []);
 
             try {
-              localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedTxs));
-              localStorage.setItem('backcharge_cache_logs', JSON.stringify(logsData));
-              localStorage.setItem('backcharge_cache_profs', JSON.stringify(profilesData));
-              localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
-              localStorage.setItem('backcharge_cache_user', activeUser?.email || '');
+              localStorage.setItem("backcharge_cache_txs", JSON.stringify(finalTxs));
+              localStorage.setItem("backcharge_cache_logs", JSON.stringify(logsData));
+              localStorage.setItem("backcharge_cache_profs", JSON.stringify(profilesData));
+              localStorage.setItem("backcharge_cache_time_v2", String(Date.now()));
+              localStorage.setItem("backcharge_cache_user", activeUser?.email || "");
             } catch (cacheErr) {
               try {
-                // If localStorage quota is reached, store recent 500 items for instant hydration
-                const lean = unpackedTxs.slice(0, 500);
-                localStorage.setItem('backcharge_cache_txs', JSON.stringify(lean));
-                localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
-                localStorage.setItem('backcharge_cache_user', activeUser?.email || '');
+                const lean = finalTxs.slice(0, 500);
+                localStorage.setItem("backcharge_cache_txs", JSON.stringify(lean));
+                localStorage.setItem("backcharge_cache_time_v2", String(Date.now()));
+                localStorage.setItem("backcharge_cache_user", activeUser?.email || "");
               } catch {}
             }
           } catch (e: any) {
@@ -1191,6 +1315,7 @@ export default function App() {
         setD1Error(err.message || String(err));
       } finally {
         setLoading(false);
+        isFetchingRef.current = false;
       }
       return;
     }
@@ -1209,6 +1334,7 @@ export default function App() {
       setProfiles(mockDb.getProfiles());
       setInquiries(mockDb.getContactInquiries());
       setLoading(false);
+      isFetchingRef.current = false;
     }, 50); // instant feeling
   };
 

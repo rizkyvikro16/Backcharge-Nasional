@@ -82,9 +82,17 @@ async function ensureD1SchemaWorker(db) {
       );
     `),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_created_at ON backcharges (created_at DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_updated_at ON backcharges (updated_at DESC);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_branch ON backcharges (branch);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_branch_created ON backcharges (branch, created_at DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_branch_updated ON backcharges (branch, updated_at DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_status_payment ON backcharges (status_payment);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_status_approval ON backcharges (status_approval);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles (email);`),
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_timestamp ON activity_logs (timestamp DESC);`)
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_timestamp ON activity_logs (timestamp DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_id ON activity_logs (id DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_tx ON activity_logs (transaction_id);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_contact_inquiries_created ON contact_inquiries (created_at DESC);`)
   ]);
 
   // Seed default admin profiles if empty
@@ -120,6 +128,9 @@ export default {
     // 1. Status Check Endpoint
     if (pathname === "/api/d1/status" && request.method === "GET") {
       const isDbAvailable = !!env.DB;
+      if (isDbAvailable) {
+        ensureD1SchemaWorker(env.DB).catch(e => console.warn("Schema indexing notice:", e));
+      }
       return new Response(
         JSON.stringify({
           success: true,
