@@ -200,7 +200,7 @@ export function cleanDbPayload(payload: any) {
   const DB_COLUMNS = [
     'id', 'category', 'branch', 'no_bak', 'no_spk', 'no_sap', 'no_tilang',
     'customer_name', 'license_plate', 'value', 'status_sap', 'status_confirm',
-    'status_handover', 'no_invoice', 'status_payment', 'created_by', 'created_at',
+    'status_handover', 'no_invoice', 'status_payment', 'payment_date', 'created_by', 'created_at',
     'updated_at', 'file_bak_url', 'file_handover_aso_sales_url',
     'file_handover_sales_admin_url', 'tanggal', 'tanggal_handover', 'nama_bro', 'upload_dok_pendukung', 'alasan',
     'status_approval', 'approved_by', 'approved_at', 'approval_note',
@@ -209,9 +209,13 @@ export function cleanDbPayload(payload: any) {
     'division_approval_status', 'division_approved_by', 'division_approved_at', 'division_approval_note'
   ];
   const cleaned: any = {};
+  const normalized = { ...payload };
+  if (normalized.bro_name && !normalized.nama_bro) normalized.nama_bro = normalized.bro_name;
+  if (normalized.dok_pendukung_alasan && !normalized.alasan) normalized.alasan = normalized.dok_pendukung_alasan;
+
   for (const key of DB_COLUMNS) {
-    if (key in payload) {
-      cleaned[key] = payload[key];
+    if (key in normalized && normalized[key] !== undefined) {
+      cleaned[key] = normalized[key];
     }
   }
   return cleaned;
@@ -722,9 +726,9 @@ export default function App() {
             if (recentTxs && Array.isArray(recentTxs)) {
               const unpackedRecent = recentTxs.map(unpackExtraFields);
               setTransactions(prev => {
-                const map = new Map(prev.map(t => [t.id, t]));
+                const map = new Map<string, Backcharge>(prev.map(t => [t.id, t]));
                 let hasChange = false;
-                unpackedRecent.forEach(rt => {
+                unpackedRecent.forEach((rt: Backcharge) => {
                   const existing = map.get(rt.id);
                   if (!existing || existing.updated_at !== rt.updated_at) {
                     map.set(rt.id, rt);
@@ -1750,6 +1754,7 @@ export default function App() {
 
       // Update local state & cache
       updateTransactionsStateAndCache(prev => prev.filter(t => t.id !== id));
+      setSelectedTransactionId(prevId => prevId === id ? null : prevId);
       addToast(`Backcharge ${id} berhasil dihapus!`, 'success');
     } catch (err: any) {
       console.error("Gagal hapus transaksi:", err);
@@ -2454,6 +2459,7 @@ export default function App() {
           profiles={profiles}
           onClose={() => setSelectedTransactionId(null)}
           onUpdateStatus={handleUpdateTransaction}
+          onDeleteTransaction={handleDeleteTransaction}
           addToast={addToast}
         />
       )}

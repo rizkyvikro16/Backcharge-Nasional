@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { 
-  X, Upload, Download, FileText, 
+  X, Trash2, Upload, Download, FileText, 
   Image, Eye,
   Cloud, Loader2, ExternalLink, User
 } from 'lucide-react';
@@ -13,6 +13,7 @@ interface DetailModalProps {
   profiles?: Profile[];
   onClose: () => void;
   onUpdateStatus: (id: string, updates: Partial<Backcharge>, logMessage: string) => void;
+  onDeleteTransaction?: (id: string) => void;
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
@@ -37,6 +38,7 @@ export default function DetailModal({
   profiles = [],
   onClose, 
   onUpdateStatus,
+  onDeleteTransaction,
   addToast
 }: DetailModalProps) {
   
@@ -859,6 +861,7 @@ export default function DetailModal({
     (isDivisionHeadView && txValue > 15000000);
 
   const isSuperAdmin = hasRole(currentUser.role, 'Administrator');
+  const canDelete = isSuperAdmin || hasRole(currentUser.role, 'ASO') || hasRole(currentUser.role, 'ASO Megabranch') || hasRole(currentUser.role, 'Maintenance Center') || hasRole(currentUser.role, 'Admin');
   const isRegionalHeadUser = isRegionalHeadView || isSuperAdmin;
   const isDivisionHeadUser = isDivisionHeadView || isSuperAdmin;
   const isKacabUser = isKacabRole;
@@ -889,12 +892,29 @@ export default function DetailModal({
         
         <div className="print:hidden space-y-6 flex flex-col w-full">
           {/* Close button (hidden during print) */}
-        <button 
-          onClick={onClose} 
-          className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 transition-colors p-2 bg-slate-50 hover:bg-slate-100 rounded-xl print:hidden"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        <div className="absolute top-6 right-6 flex items-center space-x-2 print:hidden z-20">
+          {canDelete && onDeleteTransaction && (
+            <button 
+              type="button"
+              onClick={() => {
+                onDeleteTransaction(transaction.id);
+                onClose();
+              }}
+              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all shadow-sm"
+              title="Hapus Transaksi Secara Permanen"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              <span className="hidden sm:inline">Hapus Data</span>
+            </button>
+          )}
+          <button 
+            onClick={onClose} 
+            className="text-slate-400 hover:text-slate-600 transition-colors p-2 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-100"
+            title="Tutup"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
         {/* Modal Header */}
         <div className="flex flex-col space-y-1.5 border-b border-slate-100 pb-4 pr-10">
