@@ -563,7 +563,19 @@ export default function App() {
   const [sidebarHover, setSidebarHover] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showD1Banner, setShowD1Banner] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const isWorkerHost = typeof window !== 'undefined' && (
+    window.location.hostname.includes("workers.dev") ||
+    window.location.hostname.includes("pages.dev")
+  );
+
+  const [isD1Active, setIsD1Active] = useState<boolean>(() => {
+    if (isWorkerHost) return true;
+    return localStorage.getItem('backcharge_use_d1') !== 'false';
+  });
+  const [d1Error, setD1Error] = useState<string | null>(null);
+  const [showD1Modal, setShowD1Modal] = useState<boolean>(true);
+  const [migratingD1, setMigratingD1] = useState<boolean>(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
   const [showNotifSettings, setShowNotifSettings] = useState(false);
   const [browserNotifPermission, setBrowserNotifPermission] = useState<NotificationPermissionStatus>(() => {
     return getNotificationPermission();
@@ -736,18 +748,7 @@ export default function App() {
   }, [currentUser, isD1Active]);
   const isInitialLoadRef = useRef<boolean>(true);
 
-  const isWorkerHost = typeof window !== 'undefined' && (
-    window.location.hostname.includes("workers.dev") ||
-    window.location.hostname.includes("pages.dev")
-  );
 
-  const [isD1Active, setIsD1Active] = useState<boolean>(() => {
-    if (isWorkerHost) return true;
-    return localStorage.getItem('backcharge_use_d1') !== 'false';
-  });
-  const [d1Error, setD1Error] = useState<string | null>(null);
-  const [showD1Modal, setShowD1Modal] = useState<boolean>(true);
-  const [migratingD1, setMigratingD1] = useState<boolean>(false);
 
   const runD1Migration = async () => {
     setMigratingD1(true);
