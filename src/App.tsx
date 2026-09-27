@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Key, Mail, Layers, CheckCircle, Clock, AlertTriangle, BarChart3, 
-  Download, FileSpreadsheet, RefreshCw, LogOut, Bell, Shield, Users, Landmark, UserCheck, X
+  Download, FileSpreadsheet, RefreshCw, LogOut, Bell, BellOff, Smartphone, Volume2, Shield, Users, Landmark, UserCheck, X
 } from 'lucide-react';
 
 import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, getRoleAllowedBranches, isNationalOrAllBranches, hasRole, isRegionalHeadRole, ALL_SYSTEM_BRANCHES } from './types';
@@ -15,6 +15,15 @@ import DetailModal from './components/DetailModal';
 import UserManagement from './components/UserManagement';
 import AuditView from './components/AuditView';
 import FeedbackView from './components/FeedbackView';
+import { NotificationSettingsModal } from './components/NotificationSettingsModal';
+import { 
+  getNotificationPermission, 
+  requestNotificationPermission, 
+  sendBrowserNotification, 
+  sendTestBrowserNotification,
+  NotificationPermissionStatus 
+} from './lib/browserNotification';
+
 import { getApiUrl } from './lib/api';
 
 // Helper functions to pack and unpack extra fields into/from no_bak text field as fallback for Supabase databases without schema updates
@@ -555,6 +564,176 @@ export default function App() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showD1Banner, setShowD1Banner] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showNotifSettings, setShowNotifSettings] = useState(false);
+  const [browserNotifPermission, setBrowserNotifPermission] = useState<NotificationPermissionStatus>(() => {
+    return getNotificationPermission();
+  });
+  const [showBrowserNotifPrompt, setShowBrowserNotifPrompt] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const dismissed = localStorage.getItem('dismiss_browser_notif_prompt');
+    const perm = getNotificationPermission();
+    return perm === 'default' && !dismissed;
+  });
+
+  const handleRequestBrowserNotif = async () => {
+    const res = await requestNotificationPermission();
+    setBrowserNotifPermission(res);
+    setShowBrowserNotifPrompt(false);
+    if (res === 'granted') {
+      addToast('Notifikasi browser & HP berhasil diaktifkan! Anda akan menerima peringatan real-time.', 'success');
+      sendTestBrowserNotification();
+    } else if (res === 'denied') {
+      addToast('Izin notifikasi diblokir browser. Silakan klik ikon gembok di samping alamat web untuk mengizinkan.', 'error');
+    }
+  };
+
+  // Sync notification permission status on window focus
+  useEffect(() => {
+    const handleFocus = () => {
+      setBrowserNotifPermission(getNotificationPermission());
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
+  // Listen for Service Worker message or custom event when user clicks a notification
+  useEffect(() => {
+    const handleOpenDetail = (e: any) => {
+      const txId = e.detail?.txId;
+      if (txId) {
+        setSelectedTransactionId(txId);
+      }
+    };
+    window.addEventListener('open-backcharge-detail', handleOpenDetail);
+
+    const handleSwMessage = (e: MessageEvent) => {
+      if (e.data?.type === 'OPEN_BACKCHARGE_DETAIL' && e.data?.txId) {
+        setSelectedTransactionId(e.data.txId);
+      }
+    };
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    }
+
+    return () => {
+      window.removeEventListener('open-backcharge-detail', handleOpenDetail);
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      }
+    };
+  }, []);
+
+  // Real-time Background Sync & Push Notification Engine (every 12 seconds)
+  const lastSeenLogIdRef = useRef<number>(0);
+  const pollTimerRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (logs.length > 0 && lastSeenLogIdRef.current === 0) {
+      const maxId = Math.max(...logs.map(l => Number(l.id) || 0), 0);
+      lastSeenLogIdRef.current = maxId;
+    }
+  }, [logs]);
+
+  useEffect(() => {
+    if (!currentUser || !isD1Active) return;
+
+    const pollRealtimeUpdates = async () => {
+      // Throttle when page is hidden to conserve bandwidth and battery
+      if (typeof document !== 'undefined' && document.hidden && Math.random() > 0.35) {
+        return;
+      }
+
+      try {
+        const latestLogs = await executeD1Query(
+          "SELECT id, timestamp, transaction_id, performed_by, action_description FROM activity_logs ORDER BY id DESC LIMIT 12"
+        );
+
+        if (latestLogs && Array.isArray(latestLogs) && latestLogs.length > 0) {
+          if (lastSeenLogIdRef.current === 0) {
+            lastSeenLogIdRef.current = Math.max(...latestLogs.map(l => Number(l.id) || 0), 0);
+            return;
+          }
+
+          const newLogs = latestLogs.filter(l => Number(l.id) > lastSeenLogIdRef.current);
+          if (newLogs.length > 0) {
+            const sortedNew = [...newLogs].sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+
+            for (const log of sortedNew) {
+              const isMe = log.performed_by === currentUser.email;
+              const desc = log.action_description || '';
+              const descLower = desc.toLowerCase();
+
+              if (!isMe) {
+                let alertTitle = '🔔 Aktivitas Backcharge Terkini';
+                let shouldAlert = true;
+
+                if (descLower.includes('membuat backcharge') || descLower.includes('import data')) {
+                  const pref = localStorage.getItem('backcharge_notif_new_data') !== 'false';
+                  if (!pref) shouldAlert = false;
+                  alertTitle = '🚨 Input Backcharge Baru!';
+                } else if (descLower.includes('approval') || descLower.includes('menyetujui') || descLower.includes('menolak')) {
+                  const pref = localStorage.getItem('backcharge_notif_approval') !== 'false';
+                  if (!pref) shouldAlert = false;
+                  alertTitle = '📋 Update Approval Backcharge';
+                } else if (descLower.includes('status') || descLower.includes('lunas') || descLower.includes('bayar') || descLower.includes('serah terima') || descLower.includes('invoice')) {
+                  const pref = localStorage.getItem('backcharge_notif_status') !== 'false';
+                  if (!pref) shouldAlert = false;
+                  alertTitle = '🔄 Perubahan Status Backcharge';
+                }
+
+                if (shouldAlert) {
+                  sendBrowserNotification({
+                    title: alertTitle,
+                    body: (log.transaction_id && log.transaction_id !== 'SYSTEM' ? log.transaction_id + ': ' : '') + desc,
+                    txId: log.transaction_id !== 'SYSTEM' ? log.transaction_id : undefined,
+                    tag: 'live-log-' + log.id
+                  });
+                  addToast(alertTitle + ': ' + desc, 'info');
+                }
+              }
+            }
+
+            const maxId = Math.max(...latestLogs.map(l => Number(l.id) || 0));
+            lastSeenLogIdRef.current = Math.max(lastSeenLogIdRef.current, maxId);
+
+            // Update logs state
+            setLogs(prev => {
+              const existingIds = new Set(prev.map(p => String(p.id)));
+              const fresh = latestLogs.filter(l => !existingIds.has(String(l.id)));
+              return [...fresh, ...prev].slice(0, 250);
+            });
+
+            // Concurrently synchronize updated backcharges in UI
+            const recentTxs = await executeD1Query(
+              "SELECT * FROM backcharges ORDER BY updated_at DESC LIMIT 15"
+            );
+            if (recentTxs && Array.isArray(recentTxs)) {
+              const unpackedRecent = recentTxs.map(unpackExtraFields);
+              setTransactions(prev => {
+                const map = new Map(prev.map(t => [t.id, t]));
+                let hasChange = false;
+                unpackedRecent.forEach(rt => {
+                  const existing = map.get(rt.id);
+                  if (!existing || existing.updated_at !== rt.updated_at) {
+                    map.set(rt.id, rt);
+                    hasChange = true;
+                  }
+                });
+                return hasChange ? Array.from(map.values()) : prev;
+              });
+            }
+          }
+        }
+      } catch (err) {
+        // Silent background polling
+      }
+    };
+
+    pollTimerRef.current = setInterval(pollRealtimeUpdates, 12000);
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, [currentUser, isD1Active]);
   const isInitialLoadRef = useRef<boolean>(true);
 
   const isWorkerHost = typeof window !== 'undefined' && (
@@ -1182,6 +1361,12 @@ export default function App() {
       updateTransactionsStateAndCache(prev => [txObj, ...prev]);
       setLogs(prev => [newLog, ...prev]);
       addToast(`Transaksi Backcharge ${newId} berhasil disimpan!`, 'success');
+      sendBrowserNotification({
+        title: '🚨 Backcharge Baru Berhasil Dibuat!',
+        body: `${txObj.branch} • ${txObj.customer_name} (${newId}) - Rp ${txObj.value.toLocaleString('id-ID')}`,
+        txId: newId,
+        tag: 'create-tx-' + newId
+      });
     } catch (err: any) {
       console.error("Gagal simpan transaksi:", err);
       addToast(`Gagal menyimpan transaksi: ${err.message}`, 'error');
@@ -1524,6 +1709,15 @@ export default function App() {
         setLogs(prev => [newLog, ...prev]);
       }
       addToast(`Transaksi ${id} berhasil diperbarui!`, 'success');
+      const isAppr = updates.status_approval || updates.regional_approval_status || updates.division_approval_status;
+      const isPay = updates.status_payment;
+      const notifHeader = isAppr ? '📋 Update Approval Backcharge' : isPay ? '💰 Status Pelunasan Diperbarui' : '🔄 Status Backcharge Diperbarui';
+      sendBrowserNotification({
+        title: notifHeader,
+        body: `${id}: ${logMessage || 'Status transaksi berhasil diperbarui.'}`,
+        txId: id,
+        tag: 'update-bc-' + id + '-' + Date.now()
+      });
     } catch (err: any) {
       console.error("Gagal memperbarui transaksi:", err);
       addToast(`Gagal memperbarui transaksi: ${err.message}`, 'error');
@@ -1988,6 +2182,36 @@ export default function App() {
 
           <div className="flex items-center space-x-1.5 md:space-x-2 relative flex-shrink-0">
             
+            {/* Real-Time Notification Status & Settings Button */}
+            {browserNotifPermission === 'granted' ? (
+              <button
+                onClick={() => setShowNotifSettings(true)}
+                className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/90 rounded-xl text-xs font-bold transition-all shadow-sm"
+                title="Notifikasi Browser & HP Aktif. Klik untuk opsi atau tes."
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="hidden sm:inline">Notif Real-time</span>
+              </button>
+            ) : browserNotifPermission === 'denied' ? (
+              <button
+                onClick={() => setShowNotifSettings(true)}
+                className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all shadow-sm"
+                title="Notifikasi Diblokir Browser. Klik untuk petunjuk."
+              >
+                <BellOff className="w-3.5 h-3.5 text-rose-500" />
+                <span className="hidden sm:inline">Notif Diblokir</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleRequestBrowserNotif}
+                className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-xl text-xs font-extrabold transition-all shadow-sm animate-pulse"
+                title="Klik untuk mengaktifkan notifikasi di browser & HP"
+              >
+                <Bell className="w-3.5 h-3.5 text-amber-600 animate-bounce" />
+                <span className="text-[11px] sm:text-xs">Aktifkan Notif HP</span>
+              </button>
+            )}
+
             {/* Sync & Refresh Data Button */}
             <button 
               onClick={handleRefreshData} 
@@ -2080,7 +2304,16 @@ export default function App() {
                       </div>
                     )}
                   </div>
-                </div>
+                    <div className="p-2 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+                      <button 
+                        onClick={() => { setShowNotifDropdown(false); setShowNotifSettings(true); }}
+                        className="w-full text-center text-[11px] text-blue-600 hover:text-blue-800 font-bold py-1 flex items-center justify-center space-x-1.5 hover:bg-blue-50/50 rounded-lg transition-all"
+                      >
+                        <Bell className="w-3 h-3 text-blue-600" />
+                        <span>Pengaturan Notifikasi Real-Time (HP & Web)</span>
+                      </button>
+                    </div>
+                  </div>
               )}
             </div>
 
@@ -2096,6 +2329,39 @@ export default function App() {
           </div>
         </header>
 
+        {/* Real-time Browser/HP Notification Banner */}
+        {showBrowserNotifPrompt && browserNotifPermission === 'default' && (
+          <div className="mx-3 sm:mx-6 mt-3 p-3 sm:p-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white rounded-2xl shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center space-x-3">
+              <div className="w-9 h-9 rounded-xl bg-white/10 backdrop-blur-md flex items-center justify-center flex-shrink-0 border border-white/20">
+                <Bell className="w-5 h-5 text-amber-300 animate-bounce" />
+              </div>
+              <div>
+                <p className="text-xs font-bold sm:font-extrabold">Aktifkan Notifikasi Real-Time di Browser & Layar HP!</p>
+                <p className="text-[11px] text-blue-100/90 font-medium">Dapatkan peringatan seketika saat ada input denda Backcharge baru, perubahan status pelunasan, atau update approval.</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
+              <button 
+                onClick={handleRequestBrowserNotif}
+                className="px-3.5 py-1.5 bg-white hover:bg-blue-50 text-blue-700 text-xs font-extrabold rounded-xl transition-all shadow-sm flex items-center space-x-1.5"
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Izinkan Sekarang</span>
+              </button>
+              <button 
+                onClick={() => {
+                  setShowBrowserNotifPrompt(false);
+                  localStorage.setItem('dismiss_browser_notif_prompt', 'true');
+                }}
+                className="p-1.5 text-white/70 hover:text-white rounded-lg hover:bg-white/10 transition-all"
+                title="Tutup banner"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 5. JENDELA AREA TAB KONTEN */}
         <main className="p-3 sm:p-4 md:p-6 flex-grow space-y-6 pb-28 md:pb-6 max-w-full">
