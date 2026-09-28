@@ -1507,10 +1507,6 @@ export default function Dashboard({
               </p>
               <h3 className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">{periodStats.cutoffCount}</h3>
               <p className="text-xs font-black text-blue-700 truncate mt-0.5">{formatRupiah(periodStats.cutoffValue)}</p>
-              <p className="text-[10.5px] font-black text-emerald-700 flex items-center gap-1 mt-1 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-lg w-fit">
-                <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-600" />
-                <span>{periodStats.cutoffLunasCount} Lunas ({formatRupiah(periodStats.cutoffLunasValue)})</span>
-              </p>
             </div>
             <div className="p-2.5 bg-blue-50 text-blue-600 rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
               <Layers className="w-4 h-4" />
@@ -1570,10 +1566,6 @@ export default function Dashboard({
               </p>
               <h3 className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">{periodStats.currentMonthCount}</h3>
               <p className="text-xs font-black text-purple-700 truncate mt-0.5">{formatRupiah(periodStats.currentMonthValue)}</p>
-              <p className="text-[10.5px] font-black text-emerald-700 flex items-center gap-1 mt-1 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-lg w-fit">
-                <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-600" />
-                <span>{periodStats.currentMonthLunasCount} Lunas ({formatRupiah(periodStats.currentMonthLunasValue)})</span>
-              </p>
             </div>
             <div className="p-2.5 bg-purple-100 text-purple-700 rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
               <Calendar className="w-4 h-4" />
@@ -1620,11 +1612,11 @@ export default function Dashboard({
           </div>
         </div>
 
-        {/* CARD 5: TOTAL NILAI TAGIHAN & OS AKUMULASI */}
+        {/* CARD 5: TOTAL NILAI TAGIHAN, LUNAS & OS AKUMULASI */}
         <div 
           onClick={() => onSelectDashboardFilter?.({ statusPayment: 'Belum Bayar' })}
           className="bg-gradient-to-br from-indigo-600 to-blue-700 text-white p-4.5 rounded-3xl border border-indigo-700 border-t-4 border-t-indigo-400 shadow-xl hover:shadow-2xl transition-all duration-300 relative group overflow-hidden flex flex-col justify-between col-span-1 sm:col-span-2 lg:col-span-1 cursor-pointer active:scale-[0.98] transform ring-2 ring-indigo-400/30"
-          title="Klik untuk melihat rincian seluruh tagihan dan total outstanding akumulasi"
+          title="Klik untuk melihat rincian seluruh tagihan, pelunasan, dan total outstanding akumulasi"
         >
           <div className="flex justify-between items-start">
             <div className="space-y-0.5 min-w-0 pr-1">
@@ -1632,20 +1624,31 @@ export default function Dashboard({
                 TOTAL NILAI TAGIHAN &amp; OS
               </p>
               <h3 className="text-xl sm:text-2xl font-black text-white mt-1 drop-shadow-sm truncate">{formatRupiah(periodStats.grandTotalValue)}</h3>
-              <p className="text-[10px] font-extrabold text-indigo-100 truncate mt-0.5">
-                OS: {formatRupiah(periodStats.grandTotalOsValue)} ({periodStats.grandTotalOsCount} OS)
-              </p>
+              
+              {/* Rincian Lunas & OS Akumulasi */}
+              <div className="space-y-0.5 pt-1">
+                <p className="text-[10px] font-extrabold text-emerald-200 flex items-center gap-1 truncate">
+                  <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-300" />
+                  <span>Lunas: {formatRupiah(periodStats.grandTotalLunasValue)} ({periodStats.grandTotalLunasCount})</span>
+                </p>
+                <p className="text-[10px] font-extrabold text-amber-200 flex items-center gap-1 truncate">
+                  <Clock className="w-3 h-3 flex-shrink-0 text-amber-300" />
+                  <span>OS: {formatRupiah(periodStats.grandTotalOsValue)} ({periodStats.grandTotalOsCount})</span>
+                </p>
+              </div>
             </div>
             <div className="p-2.5 bg-white/20 backdrop-blur-md text-white rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
               <span className="font-black text-xs">Rp</span>
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-indigo-500/50 flex items-center justify-between">
+          <div className="mt-2.5 pt-2 border-t border-indigo-500/50 flex items-center justify-between">
             <span className="text-[10px] text-indigo-100 font-extrabold flex items-center truncate">
               <TrendingUp className="w-3.5 h-3.5 inline mr-0.5 flex-shrink-0" />
-              Total {periodStats.grandTotalCount} Kasus
+              Total {periodStats.grandTotalCount} Transaksi
             </span>
-            <span className="text-[8.5px] text-indigo-200 font-semibold flex-shrink-0">{periodStats.grandSettlementRatio}% Rasio</span>
+            <span className="text-[8.5px] text-indigo-200 font-bold bg-indigo-800/60 px-1.5 py-0.5 rounded flex-shrink-0">
+              {periodStats.grandSettlementRatio}% Lunas
+            </span>
           </div>
         </div>
       </div>
