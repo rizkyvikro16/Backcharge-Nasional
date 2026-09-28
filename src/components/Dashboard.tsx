@@ -85,7 +85,7 @@ export default function Dashboard({
 
   // Drill-down per branch modal state
   const [branchSearch, setBranchSearch] = useState('');
-  const [branchSort, setBranchSort] = useState<'total-desc' | 'total-asc' | 'value-desc' | 'ratio-desc'>('total-desc');
+  const [branchSort, setBranchSort] = useState<'top3-value-asc' | 'total-desc' | 'total-asc' | 'value-desc' | 'value-asc' | 'ratio-desc'>('top3-value-asc');
   const [branchPerformanceFilter, setBranchPerformanceFilter] = useState<'all' | 'low' | 'top10'>('all');
   
   const [selectedDrillDownBranch, setSelectedDrillDownBranch] = useState<string | null>(null);
@@ -1058,17 +1058,47 @@ export default function Dashboard({
         .slice(0, 10);
     }
 
-    // Sort the final result based on selection
+    // Sort the final result based on selection (TOP 1, TOP 2, TOP 3, then nominal terkecil ke terbesar)
     list.sort((a, b) => {
+      if (branchSort === 'top3-value-asc') {
+        const top1 = absoluteTop3Names[0];
+        const top2 = absoluteTop3Names[1];
+        const top3 = absoluteTop3Names[2];
+
+        const getRankPriority = (name: string) => {
+          if (name === top1) return 1;
+          if (name === top2) return 2;
+          if (name === top3) return 3;
+          return 4;
+        };
+
+        const rankA = getRankPriority(a.name);
+        const rankB = getRankPriority(b.name);
+
+        if (rankA !== rankB) {
+          return rankA - rankB;
+        }
+
+        // Rank 4: Remaining branches after TOP 1, 2, 3 sorted from nominal terkecil ke terbesar
+        if (a.totalValue !== b.totalValue) {
+          return a.totalValue - b.totalValue;
+        }
+        if (a.totalCases !== b.totalCases) {
+          return a.totalCases - b.totalCases;
+        }
+        return a.name.localeCompare(b.name);
+      }
+
       if (branchSort === 'total-desc') return b.totalCases - a.totalCases;
       if (branchSort === 'total-asc') return a.totalCases - b.totalCases;
       if (branchSort === 'value-desc') return b.totalValue - a.totalValue;
+      if (branchSort === 'value-asc') return a.totalValue - b.totalValue;
       if (branchSort === 'ratio-desc') return b.ratio - a.ratio;
       return 0;
     });
 
     return list;
-  }, [baseBranchStatsList, branchSearch, branchPerformanceFilter, branchSort]);
+  }, [baseBranchStatsList, branchSearch, branchPerformanceFilter, branchSort, absoluteTop3Names]);
 
   // Drill down branch transactions filtering (Memoized)
   const drillDownTransactions = useMemo(() => {
@@ -1941,9 +1971,11 @@ export default function Dashboard({
                   onChange={(e: any) => setBranchSort(e.target.value)}
                   className="bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-[11px] font-black focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
                 >
+                  <option value="top3-value-asc">TOP 1, 2, 3 → Nominal Terkecil (Default)</option>
                   <option value="total-desc">Transaksi (Tinggi-Rendah)</option>
                   <option value="total-asc">Transaksi (Rendah-Tinggi)</option>
                   <option value="value-desc">Nilai Terbesar</option>
+                  <option value="value-asc">Nilai Terkecil</option>
                   <option value="ratio-desc">Pelunasan Tertinggi</option>
                 </select>
               </div>
@@ -2046,7 +2078,7 @@ export default function Dashboard({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-bold text-slate-700 bg-white">
-                  {processedBranches.map((b) => {
+                  {processedBranches.map((b, bIdx) => {
                     const isTop1 = absoluteTop3Names[0] === b.name;
                     const isTop2 = absoluteTop3Names[1] === b.name;
                     const isTop3 = absoluteTop3Names[2] === b.name;
@@ -2092,18 +2124,18 @@ export default function Dashboard({
                           <div className="flex flex-col">
                             <span className="font-extrabold text-slate-800 group-hover:text-indigo-700 transition-colors text-xs">{b.name}</span>
                             {isTop1 && (
-                              <span className="text-[7.5px] font-black text-amber-600 uppercase tracking-wider flex items-center gap-0.5 mt-0.5">
-                                🏆 Top Performer #1
+                              <span className="text-[8px] font-black text-amber-700 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.2 uppercase tracking-wider flex items-center gap-0.5 mt-0.5 shadow-xs w-fit">
+                                🏆 TOP 1
                               </span>
                             )}
                             {isTop2 && (
-                              <span className="text-[7.5px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-0.5 mt-0.5">
-                                🥈 Top Performer #2
+                              <span className="text-[8px] font-black text-slate-700 bg-slate-100 border border-slate-300 rounded px-1.5 py-0.2 uppercase tracking-wider flex items-center gap-0.5 mt-0.5 shadow-xs w-fit">
+                                🥈 TOP 2
                               </span>
                             )}
                             {isTop3 && (
-                              <span className="text-[7.5px] font-black text-amber-700 uppercase tracking-wider flex items-center gap-0.5 mt-0.5">
-                                🥉 Top Performer #3
+                              <span className="text-[8px] font-black text-amber-900 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.2 uppercase tracking-wider flex items-center gap-0.5 mt-0.5 shadow-xs w-fit">
+                                🥉 TOP 3
                               </span>
                             )}
                           </div>
