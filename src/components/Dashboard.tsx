@@ -351,20 +351,27 @@ export default function Dashboard({
 
     const catPipelines: Record<BackchargeCategory, {
       stage1Input: number;
+      stage1InputValue: number;
       stage2InAso: number;
+      stage2InAsoValue: number;
       stage3AtAdmin: number;
+      stage3AtAdminValue: number;
       stage4ApproveL1: number;
+      stage4ApproveL1Value: number;
       stage5RegionalApprove: number;
+      stage5RegionalApproveValue: number;
       stage6DivisionApprove: number;
+      stage6DivisionApproveValue: number;
       stage7Invoice: number;
+      stage7InvoiceValue: number;
     }> = {
-      'Own Risk': { stage1Input: 0, stage2InAso: 0, stage3AtAdmin: 0, stage4ApproveL1: 0, stage5RegionalApprove: 0, stage6DivisionApprove: 0, stage7Invoice: 0 },
-      'Maintenance': { stage1Input: 0, stage2InAso: 0, stage3AtAdmin: 0, stage4ApproveL1: 0, stage5RegionalApprove: 0, stage6DivisionApprove: 0, stage7Invoice: 0 },
-      'Ekspedisi': { stage1Input: 0, stage2InAso: 0, stage3AtAdmin: 0, stage4ApproveL1: 0, stage5RegionalApprove: 0, stage6DivisionApprove: 0, stage7Invoice: 0 },
-      'ETLE': { stage1Input: 0, stage2InAso: 0, stage3AtAdmin: 0, stage4ApproveL1: 0, stage5RegionalApprove: 0, stage6DivisionApprove: 0, stage7Invoice: 0 },
-      'TPL': { stage1Input: 0, stage2InAso: 0, stage3AtAdmin: 0, stage4ApproveL1: 0, stage5RegionalApprove: 0, stage6DivisionApprove: 0, stage7Invoice: 0 },
-      'Unclaimable Insurance': { stage1Input: 0, stage2InAso: 0, stage3AtAdmin: 0, stage4ApproveL1: 0, stage5RegionalApprove: 0, stage6DivisionApprove: 0, stage7Invoice: 0 },
-      'Dokumen Kendaraan': { stage1Input: 0, stage2InAso: 0, stage3AtAdmin: 0, stage4ApproveL1: 0, stage5RegionalApprove: 0, stage6DivisionApprove: 0, stage7Invoice: 0 }
+      'Own Risk': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 },
+      'Maintenance': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 },
+      'Ekspedisi': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 },
+      'ETLE': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 },
+      'TPL': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 },
+      'Unclaimable Insurance': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 },
+      'Dokumen Kendaraan': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 }
     };
 
     filteredTransactions.forEach(t => {
@@ -435,25 +442,32 @@ export default function Dashboard({
       const stepPayment = t.status_payment === 'Lunas';
       const isNotBill = t.status_sap === 'Not Bill';
 
-      // Populate Category Pipeline
+      // Populate Category Pipeline (Counts & Values)
       if (catPipelines[cat]) {
         catPipelines[cat].stage1Input++;
+        catPipelines[cat].stage1InputValue += transVal;
         if (t.status_handover === 'Pending') {
           catPipelines[cat].stage2InAso++;
+          catPipelines[cat].stage2InAsoValue += transVal;
         } else if (stepInvoice || stepPayment || isNotBill) {
           // Excluded from stage 4 to 7 bottleneck but counted in stage1Input
         } else if (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') {
           if (isPendingL1) {
             catPipelines[cat].stage4ApproveL1++;
+            catPipelines[cat].stage4ApproveL1Value += transVal;
           } else if (isL1Approved && isRegionalHeadReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval')) {
             catPipelines[cat].stage5RegionalApprove++;
+            catPipelines[cat].stage5RegionalApproveValue += transVal;
           } else if (isL1Approved && isRegionalApproved && isDivisionHeadReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval')) {
             catPipelines[cat].stage6DivisionApprove++;
+            catPipelines[cat].stage6DivisionApproveValue += transVal;
           } else {
             catPipelines[cat].stage7Invoice++;
+            catPipelines[cat].stage7InvoiceValue += transVal;
           }
         } else {
           catPipelines[cat].stage7Invoice++;
+          catPipelines[cat].stage7InvoiceValue += transVal;
         }
       }
 
@@ -481,10 +495,11 @@ export default function Dashboard({
     // Stage 3: Berkas di Admin = Total Input ASO - Berkas di ASO (s2InAso)
     const s3AtAdmin = s1Input - s2InAso;
 
-    // Calculate category s3AtAdmin
+    // Calculate category s3AtAdmin (Berkas Admin = Total Input ASO - Berkas di ASO)
     Object.keys(catPipelines).forEach(catKey => {
       const k = catKey as BackchargeCategory;
       catPipelines[k].stage3AtAdmin = catPipelines[k].stage1Input - catPipelines[k].stage2InAso;
+      catPipelines[k].stage3AtAdminValue = Math.max(0, catPipelines[k].stage1InputValue - catPipelines[k].stage2InAsoValue);
     });
 
     const nowMsVal = Date.now();
@@ -1511,21 +1526,32 @@ export default function Dashboard({
 
           // Metrics calculations
           let totalFilteredTransactions = 0;
+          let totalFilteredValue = 0;
           let totalActiveBottleneckCells = 0;
           let totalPendingSlaTransactions = 0;
+          let totalPendingSlaValue = 0;
 
           filteredCategories.forEach(cat => {
             const count = categoryStats[cat]?.count || 0;
+            const catVal = categoryStats[cat]?.value || 0;
             totalFilteredTransactions += count;
+            totalFilteredValue += catVal;
 
             const pipeline = categoryPipelines[cat] || {
               stage1Input: 0,
+              stage1InputValue: 0,
               stage2InAso: 0,
+              stage2InAsoValue: 0,
               stage3AtAdmin: 0,
+              stage3AtAdminValue: 0,
               stage4ApproveL1: 0,
+              stage4ApproveL1Value: 0,
               stage5RegionalApprove: 0,
+              stage5RegionalApproveValue: 0,
               stage6DivisionApprove: 0,
+              stage6DivisionApproveValue: 0,
               stage7Invoice: 0,
+              stage7InvoiceValue: 0,
             };
 
             if (pipeline.stage2InAso > 0) totalActiveBottleneckCells++;
@@ -1542,6 +1568,14 @@ export default function Dashboard({
               (pipeline.stage5RegionalApprove || 0) +
               (pipeline.stage6DivisionApprove || 0) +
               (pipeline.stage7Invoice || 0);
+
+            totalPendingSlaValue +=
+              (pipeline.stage2InAsoValue || 0) +
+              (pipeline.stage3AtAdminValue || 0) +
+              (pipeline.stage4ApproveL1Value || 0) +
+              (pipeline.stage5RegionalApproveValue || 0) +
+              (pipeline.stage6DivisionApproveValue || 0) +
+              (pipeline.stage7InvoiceValue || 0);
           });
 
           return (
@@ -1549,31 +1583,34 @@ export default function Dashboard({
               {/* Summary Cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
-                  <div className="space-y-0.5">
+                  <div className="space-y-0.5 min-w-0">
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Total Volume Terfilter</span>
                     <span className="text-sm font-black text-slate-900 block">{totalFilteredTransactions} Transaksi</span>
+                    <span className="text-[10px] font-extrabold text-indigo-600 block truncate">{formatRupiah(totalFilteredValue)}</span>
                   </div>
-                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl flex-shrink-0">
                     <Layers className="w-4 h-4" />
                   </div>
                 </div>
 
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
-                  <div className="space-y-0.5">
+                  <div className="space-y-0.5 min-w-0">
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Titik Hambatan Aktif</span>
                     <span className="text-sm font-black text-amber-600 block">{totalActiveBottleneckCells} Tahapan Terhenti</span>
+                    <span className="text-[10px] font-bold text-slate-400 block truncate">Di 6 Tahapan Alur Proses</span>
                   </div>
-                  <div className="p-2 bg-amber-50 text-amber-600 rounded-xl">
+                  <div className="p-2 bg-amber-50 text-amber-600 rounded-xl flex-shrink-0">
                     <AlertTriangle className="w-4 h-4 animate-pulse" />
                   </div>
                 </div>
 
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
-                  <div className="space-y-0.5">
+                  <div className="space-y-0.5 min-w-0">
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Total Antrean Outstanding</span>
                     <span className="text-sm font-black text-rose-600 block">{totalPendingSlaTransactions} Pending</span>
+                    <span className="text-[10px] font-extrabold text-rose-600 block truncate">{formatRupiah(totalPendingSlaValue)}</span>
                   </div>
-                  <div className="p-2 bg-rose-50 text-rose-600 rounded-xl">
+                  <div className="p-2 bg-rose-50 text-rose-600 rounded-xl flex-shrink-0">
                     <Clock className="w-4 h-4" />
                   </div>
                 </div>
@@ -1625,41 +1662,54 @@ export default function Dashboard({
                       filteredCategories.map((cat) => {
                         const colors = getCategoryColorClass(cat);
                         const count = categoryStats[cat]?.count || 0;
+                        const catValue = categoryStats[cat]?.value || 0;
                         const pipeline = categoryPipelines[cat] || {
                           stage1Input: 0,
+                          stage1InputValue: 0,
                           stage2InAso: 0,
+                          stage2InAsoValue: 0,
                           stage3AtAdmin: 0,
+                          stage3AtAdminValue: 0,
                           stage4ApproveL1: 0,
+                          stage4ApproveL1Value: 0,
                           stage5RegionalApprove: 0,
+                          stage5RegionalApproveValue: 0,
                           stage6DivisionApprove: 0,
+                          stage6DivisionApproveValue: 0,
                           stage7Invoice: 0,
+                          stage7InvoiceValue: 0,
                         };
 
                         return (
                           <tr key={cat} className="hover:bg-slate-50/30 divide-x divide-slate-100 transition-colors">
                             {/* Category Header Cell */}
                             <td className="px-3.5 py-3 whitespace-nowrap">
-                              <div className="flex items-center space-x-2">
-                                <span className={`w-2.5 h-2.5 rounded-full ${colors.bg}`}></span>
+                              <div className="flex items-center space-x-2.5">
+                                <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${colors.bg}`}></span>
                                 <div className="min-w-0">
                                   <span className="block text-xs font-black text-slate-800 uppercase tracking-wide truncate">{cat}</span>
-                                  <span className={`inline-block ${colors.lightBg} ${colors.text} px-1.5 py-0.2 rounded-full text-[9px] font-extrabold border ${colors.border} mt-0.5`}>
-                                    {count} Transaksi
-                                  </span>
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span className={`inline-block ${colors.lightBg} ${colors.text} px-1.5 py-0.2 rounded-full text-[9px] font-extrabold border ${colors.border}`}>
+                                      {count} Transaksi
+                                    </span>
+                                    <span className="text-[10px] font-extrabold text-slate-600 truncate">
+                                      {formatRupiah(catValue)}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             </td>
 
-                            {/* Stage 2: Berkas ASO */}
+                            {/* 1. Berkas ASO (Flow 1) */}
                             <td className="p-1">
                               <div 
                                 onClick={() => onSelectDashboardFilter?.({ category: cat, stage: '1_handover' })}
-                                className={`group h-full min-h-[56px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
+                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
                                   pipeline.stage2InAso > 0 
                                     ? 'bg-rose-50 hover:bg-rose-100/70 border border-rose-200 hover:border-rose-400 shadow-sm' 
                                     : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
                                 }`}
-                                title={`Klik untuk menyaring kategori ${cat} fisik di ASO`}
+                                title={`Klik untuk menyaring kategori ${cat} fisik di ASO (${formatRupiah(pipeline.stage2InAsoValue || 0)})`}
                               >
                                 <div className="flex justify-between items-center">
                                   <span className="text-[8px] font-black text-rose-500 uppercase">Berkas ASO</span>
@@ -1675,19 +1725,24 @@ export default function Dashboard({
                                     </span>
                                   )}
                                 </div>
+                                <div className="mt-1 pt-1 border-t border-rose-100/80 flex items-center justify-between">
+                                  <span className={`text-[9px] font-extrabold truncate ${pipeline.stage2InAso > 0 ? 'text-rose-700' : 'text-slate-300 group-hover:text-slate-400'}`}>
+                                    {formatRupiah(pipeline.stage2InAsoValue || 0)}
+                                  </span>
+                                </div>
                               </div>
                             </td>
 
-                            {/* Stage 3: Berkas Admin */}
+                            {/* 2. Berkas Admin (Flow 2) */}
                             <td className="p-1">
                               <div 
                                 onClick={() => onSelectDashboardFilter?.({ category: cat, stage: '2_confirm' })}
-                                className={`group h-full min-h-[56px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
+                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
                                   pipeline.stage3AtAdmin > 0 
                                     ? 'bg-indigo-50/55 hover:bg-indigo-100/50 border border-indigo-200 hover:border-indigo-400 shadow-sm' 
                                     : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
                                 }`}
-                                title={`Klik untuk menyaring kategori ${cat} di Admin`}
+                                title={`Klik untuk menyaring kategori ${cat} di Admin (${formatRupiah(pipeline.stage3AtAdminValue || 0)})`}
                               >
                                 <div className="flex justify-between items-center">
                                   <span className="text-[8px] font-black text-indigo-500 uppercase">Berkas Admin</span>
@@ -1703,19 +1758,24 @@ export default function Dashboard({
                                     </span>
                                   )}
                                 </div>
+                                <div className="mt-1 pt-1 border-t border-indigo-100/80 flex items-center justify-between">
+                                  <span className={`text-[9px] font-extrabold truncate ${pipeline.stage3AtAdmin > 0 ? 'text-indigo-700' : 'text-slate-300 group-hover:text-slate-400'}`}>
+                                    {formatRupiah(pipeline.stage3AtAdminValue || 0)}
+                                  </span>
+                                </div>
                               </div>
                             </td>
 
-                            {/* Stage 4: Belum Approve BM/Kacab */}
+                            {/* 3. Belum Approve BM/Kacab (Flow 3) */}
                             <td className="p-1">
                               <div 
                                 onClick={() => onSelectDashboardFilter?.({ category: cat, stage: '3_sap_l1' })}
-                                className={`group h-full min-h-[56px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
+                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
                                   pipeline.stage4ApproveL1 > 0 
                                     ? 'bg-amber-50 hover:bg-amber-100/50 border border-amber-200 hover:border-amber-400 shadow-sm' 
                                     : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
                                 }`}
-                                title={`Klik untuk menyaring kategori ${cat} Belum Approve L1`}
+                                title={`Klik untuk menyaring kategori ${cat} Belum Approve L1 (${formatRupiah(pipeline.stage4ApproveL1Value || 0)})`}
                               >
                                 <div className="flex justify-between items-center">
                                   <span className="text-[8px] font-black text-amber-500 uppercase">Belum Appr. SH/Kacab</span>
@@ -1731,19 +1791,24 @@ export default function Dashboard({
                                     </span>
                                   )}
                                 </div>
+                                <div className="mt-1 pt-1 border-t border-amber-100/80 flex items-center justify-between">
+                                  <span className={`text-[9px] font-extrabold truncate ${pipeline.stage4ApproveL1 > 0 ? 'text-amber-700' : 'text-slate-300 group-hover:text-slate-400'}`}>
+                                    {formatRupiah(pipeline.stage4ApproveL1Value || 0)}
+                                  </span>
+                                </div>
                               </div>
                             </td>
 
-                            {/* Stage 5: Belum Approve RH */}
+                            {/* 4. Belum Approve RH (Flow 4) */}
                             <td className="p-1">
                               <div 
                                 onClick={() => onSelectDashboardFilter?.({ category: cat, stage: '3_sap_rh' })}
-                                className={`group h-full min-h-[56px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
+                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
                                   pipeline.stage5RegionalApprove > 0 
                                     ? 'bg-orange-50 hover:bg-orange-100/50 border border-orange-200 hover:border-orange-400 shadow-sm' 
                                     : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
                                 }`}
-                                title={`Klik untuk menyaring kategori ${cat} Belum Approve Regional Head`}
+                                title={`Klik untuk menyaring kategori ${cat} Belum Approve Regional Head (${formatRupiah(pipeline.stage5RegionalApproveValue || 0)})`}
                               >
                                 <div className="flex justify-between items-center">
                                   <span className="text-[8px] font-black text-orange-500 uppercase font-sans">Belum Appr. RH</span>
@@ -1759,19 +1824,24 @@ export default function Dashboard({
                                     </span>
                                   )}
                                 </div>
+                                <div className="mt-1 pt-1 border-t border-orange-100/80 flex items-center justify-between">
+                                  <span className={`text-[9px] font-extrabold truncate ${pipeline.stage5RegionalApprove > 0 ? 'text-orange-700' : 'text-slate-300 group-hover:text-slate-400'}`}>
+                                    {formatRupiah(pipeline.stage5RegionalApproveValue || 0)}
+                                  </span>
+                                </div>
                               </div>
                             </td>
 
-                            {/* Stage 6: Belum Approve DH */}
+                            {/* 5. Belum Approve DH (Flow 5) */}
                             <td className="p-1">
                               <div 
                                 onClick={() => onSelectDashboardFilter?.({ category: cat, stage: '3_sap_dh' })}
-                                className={`group h-full min-h-[56px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
+                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
                                   pipeline.stage6DivisionApprove > 0 
                                     ? 'bg-rose-50 hover:bg-rose-100/50 border border-rose-200 hover:border-rose-400 shadow-sm' 
                                     : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
                                 }`}
-                                title={`Klik untuk menyaring kategori ${cat} Belum Approve Division Head`}
+                                title={`Klik untuk menyaring kategori ${cat} Belum Approve Division Head (${formatRupiah(pipeline.stage6DivisionApproveValue || 0)})`}
                               >
                                 <div className="flex justify-between items-center">
                                   <span className="text-[8px] font-black text-rose-500 uppercase font-sans">Belum Appr. DH</span>
@@ -1787,19 +1857,24 @@ export default function Dashboard({
                                     </span>
                                   )}
                                 </div>
+                                <div className="mt-1 pt-1 border-t border-rose-100/80 flex items-center justify-between">
+                                  <span className={`text-[9px] font-extrabold truncate ${pipeline.stage6DivisionApprove > 0 ? 'text-rose-700' : 'text-slate-300 group-hover:text-slate-400'}`}>
+                                    {formatRupiah(pipeline.stage6DivisionApproveValue || 0)}
+                                  </span>
+                                </div>
                               </div>
                             </td>
 
-                            {/* Stage 7: Belum Cetak Invoice */}
+                            {/* 6. Belum Cetak Invoice (Flow 6) */}
                             <td className="p-1">
                               <div 
                                 onClick={() => onSelectDashboardFilter?.({ category: cat, stage: '4_invoice' })}
-                                className={`group h-full min-h-[56px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
+                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
                                   pipeline.stage7Invoice > 0 
                                     ? 'bg-cyan-50 hover:bg-cyan-100/50 border border-cyan-200 hover:border-cyan-400 shadow-sm' 
                                     : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
                                 }`}
-                                title={`Klik untuk menyaring kategori ${cat} Belum Cetak Invoice`}
+                                title={`Klik untuk menyaring kategori ${cat} Belum Cetak Invoice (${formatRupiah(pipeline.stage7InvoiceValue || 0)})`}
                               >
                                 <div className="flex justify-between items-center">
                                   <span className="text-[8px] font-black text-cyan-500 uppercase font-sans">Blm Invoice</span>
@@ -1814,6 +1889,11 @@ export default function Dashboard({
                                       Pending
                                     </span>
                                   )}
+                                </div>
+                                <div className="mt-1 pt-1 border-t border-cyan-100/80 flex items-center justify-between">
+                                  <span className={`text-[9px] font-extrabold truncate ${pipeline.stage7Invoice > 0 ? 'text-cyan-700' : 'text-slate-300 group-hover:text-slate-400'}`}>
+                                    {formatRupiah(pipeline.stage7InvoiceValue || 0)}
+                                  </span>
                                 </div>
                               </div>
                             </td>
