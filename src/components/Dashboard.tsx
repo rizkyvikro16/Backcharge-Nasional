@@ -35,6 +35,12 @@ const getCategoryColorClass = (cat: BackchargeCategory) => {
   }
 };
 
+const formatRatio = (val: number) => {
+  if (!val || isNaN(val) || val <= 0) return '0%';
+  if (val >= 100) return '100%';
+  return val < 0.1 ? '<0.1%' : (val < 10 ? val.toFixed(1) : Math.round(val).toString()) + '%';
+};
+
 export default function Dashboard({ 
   transactions, 
   currentUser, 
@@ -362,9 +368,14 @@ export default function Dashboard({
       }
     });
 
-    const cutoffSettlementRatio = cutoffValue > 0 ? Math.round((cutoffLunasValue / cutoffValue) * 100) : 0;
-    const currentMonthSettlementRatio = currentMonthValue > 0 ? Math.round((currentMonthLunasValue / currentMonthValue) * 100) : 0;
-    const grandSettlementRatio = grandTotalValue > 0 ? Math.round((grandTotalLunasValue / grandTotalValue) * 100) : 0;
+    const cutoffLunasRatio = cutoffValue > 0 ? (cutoffLunasValue / cutoffValue) * 100 : 0;
+    const cutoffOsRatio = cutoffValue > 0 ? (cutoffOsValue / cutoffValue) * 100 : 0;
+
+    const currentMonthLunasRatio = currentMonthValue > 0 ? (currentMonthLunasValue / currentMonthValue) * 100 : 0;
+    const currentMonthOsRatio = currentMonthValue > 0 ? (currentMonthOsValue / currentMonthValue) * 100 : 0;
+
+    const grandLunasRatio = grandTotalValue > 0 ? (grandTotalLunasValue / grandTotalValue) * 100 : 0;
+    const grandOsRatio = grandTotalValue > 0 ? (grandTotalOsValue / grandTotalValue) * 100 : 0;
 
     return {
       currentMonthLabel,
@@ -381,21 +392,27 @@ export default function Dashboard({
       cutoffLunasValue,
       cutoffOsCount,
       cutoffOsValue,
-      cutoffSettlementRatio,
+      cutoffLunasRatio,
+      cutoffOsRatio,
+      cutoffSettlementRatio: Math.round(cutoffLunasRatio),
       currentMonthCount,
       currentMonthValue,
       currentMonthLunasCount,
       currentMonthLunasValue,
       currentMonthOsCount,
       currentMonthOsValue,
-      currentMonthSettlementRatio,
+      currentMonthLunasRatio,
+      currentMonthOsRatio,
+      currentMonthSettlementRatio: Math.round(currentMonthLunasRatio),
       grandTotalCount,
       grandTotalValue,
       grandTotalLunasCount,
       grandTotalLunasValue,
       grandTotalOsCount,
       grandTotalOsValue,
-      grandSettlementRatio
+      grandLunasRatio,
+      grandOsRatio,
+      grandSettlementRatio: Math.round(grandLunasRatio)
     };
   }, [filteredTransactions]);
 
@@ -1493,62 +1510,205 @@ export default function Dashboard({
       </div>
 
       {/* 2. EXECUTIVE KPI CARDS GRID (3. KPI TAMBAHAN) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4.5">
-        {/* CARD 1: TRANSAKSI TGL AWAL S.D. CUTOFF SEBELUM BULAN BERJALAN */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3.5 sm:gap-4">
+        {/* CARD 1: S.D. CUTOFF BULAN LALU */}
         <div 
           onClick={() => onSelectDashboardFilter?.({ endDate: periodStats.cutoffDateStr })}
-          className="bg-white p-4.5 rounded-3xl border border-slate-200 border-t-4 border-t-blue-500 shadow-md hover:shadow-xl hover:border-blue-300 transition-all duration-300 relative group overflow-hidden flex flex-col justify-between cursor-pointer active:scale-[0.98] transform"
+          className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md hover:border-blue-300 transition-all duration-200 p-4 flex flex-col justify-between cursor-pointer active:scale-[0.99] group"
           title={`Klik untuk menyaring transaksi s.d. cut-off ${periodStats.cutoffDateLabel}`}
         >
-          <div className="flex justify-between items-start">
-            <div className="space-y-1 min-w-0 pr-1">
-              <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider font-sans group-hover:text-blue-600 transition-colors flex items-center gap-1">
-                <span>S.D. CUTOFF BULAN LALU</span>
-              </p>
-              <h3 className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">{periodStats.cutoffCount}</h3>
-              <p className="text-xs font-black text-blue-700 truncate mt-0.5">{formatRupiah(periodStats.cutoffValue)}</p>
+          <div>
+            {/* Header: Icon + Title + Pill */}
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+              <div className="flex items-center space-x-2 min-w-0">
+                <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg group-hover:scale-105 transition-transform flex-shrink-0">
+                  <History className="w-4 h-4" />
+                </div>
+                <span className="text-[10.5px] font-extrabold tracking-wider uppercase text-slate-700 truncate">
+                  S.D. CUTOFF BULAN LALU
+                </span>
+              </div>
+              <span className="text-[9px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-md flex-shrink-0">
+                Cutoff
+              </span>
             </div>
-            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
-              <Layers className="w-4 h-4" />
+
+            {/* Main Primary Metric */}
+            <div className="py-2.5">
+              <div className="flex items-baseline space-x-1.5">
+                <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                  {periodStats.cutoffCount}
+                </span>
+                <span className="text-xs font-semibold text-slate-400">Transaksi</span>
+              </div>
+              <p className="text-xs sm:text-sm font-extrabold text-slate-700 mt-0.5 truncate">
+                {formatRupiah(periodStats.cutoffValue)}
+              </p>
+            </div>
+
+            {/* Semantic 2-Column Comparison Block (LUNAS vs OS) */}
+            <div className="grid grid-cols-2 gap-1.5 my-1">
+              {/* LUNAS BLOCK */}
+              <div className="bg-emerald-50/80 border border-emerald-200/70 rounded-xl p-2 flex flex-col justify-between">
+                <div className="flex items-center space-x-1 text-emerald-700">
+                  <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-600" />
+                  <span className="text-[9px] font-black tracking-wider uppercase">LUNAS</span>
+                </div>
+                <div className="mt-1">
+                  <div className="text-[11px] sm:text-xs font-black text-emerald-950 truncate">
+                    {formatRupiah(periodStats.cutoffLunasValue)}
+                  </div>
+                  <div className="text-[9.5px] font-semibold text-emerald-700 mt-0.5">
+                    {periodStats.cutoffLunasCount} Transaksi
+                  </div>
+                </div>
+              </div>
+
+              {/* OS BLOCK */}
+              <div className="bg-amber-50/80 border border-amber-200/70 rounded-xl p-2 flex flex-col justify-between">
+                <div className="flex items-center space-x-1 text-amber-800">
+                  <Clock className="w-3 h-3 flex-shrink-0 text-amber-600" />
+                  <span className="text-[9px] font-black tracking-wider uppercase">OS</span>
+                </div>
+                <div className="mt-1">
+                  <div className="text-[11px] sm:text-xs font-black text-amber-950 truncate">
+                    {formatRupiah(periodStats.cutoffOsValue)}
+                  </div>
+                  <div className="text-[9.5px] font-semibold text-amber-800 mt-0.5">
+                    {periodStats.cutoffOsCount} Transaksi
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Segmented Progress Bar */}
+            <div className="mt-2 space-y-1">
+              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden flex">
+                <div 
+                  className="bg-emerald-500 h-full transition-all duration-500" 
+                  style={{ width: `${Math.max(periodStats.cutoffLunasRatio > 0 ? 3 : 0, periodStats.cutoffLunasRatio)}%` }} 
+                />
+                <div 
+                  className="bg-amber-400 h-full transition-all duration-500" 
+                  style={{ width: `${Math.max(periodStats.cutoffOsRatio > 0 ? 3 : 0, periodStats.cutoffOsRatio)}%` }} 
+                />
+              </div>
+              <div className="flex items-center justify-between text-[8.5px] font-bold">
+                <span className="text-emerald-700">Lunas {formatRatio(periodStats.cutoffLunasRatio)}</span>
+                <span className="text-amber-700">OS {formatRatio(periodStats.cutoffOsRatio)}</span>
+              </div>
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
-            <span className="text-[10px] font-extrabold text-blue-600 flex items-center truncate">
-              <History className="w-3.5 h-3.5 mr-0.5 flex-shrink-0" />
+
+          {/* Footer Period / Cutoff Info */}
+          <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
+            <span className="font-extrabold text-blue-600 flex items-center truncate">
+              <Calendar className="w-3 h-3 mr-1 text-blue-500 flex-shrink-0" />
               Cutoff {periodStats.cutoffMonthName}
             </span>
-            <span className="text-[8.5px] text-slate-400 font-semibold truncate">s.d. {periodStats.cutoffDateLabel}</span>
+            <span className="text-[8.5px] text-slate-400 font-semibold truncate">
+              s.d. {periodStats.cutoffDateLabel}
+            </span>
           </div>
         </div>
 
         {/* CARD 2: REALISASI & OS S.D. CUTOFF */}
         <div 
           onClick={() => onSelectDashboardFilter?.({ statusPayment: 'Lunas', endDate: periodStats.cutoffDateStr })}
-          className="bg-emerald-50/30 p-4.5 rounded-3xl border border-emerald-200/80 border-t-4 border-t-emerald-500 shadow-md hover:shadow-xl hover:border-emerald-400 transition-all duration-300 relative group overflow-hidden flex flex-col justify-between cursor-pointer active:scale-[0.98] transform"
+          className="bg-white rounded-2xl border border-emerald-200/90 shadow-sm hover:shadow-md hover:border-emerald-400 transition-all duration-200 p-4 flex flex-col justify-between cursor-pointer active:scale-[0.99] group"
           title={`Klik untuk melihat rincian terbayar & OS s.d. cutoff ${periodStats.cutoffDateLabel}`}
         >
-          <div className="flex justify-between items-start">
-            <div className="space-y-0.5 min-w-0 pr-1">
-              <p className="text-[9px] font-black text-emerald-800 uppercase tracking-wider font-sans group-hover:text-emerald-600 transition-colors">
-                TERBAYAR &amp; OS S.D. CUTOFF
-              </p>
-              <h3 className="text-xl sm:text-2xl font-black text-emerald-950 mt-1 truncate">{formatRupiah(periodStats.cutoffLunasValue)}</h3>
-              <p className="text-[10px] font-extrabold text-emerald-700 flex items-center gap-1 mt-0.5">
-                <CheckCircle className="w-3 h-3 flex-shrink-0" />
-                {periodStats.cutoffLunasCount} Transaksi Lunas
+          <div>
+            {/* Header: Icon + Title + Pill */}
+            <div className="flex items-center justify-between pb-2.5 border-b border-emerald-100/70">
+              <div className="flex items-center space-x-2 min-w-0">
+                <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg group-hover:scale-105 transition-transform flex-shrink-0">
+                  <CheckCircle className="w-4 h-4" />
+                </div>
+                <span className="text-[10.5px] font-extrabold tracking-wider uppercase text-slate-700 truncate">
+                  TERBAYAR &amp; OS S.D. CUTOFF
+                </span>
+              </div>
+              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md flex-shrink-0">
+                Realisasi
+              </span>
+            </div>
+
+            {/* Main Primary Metric */}
+            <div className="py-2.5">
+              <div className="flex items-baseline space-x-1.5">
+                <span className="text-xl sm:text-2xl font-black text-emerald-950 tracking-tight truncate">
+                  {formatRupiah(periodStats.cutoffLunasValue)}
+                </span>
+              </div>
+              <p className="text-xs font-bold text-emerald-700 mt-0.5 flex items-center gap-1">
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                <span>{periodStats.cutoffLunasCount} Transaksi Lunas</span>
               </p>
             </div>
-            <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
-              <CheckCircle className="w-4 h-4" />
+
+            {/* Semantic 2-Column Comparison Block */}
+            <div className="grid grid-cols-2 gap-1.5 my-1">
+              {/* LUNAS BLOCK */}
+              <div className="bg-emerald-50/90 border border-emerald-200/80 rounded-xl p-2 flex flex-col justify-between">
+                <div className="flex items-center space-x-1 text-emerald-700">
+                  <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-600" />
+                  <span className="text-[9px] font-black tracking-wider uppercase">LUNAS</span>
+                </div>
+                <div className="mt-1">
+                  <div className="text-[11px] sm:text-xs font-black text-emerald-950 truncate">
+                    {formatRupiah(periodStats.cutoffLunasValue)}
+                  </div>
+                  <div className="text-[9.5px] font-semibold text-emerald-700 mt-0.5">
+                    {periodStats.cutoffLunasCount} Transaksi
+                  </div>
+                </div>
+              </div>
+
+              {/* OS BLOCK */}
+              <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl p-2 flex flex-col justify-between">
+                <div className="flex items-center space-x-1 text-amber-800">
+                  <Clock className="w-3 h-3 flex-shrink-0 text-amber-600" />
+                  <span className="text-[9px] font-black tracking-wider uppercase">OS</span>
+                </div>
+                <div className="mt-1">
+                  <div className="text-[11px] sm:text-xs font-black text-amber-950 truncate">
+                    {formatRupiah(periodStats.cutoffOsValue)}
+                  </div>
+                  <div className="text-[9.5px] font-semibold text-amber-800 mt-0.5">
+                    {periodStats.cutoffOsCount} Transaksi
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Segmented Progress Bar */}
+            <div className="mt-2 space-y-1">
+              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden flex">
+                <div 
+                  className="bg-emerald-500 h-full transition-all duration-500" 
+                  style={{ width: `${Math.max(periodStats.cutoffLunasRatio > 0 ? 3 : 0, periodStats.cutoffLunasRatio)}%` }} 
+                />
+                <div 
+                  className="bg-amber-400 h-full transition-all duration-500" 
+                  style={{ width: `${Math.max(periodStats.cutoffOsRatio > 0 ? 3 : 0, periodStats.cutoffOsRatio)}%` }} 
+                />
+              </div>
+              <div className="flex items-center justify-between text-[8.5px] font-bold">
+                <span className="text-emerald-700">Lunas {formatRatio(periodStats.cutoffLunasRatio)}</span>
+                <span className="text-amber-700">OS {formatRatio(periodStats.cutoffOsRatio)}</span>
+              </div>
             </div>
           </div>
-          <div className="mt-2 pt-2 border-t border-emerald-100/80 flex items-center justify-between">
-            <div className="min-w-0">
-              <span className="text-[8px] font-black text-amber-800 uppercase tracking-wider block">OS Belum Bayar:</span>
-              <span className="text-[11px] font-black text-amber-700 block truncate">{formatRupiah(periodStats.cutoffOsValue)} ({periodStats.cutoffOsCount} OS)</span>
-            </div>
-            <span className="px-1.5 py-0.5 text-[8.5px] font-black rounded-md bg-emerald-100 text-emerald-800 flex-shrink-0">
-              {periodStats.cutoffSettlementRatio}% Lunas
+
+          {/* Footer Period Info */}
+          <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
+            <span className="font-extrabold text-emerald-700 flex items-center truncate">
+              <History className="w-3 h-3 mr-1 text-emerald-600 flex-shrink-0" />
+              Cutoff {periodStats.cutoffMonthName}
+            </span>
+            <span className="text-[8.5px] text-slate-400 font-semibold truncate">
+              s.d. {periodStats.cutoffDateLabel}
             </span>
           </div>
         </div>
@@ -1556,98 +1716,301 @@ export default function Dashboard({
         {/* CARD 3: TOTAL BULAN BERJALAN */}
         <div 
           onClick={() => onSelectDashboardFilter?.({ startDate: periodStats.currentMonthStartStr, endDate: periodStats.currentMonthEndStr })}
-          className="bg-purple-50/20 p-4.5 rounded-3xl border border-purple-200/80 border-t-4 border-t-purple-500 shadow-md hover:shadow-xl hover:border-purple-300 transition-all duration-300 relative group overflow-hidden flex flex-col justify-between cursor-pointer active:scale-[0.98] transform"
+          className="bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-md hover:border-purple-300 transition-all duration-200 p-4 flex flex-col justify-between cursor-pointer active:scale-[0.99] group"
           title={`Klik untuk menyaring transaksi bulan berjalan (${periodStats.currentMonthLabel})`}
         >
-          <div className="flex justify-between items-start">
-            <div className="space-y-1 min-w-0 pr-1">
-              <p className="text-[9px] font-black text-purple-900 uppercase tracking-wider font-sans group-hover:text-purple-700 transition-colors flex items-center gap-1">
-                <span>TOTAL BULAN BERJALAN</span>
-              </p>
-              <h3 className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">{periodStats.currentMonthCount}</h3>
-              <p className="text-xs font-black text-purple-700 truncate mt-0.5">{formatRupiah(periodStats.currentMonthValue)}</p>
+          <div>
+            {/* Header: Icon + Title + Pill */}
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+              <div className="flex items-center space-x-2 min-w-0">
+                <div className="p-1.5 bg-purple-50 text-purple-600 rounded-lg group-hover:scale-105 transition-transform flex-shrink-0">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <span className="text-[10.5px] font-extrabold tracking-wider uppercase text-slate-700 truncate">
+                  TOTAL BULAN BERJALAN
+                </span>
+              </div>
+              <span className="text-[9px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded-md flex-shrink-0">
+                Bulan Ini
+              </span>
             </div>
-            <div className="p-2.5 bg-purple-100 text-purple-700 rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
-              <Calendar className="w-4 h-4" />
+
+            {/* Main Primary Metric */}
+            <div className="py-2.5">
+              <div className="flex items-baseline space-x-1.5">
+                <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                  {periodStats.currentMonthCount}
+                </span>
+                <span className="text-xs font-semibold text-slate-400">Transaksi</span>
+              </div>
+              <p className="text-xs sm:text-sm font-extrabold text-slate-700 mt-0.5 truncate">
+                {formatRupiah(periodStats.currentMonthValue)}
+              </p>
+            </div>
+
+            {/* Semantic 2-Column Comparison Block */}
+            <div className="grid grid-cols-2 gap-1.5 my-1">
+              {/* LUNAS BLOCK */}
+              <div className="bg-emerald-50/80 border border-emerald-200/70 rounded-xl p-2 flex flex-col justify-between">
+                <div className="flex items-center space-x-1 text-emerald-700">
+                  <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-600" />
+                  <span className="text-[9px] font-black tracking-wider uppercase">LUNAS</span>
+                </div>
+                <div className="mt-1">
+                  <div className="text-[11px] sm:text-xs font-black text-emerald-950 truncate">
+                    {formatRupiah(periodStats.currentMonthLunasValue)}
+                  </div>
+                  <div className="text-[9.5px] font-semibold text-emerald-700 mt-0.5">
+                    {periodStats.currentMonthLunasCount} Transaksi
+                  </div>
+                </div>
+              </div>
+
+              {/* OS BLOCK */}
+              <div className="bg-amber-50/80 border border-amber-200/70 rounded-xl p-2 flex flex-col justify-between">
+                <div className="flex items-center space-x-1 text-amber-800">
+                  <Clock className="w-3 h-3 flex-shrink-0 text-amber-600" />
+                  <span className="text-[9px] font-black tracking-wider uppercase">OS</span>
+                </div>
+                <div className="mt-1">
+                  <div className="text-[11px] sm:text-xs font-black text-amber-950 truncate">
+                    {formatRupiah(periodStats.currentMonthOsValue)}
+                  </div>
+                  <div className="text-[9.5px] font-semibold text-amber-800 mt-0.5">
+                    {periodStats.currentMonthOsCount} Transaksi
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Segmented Progress Bar */}
+            <div className="mt-2 space-y-1">
+              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden flex">
+                <div 
+                  className="bg-emerald-500 h-full transition-all duration-500" 
+                  style={{ width: `${Math.max(periodStats.currentMonthLunasRatio > 0 ? 3 : 0, periodStats.currentMonthLunasRatio)}%` }} 
+                />
+                <div 
+                  className="bg-amber-400 h-full transition-all duration-500" 
+                  style={{ width: `${Math.max(periodStats.currentMonthOsRatio > 0 ? 3 : 0, periodStats.currentMonthOsRatio)}%` }} 
+                />
+              </div>
+              <div className="flex items-center justify-between text-[8.5px] font-bold">
+                <span className="text-emerald-700">Lunas {formatRatio(periodStats.currentMonthLunasRatio)}</span>
+                <span className="text-amber-700">OS {formatRatio(periodStats.currentMonthOsRatio)}</span>
+              </div>
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-purple-100 flex items-center justify-between">
-            <span className="text-[10px] font-extrabold text-purple-700 flex items-center truncate">
-              <Calendar className="w-3.5 h-3.5 mr-0.5 flex-shrink-0" />
+
+          {/* Footer Period Info */}
+          <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
+            <span className="font-extrabold text-purple-700 flex items-center truncate">
+              <Calendar className="w-3 h-3 mr-1 text-purple-600 flex-shrink-0" />
               {periodStats.currentMonthName}
             </span>
-            <span className="text-[8.5px] text-slate-400 font-semibold truncate">1 - {periodStats.lastDayCurrMonth} {periodStats.currentMonthName}</span>
+            <span className="text-[8.5px] text-slate-400 font-semibold truncate">
+              1 - {periodStats.lastDayCurrMonth} {periodStats.currentMonthName}
+            </span>
           </div>
         </div>
 
         {/* CARD 4: REALISASI & OS BULAN BERJALAN */}
         <div 
           onClick={() => onSelectDashboardFilter?.({ statusPayment: 'Belum Bayar', startDate: periodStats.currentMonthStartStr })}
-          className="bg-amber-50/30 p-4.5 rounded-3xl border border-amber-200/80 border-t-4 border-t-amber-500 shadow-md hover:shadow-xl hover:border-amber-300 transition-all duration-300 relative group overflow-hidden flex flex-col justify-between cursor-pointer active:scale-[0.98] transform"
+          className="bg-white rounded-2xl border border-amber-200/90 shadow-sm hover:shadow-md hover:border-amber-400 transition-all duration-200 p-4 flex flex-col justify-between cursor-pointer active:scale-[0.99] group"
           title={`Klik untuk melihat rincian terbayar & OS bulan berjalan (${periodStats.currentMonthLabel})`}
         >
-          <div className="flex justify-between items-start">
-            <div className="space-y-0.5 min-w-0 pr-1">
-              <p className="text-[9px] font-black text-amber-900 uppercase tracking-wider font-sans group-hover:text-amber-700 transition-colors">
-                TERBAYAR &amp; OS BULAN BERJALAN
-              </p>
-              <h3 className="text-xl sm:text-2xl font-black text-emerald-950 mt-1 truncate">{formatRupiah(periodStats.currentMonthLunasValue)}</h3>
-              <p className="text-[10px] font-extrabold text-emerald-700 flex items-center gap-1 mt-0.5">
-                <CheckCircle className="w-3 h-3 flex-shrink-0" />
-                {periodStats.currentMonthLunasCount} Transaksi Lunas
+          <div>
+            {/* Header: Icon + Title + Pill */}
+            <div className="flex items-center justify-between pb-2.5 border-b border-amber-100/70">
+              <div className="flex items-center space-x-2 min-w-0">
+                <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg group-hover:scale-105 transition-transform flex-shrink-0">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <span className="text-[10.5px] font-extrabold tracking-wider uppercase text-slate-700 truncate">
+                  TERBAYAR &amp; OS BULAN BERJALAN
+                </span>
+              </div>
+              <span className="text-[9px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded-md flex-shrink-0">
+                Realisasi
+              </span>
+            </div>
+
+            {/* Main Primary Metric */}
+            <div className="py-2.5">
+              <div className="flex items-baseline space-x-1.5">
+                <span className="text-xl sm:text-2xl font-black text-emerald-950 tracking-tight truncate">
+                  {formatRupiah(periodStats.currentMonthLunasValue)}
+                </span>
+              </div>
+              <p className="text-xs font-bold text-emerald-700 mt-0.5 flex items-center gap-1">
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                <span>{periodStats.currentMonthLunasCount} Transaksi Lunas</span>
               </p>
             </div>
-            <div className="p-2.5 bg-amber-500 text-white rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
-              <Clock className="w-4 h-4 animate-spin-slow" />
+
+            {/* Semantic 2-Column Comparison Block */}
+            <div className="grid grid-cols-2 gap-1.5 my-1">
+              {/* LUNAS BLOCK */}
+              <div className="bg-emerald-50/90 border border-emerald-200/80 rounded-xl p-2 flex flex-col justify-between">
+                <div className="flex items-center space-x-1 text-emerald-700">
+                  <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-600" />
+                  <span className="text-[9px] font-black tracking-wider uppercase">LUNAS</span>
+                </div>
+                <div className="mt-1">
+                  <div className="text-[11px] sm:text-xs font-black text-emerald-950 truncate">
+                    {formatRupiah(periodStats.currentMonthLunasValue)}
+                  </div>
+                  <div className="text-[9.5px] font-semibold text-emerald-700 mt-0.5">
+                    {periodStats.currentMonthLunasCount} Transaksi
+                  </div>
+                </div>
+              </div>
+
+              {/* OS BLOCK */}
+              <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl p-2 flex flex-col justify-between">
+                <div className="flex items-center space-x-1 text-amber-800">
+                  <Clock className="w-3 h-3 flex-shrink-0 text-amber-600" />
+                  <span className="text-[9px] font-black tracking-wider uppercase">OS</span>
+                </div>
+                <div className="mt-1">
+                  <div className="text-[11px] sm:text-xs font-black text-amber-950 truncate">
+                    {formatRupiah(periodStats.currentMonthOsValue)}
+                  </div>
+                  <div className="text-[9.5px] font-semibold text-amber-800 mt-0.5">
+                    {periodStats.currentMonthOsCount} Transaksi
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Segmented Progress Bar */}
+            <div className="mt-2 space-y-1">
+              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden flex">
+                <div 
+                  className="bg-emerald-500 h-full transition-all duration-500" 
+                  style={{ width: `${Math.max(periodStats.currentMonthLunasRatio > 0 ? 3 : 0, periodStats.currentMonthLunasRatio)}%` }} 
+                />
+                <div 
+                  className="bg-amber-400 h-full transition-all duration-500" 
+                  style={{ width: `${Math.max(periodStats.currentMonthOsRatio > 0 ? 3 : 0, periodStats.currentMonthOsRatio)}%` }} 
+                />
+              </div>
+              <div className="flex items-center justify-between text-[8.5px] font-bold">
+                <span className="text-emerald-700">Lunas {formatRatio(periodStats.currentMonthLunasRatio)}</span>
+                <span className="text-amber-700">OS {formatRatio(periodStats.currentMonthOsRatio)}</span>
+              </div>
             </div>
           </div>
-          <div className="mt-2 pt-2 border-t border-amber-200/80 flex items-center justify-between">
-            <div className="min-w-0">
-              <span className="text-[8px] font-black text-amber-900 uppercase tracking-wider block">OS Belum Bayar:</span>
-              <span className="text-[11px] font-black text-rose-700 block truncate">{formatRupiah(periodStats.currentMonthOsValue)} ({periodStats.currentMonthOsCount} OS)</span>
-            </div>
-            <span className="px-1.5 py-0.5 text-[8.5px] font-black rounded-md bg-amber-100 text-amber-900 flex-shrink-0">
-              {periodStats.currentMonthSettlementRatio}% Lunas
+
+          {/* Footer Period Info */}
+          <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
+            <span className="font-extrabold text-amber-800 flex items-center truncate">
+              <Calendar className="w-3 h-3 mr-1 text-amber-600 flex-shrink-0" />
+              {periodStats.currentMonthName}
+            </span>
+            <span className="text-[8.5px] text-slate-400 font-semibold truncate">
+              1 - {periodStats.lastDayCurrMonth} {periodStats.currentMonthName}
             </span>
           </div>
         </div>
 
-        {/* CARD 5: TOTAL NILAI TAGIHAN, LUNAS & OS AKUMULASI */}
+        {/* CARD 5: TOTAL NILAI TAGIHAN & OS (MASTER OVERVIEW) */}
         <div 
           onClick={() => onSelectDashboardFilter?.({ statusPayment: 'Belum Bayar' })}
-          className="bg-gradient-to-br from-indigo-600 to-blue-700 text-white p-4.5 rounded-3xl border border-indigo-700 border-t-4 border-t-indigo-400 shadow-xl hover:shadow-2xl transition-all duration-300 relative group overflow-hidden flex flex-col justify-between col-span-1 sm:col-span-2 lg:col-span-1 cursor-pointer active:scale-[0.98] transform ring-2 ring-indigo-400/30"
+          className="bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-900 text-white rounded-2xl border border-indigo-500/30 shadow-md hover:shadow-xl hover:border-indigo-400/50 transition-all duration-200 p-4 flex flex-col justify-between col-span-1 md:col-span-2 lg:col-span-1 cursor-pointer active:scale-[0.99] group"
           title="Klik untuk melihat rincian seluruh tagihan, pelunasan, dan total outstanding akumulasi"
         >
-          <div className="flex justify-between items-start">
-            <div className="space-y-0.5 min-w-0 pr-1">
-              <p className="text-[9px] font-black text-indigo-200 uppercase tracking-wider font-sans">
-                TOTAL NILAI TAGIHAN &amp; OS
+          <div>
+            {/* Header: Icon + Title + Pill */}
+            <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
+              <div className="flex items-center space-x-2 min-w-0">
+                <div className="p-1.5 bg-indigo-500/20 text-indigo-300 rounded-lg border border-indigo-400/20 group-hover:scale-105 transition-transform flex-shrink-0">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <span className="text-[10.5px] font-extrabold tracking-wider uppercase text-indigo-200 truncate">
+                  TOTAL NILAI TAGIHAN &amp; OS
+                </span>
+              </div>
+              <span className="text-[9px] font-extrabold text-indigo-200 bg-indigo-500/30 px-1.5 py-0.5 rounded-md border border-indigo-400/30 flex-shrink-0">
+                Akumulasi
+              </span>
+            </div>
+
+            {/* Main Primary Metric */}
+            <div className="py-2.5">
+              <div className="flex items-baseline space-x-1.5">
+                <span className="text-xl sm:text-2xl font-black text-white tracking-tight truncate">
+                  {formatRupiah(periodStats.grandTotalValue)}
+                </span>
+              </div>
+              <p className="text-xs font-semibold text-indigo-200/80 mt-0.5 truncate">
+                Total akumulasi tagihan nasional
               </p>
-              <h3 className="text-xl sm:text-2xl font-black text-white mt-1 drop-shadow-sm truncate">{formatRupiah(periodStats.grandTotalValue)}</h3>
-              
-              {/* Rincian Lunas & OS Akumulasi */}
-              <div className="space-y-0.5 pt-1">
-                <p className="text-[10px] font-extrabold text-emerald-200 flex items-center gap-1 truncate">
-                  <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-300" />
-                  <span>Lunas: {formatRupiah(periodStats.grandTotalLunasValue)} ({periodStats.grandTotalLunasCount})</span>
-                </p>
-                <p className="text-[10px] font-extrabold text-amber-200 flex items-center gap-1 truncate">
-                  <Clock className="w-3 h-3 flex-shrink-0 text-amber-300" />
-                  <span>OS: {formatRupiah(periodStats.grandTotalOsValue)} ({periodStats.grandTotalOsCount})</span>
-                </p>
+            </div>
+
+            {/* Semantic 2-Column Comparison Block (Dark Styled) */}
+            <div className="grid grid-cols-2 gap-1.5 my-1">
+              {/* LUNAS BLOCK */}
+              <div className="bg-emerald-950/60 border border-emerald-500/40 rounded-xl p-2 flex flex-col justify-between">
+                <div className="flex items-center space-x-1 text-emerald-400">
+                  <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-400" />
+                  <span className="text-[9px] font-black tracking-wider uppercase">LUNAS</span>
+                </div>
+                <div className="mt-1">
+                  <div className="text-[11px] sm:text-xs font-black text-emerald-100 truncate">
+                    {formatRupiah(periodStats.grandTotalLunasValue)}
+                  </div>
+                  <div className="text-[9.5px] font-semibold text-emerald-300/80 mt-0.5">
+                    {periodStats.grandTotalLunasCount} Transaksi
+                  </div>
+                </div>
+              </div>
+
+              {/* OS BLOCK */}
+              <div className="bg-amber-950/60 border border-amber-500/40 rounded-xl p-2 flex flex-col justify-between">
+                <div className="flex items-center space-x-1 text-amber-400">
+                  <Clock className="w-3 h-3 flex-shrink-0 text-amber-400" />
+                  <span className="text-[9px] font-black tracking-wider uppercase">OS</span>
+                </div>
+                <div className="mt-1">
+                  <div className="text-[11px] sm:text-xs font-black text-amber-100 truncate">
+                    {formatRupiah(periodStats.grandTotalOsValue)}
+                  </div>
+                  <div className="text-[9.5px] font-semibold text-amber-300/80 mt-0.5">
+                    {periodStats.grandTotalOsCount} Transaksi
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="p-2.5 bg-white/20 backdrop-blur-md text-white rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
-              <span className="font-black text-xs">Rp</span>
+
+            {/* Segmented Progress Bar */}
+            <div className="mt-2 space-y-1">
+              <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden flex">
+                <div 
+                  className="bg-emerald-400 h-full transition-all duration-500" 
+                  style={{ width: `${Math.max(periodStats.grandLunasRatio > 0 ? 3 : 0, periodStats.grandLunasRatio)}%` }} 
+                />
+                <div 
+                  className="bg-amber-400 h-full transition-all duration-500" 
+                  style={{ width: `${Math.max(periodStats.grandOsRatio > 0 ? 3 : 0, periodStats.grandOsRatio)}%` }} 
+                />
+              </div>
+              <div className="flex items-center justify-between text-[8.5px] font-bold">
+                <span className="text-emerald-300">Lunas {formatRatio(periodStats.grandLunasRatio)}</span>
+                <span className="text-amber-300">OS {formatRatio(periodStats.grandOsRatio)}</span>
+              </div>
             </div>
           </div>
-          <div className="mt-2.5 pt-2 border-t border-indigo-500/50 flex items-center justify-between">
-            <span className="text-[10px] text-indigo-100 font-extrabold flex items-center truncate">
-              <TrendingUp className="w-3.5 h-3.5 inline mr-0.5 flex-shrink-0" />
-              Total {periodStats.grandTotalCount} Transaksi
+
+          {/* Footer Period Info */}
+          <div className="mt-3 pt-2 border-t border-white/10 flex items-center justify-between text-[9.5px]">
+            <span className="text-indigo-200 font-semibold flex items-center gap-1 truncate">
+              <TrendingUp className="w-3 h-3 text-indigo-300 flex-shrink-0" />
+              Total {periodStats.grandTotalCount} Kasus
             </span>
-            <span className="text-[8.5px] text-indigo-200 font-bold bg-indigo-800/60 px-1.5 py-0.5 rounded flex-shrink-0">
-              {periodStats.grandSettlementRatio}% Lunas
+            <span className="text-[8.5px] font-extrabold bg-indigo-500/40 text-indigo-100 px-2 py-0.5 rounded-md border border-indigo-400/30 flex-shrink-0">
+              {formatRatio(periodStats.grandLunasRatio)} Lunas
             </span>
           </div>
         </div>
