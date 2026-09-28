@@ -1583,34 +1583,31 @@ export default function Dashboard({
               {/* Summary Cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
-                  <div className="space-y-0.5 min-w-0">
+                  <div className="space-y-0.5">
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Total Volume Terfilter</span>
                     <span className="text-sm font-black text-slate-900 block">{totalFilteredTransactions} Transaksi</span>
-                    <span className="text-[10px] font-extrabold text-indigo-600 block truncate">{formatRupiah(totalFilteredValue)}</span>
                   </div>
-                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl flex-shrink-0">
+                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
                     <Layers className="w-4 h-4" />
                   </div>
                 </div>
 
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
-                  <div className="space-y-0.5 min-w-0">
+                  <div className="space-y-0.5">
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Titik Hambatan Aktif</span>
                     <span className="text-sm font-black text-amber-600 block">{totalActiveBottleneckCells} Tahapan Terhenti</span>
-                    <span className="text-[10px] font-bold text-slate-400 block truncate">Di 6 Tahapan Alur Proses</span>
                   </div>
-                  <div className="p-2 bg-amber-50 text-amber-600 rounded-xl flex-shrink-0">
-                    <AlertTriangle className="w-4 h-4 animate-pulse" />
+                  <div className="p-2 bg-amber-50 text-amber-600 rounded-xl">
+                    <AlertTriangle className="w-4 h-4" />
                   </div>
                 </div>
 
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
-                  <div className="space-y-0.5 min-w-0">
+                  <div className="space-y-0.5">
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Total Antrean Outstanding</span>
                     <span className="text-sm font-black text-rose-600 block">{totalPendingSlaTransactions} Pending</span>
-                    <span className="text-[10px] font-extrabold text-rose-600 block truncate">{formatRupiah(totalPendingSlaValue)}</span>
                   </div>
-                  <div className="p-2 bg-rose-50 text-rose-600 rounded-xl flex-shrink-0">
+                  <div className="p-2 bg-rose-50 text-rose-600 rounded-xl">
                     <Clock className="w-4 h-4" />
                   </div>
                 </div>
