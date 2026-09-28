@@ -6,7 +6,7 @@ import { google } from "googleapis";
 import { Readable } from "stream";
 import dotenv from "dotenv";
 import fs from "fs";
-import { queryD1, ensureD1TablesExist, importFullMigrationFile } from "./src/cloudflareD1Client";
+import { queryD1, ensureD1TablesExist, importFullMigrationFile } from "./src/cloudflareD1Client.ts";
 
 dotenv.config();
 
