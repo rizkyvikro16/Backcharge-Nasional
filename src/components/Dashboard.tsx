@@ -1534,74 +1534,24 @@ export default function Dashboard({
             </div>
 
             {/* Main Primary Metric */}
-            <div className="py-2.5">
+            <div className="py-4">
               <div className="flex items-baseline space-x-1.5">
-                <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
                   {periodStats.cutoffCount}
                 </span>
                 <span className="text-xs font-semibold text-slate-400">Transaksi</span>
               </div>
-              <p className="text-xs sm:text-sm font-extrabold text-slate-700 mt-0.5 truncate">
+              <p className="text-base font-extrabold text-blue-700 mt-1 truncate">
                 {formatRupiah(periodStats.cutoffValue)}
               </p>
-            </div>
-
-            {/* Semantic 2-Column Comparison Block (LUNAS vs OS) */}
-            <div className="grid grid-cols-2 gap-1.5 my-1">
-              {/* LUNAS BLOCK */}
-              <div className="bg-emerald-50/80 border border-emerald-200/70 rounded-xl p-2 flex flex-col justify-between">
-                <div className="flex items-center space-x-1 text-emerald-700">
-                  <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-600" />
-                  <span className="text-[9px] font-black tracking-wider uppercase">LUNAS</span>
-                </div>
-                <div className="mt-1">
-                  <div className="text-[11px] sm:text-xs font-black text-emerald-950 truncate">
-                    {formatRupiah(periodStats.cutoffLunasValue)}
-                  </div>
-                  <div className="text-[9.5px] font-semibold text-emerald-700 mt-0.5">
-                    {periodStats.cutoffLunasCount} Transaksi
-                  </div>
-                </div>
-              </div>
-
-              {/* OS BLOCK */}
-              <div className="bg-amber-50/80 border border-amber-200/70 rounded-xl p-2 flex flex-col justify-between">
-                <div className="flex items-center space-x-1 text-amber-800">
-                  <Clock className="w-3 h-3 flex-shrink-0 text-amber-600" />
-                  <span className="text-[9px] font-black tracking-wider uppercase">OS</span>
-                </div>
-                <div className="mt-1">
-                  <div className="text-[11px] sm:text-xs font-black text-amber-950 truncate">
-                    {formatRupiah(periodStats.cutoffOsValue)}
-                  </div>
-                  <div className="text-[9.5px] font-semibold text-amber-800 mt-0.5">
-                    {periodStats.cutoffOsCount} Transaksi
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Segmented Progress Bar */}
-            <div className="mt-2 space-y-1">
-              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden flex">
-                <div 
-                  className="bg-emerald-500 h-full transition-all duration-500" 
-                  style={{ width: `${Math.max(periodStats.cutoffLunasRatio > 0 ? 3 : 0, periodStats.cutoffLunasRatio)}%` }} 
-                />
-                <div 
-                  className="bg-amber-400 h-full transition-all duration-500" 
-                  style={{ width: `${Math.max(periodStats.cutoffOsRatio > 0 ? 3 : 0, periodStats.cutoffOsRatio)}%` }} 
-                />
-              </div>
-              <div className="flex items-center justify-between text-[8.5px] font-bold">
-                <span className="text-emerald-700">Lunas {formatRatio(periodStats.cutoffLunasRatio)}</span>
-                <span className="text-amber-700">OS {formatRatio(periodStats.cutoffOsRatio)}</span>
-              </div>
+              <p className="text-[11px] text-slate-400 font-medium mt-1">
+                Total akumulasi sebelum bulan berjalan
+              </p>
             </div>
           </div>
 
           {/* Footer Period / Cutoff Info */}
-          <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
             <span className="font-extrabold text-blue-600 flex items-center truncate">
               <Calendar className="w-3 h-3 mr-1 text-blue-500 flex-shrink-0" />
               Cutoff {periodStats.cutoffMonthName}
@@ -1736,74 +1686,24 @@ export default function Dashboard({
             </div>
 
             {/* Main Primary Metric */}
-            <div className="py-2.5">
+            <div className="py-4">
               <div className="flex items-baseline space-x-1.5">
-                <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
                   {periodStats.currentMonthCount}
                 </span>
                 <span className="text-xs font-semibold text-slate-400">Transaksi</span>
               </div>
-              <p className="text-xs sm:text-sm font-extrabold text-slate-700 mt-0.5 truncate">
+              <p className="text-base font-extrabold text-purple-700 mt-1 truncate">
                 {formatRupiah(periodStats.currentMonthValue)}
               </p>
-            </div>
-
-            {/* Semantic 2-Column Comparison Block */}
-            <div className="grid grid-cols-2 gap-1.5 my-1">
-              {/* LUNAS BLOCK */}
-              <div className="bg-emerald-50/80 border border-emerald-200/70 rounded-xl p-2 flex flex-col justify-between">
-                <div className="flex items-center space-x-1 text-emerald-700">
-                  <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-600" />
-                  <span className="text-[9px] font-black tracking-wider uppercase">LUNAS</span>
-                </div>
-                <div className="mt-1">
-                  <div className="text-[11px] sm:text-xs font-black text-emerald-950 truncate">
-                    {formatRupiah(periodStats.currentMonthLunasValue)}
-                  </div>
-                  <div className="text-[9.5px] font-semibold text-emerald-700 mt-0.5">
-                    {periodStats.currentMonthLunasCount} Transaksi
-                  </div>
-                </div>
-              </div>
-
-              {/* OS BLOCK */}
-              <div className="bg-amber-50/80 border border-amber-200/70 rounded-xl p-2 flex flex-col justify-between">
-                <div className="flex items-center space-x-1 text-amber-800">
-                  <Clock className="w-3 h-3 flex-shrink-0 text-amber-600" />
-                  <span className="text-[9px] font-black tracking-wider uppercase">OS</span>
-                </div>
-                <div className="mt-1">
-                  <div className="text-[11px] sm:text-xs font-black text-amber-950 truncate">
-                    {formatRupiah(periodStats.currentMonthOsValue)}
-                  </div>
-                  <div className="text-[9.5px] font-semibold text-amber-800 mt-0.5">
-                    {periodStats.currentMonthOsCount} Transaksi
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Segmented Progress Bar */}
-            <div className="mt-2 space-y-1">
-              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden flex">
-                <div 
-                  className="bg-emerald-500 h-full transition-all duration-500" 
-                  style={{ width: `${Math.max(periodStats.currentMonthLunasRatio > 0 ? 3 : 0, periodStats.currentMonthLunasRatio)}%` }} 
-                />
-                <div 
-                  className="bg-amber-400 h-full transition-all duration-500" 
-                  style={{ width: `${Math.max(periodStats.currentMonthOsRatio > 0 ? 3 : 0, periodStats.currentMonthOsRatio)}%` }} 
-                />
-              </div>
-              <div className="flex items-center justify-between text-[8.5px] font-bold">
-                <span className="text-emerald-700">Lunas {formatRatio(periodStats.currentMonthLunasRatio)}</span>
-                <span className="text-amber-700">OS {formatRatio(periodStats.currentMonthOsRatio)}</span>
-              </div>
+              <p className="text-[11px] text-slate-400 font-medium mt-1">
+                Total transaksi periode aktif
+              </p>
             </div>
           </div>
 
           {/* Footer Period Info */}
-          <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
             <span className="font-extrabold text-purple-700 flex items-center truncate">
               <Calendar className="w-3 h-3 mr-1 text-purple-600 flex-shrink-0" />
               {periodStats.currentMonthName}
