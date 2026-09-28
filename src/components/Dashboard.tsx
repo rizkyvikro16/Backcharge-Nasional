@@ -1507,6 +1507,10 @@ export default function Dashboard({
               </p>
               <h3 className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">{periodStats.cutoffCount}</h3>
               <p className="text-xs font-black text-blue-700 truncate mt-0.5">{formatRupiah(periodStats.cutoffValue)}</p>
+              <p className="text-[10.5px] font-black text-emerald-700 flex items-center gap-1 mt-1 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-lg w-fit">
+                <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-600" />
+                <span>{periodStats.cutoffLunasCount} Lunas ({formatRupiah(periodStats.cutoffLunasValue)})</span>
+              </p>
             </div>
             <div className="p-2.5 bg-blue-50 text-blue-600 rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
               <Layers className="w-4 h-4" />
@@ -1566,6 +1570,10 @@ export default function Dashboard({
               </p>
               <h3 className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">{periodStats.currentMonthCount}</h3>
               <p className="text-xs font-black text-purple-700 truncate mt-0.5">{formatRupiah(periodStats.currentMonthValue)}</p>
+              <p className="text-[10.5px] font-black text-emerald-700 flex items-center gap-1 mt-1 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-lg w-fit">
+                <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-600" />
+                <span>{periodStats.currentMonthLunasCount} Lunas ({formatRupiah(periodStats.currentMonthLunasValue)})</span>
+              </p>
             </div>
             <div className="p-2.5 bg-purple-100 text-purple-700 rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
               <Calendar className="w-4 h-4" />
@@ -1576,7 +1584,7 @@ export default function Dashboard({
               <Calendar className="w-3.5 h-3.5 mr-0.5 flex-shrink-0" />
               {periodStats.currentMonthName}
             </span>
-            <span className="text-[8.5px] text-slate-400 font-semibold truncate">1 - ${periodStats.lastDayCurrMonth} ${periodStats.currentMonthName}</span>
+            <span className="text-[8.5px] text-slate-400 font-semibold truncate">1 - {periodStats.lastDayCurrMonth} {periodStats.currentMonthName}</span>
           </div>
         </div>
 
