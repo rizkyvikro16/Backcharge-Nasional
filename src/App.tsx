@@ -1,3 +1,4 @@
+import { evaluateRoleNotification } from "./lib/notificationRoleFilter";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -687,38 +688,22 @@ export default function App() {
         if (newLogs && Array.isArray(newLogs) && newLogs.length > 0) {
           lastSeenLogIdRef.current = Math.max(...newLogs.map(l => Number(l.id) || 0));
 
+          // Pre-fetch related transactions for branch-accurate role routing
+          const txMap = new Map<string, Backcharge>(transactions.map(t => [t.id, t]));
+
           for (const log of newLogs) {
-            const isMe = log.performed_by === currentUser.email;
-            const desc = log.action_description || '';
-            const descLower = desc.toLowerCase();
+            const targetTx = log.transaction_id ? txMap.get(log.transaction_id) || null : null;
+            const decision = evaluateRoleNotification(currentUser, log, targetTx);
 
-            if (!isMe) {
-              let alertTitle = '🔔 Aktivitas Backcharge Terkini';
-              let shouldAlert = true;
-
-              if (descLower.includes('membuat backcharge') || descLower.includes('import data')) {
-                const pref = localStorage.getItem('backcharge_notif_new_data') !== 'false';
-                if (!pref) shouldAlert = false;
-                alertTitle = '🚨 Input Backcharge Baru!';
-              } else if (descLower.includes('approval') || descLower.includes('menyetujui') || descLower.includes('menolak')) {
-                const pref = localStorage.getItem('backcharge_notif_approval') !== 'false';
-                if (!pref) shouldAlert = false;
-                alertTitle = '📋 Update Approval Backcharge';
-              } else if (descLower.includes('status') || descLower.includes('lunas') || descLower.includes('bayar') || descLower.includes('serah terima') || descLower.includes('invoice')) {
-                const pref = localStorage.getItem('backcharge_notif_status') !== 'false';
-                if (!pref) shouldAlert = false;
-                alertTitle = '🔄 Perubahan Status Backcharge';
-              }
-
-              if (shouldAlert) {
-                sendBrowserNotification({
-                  title: alertTitle,
-                  body: (log.transaction_id && log.transaction_id !== 'SYSTEM' ? log.transaction_id + ': ' : '') + desc,
-                  txId: log.transaction_id !== 'SYSTEM' ? log.transaction_id : undefined,
-                  tag: 'live-log-' + log.id
-                });
-                addToast(alertTitle + ': ' + desc, 'info');
-              }
+            if (decision.shouldNotify) {
+              const desc = log.action_description || '';
+              sendBrowserNotification({
+                title: decision.title,
+                body: (log.transaction_id && log.transaction_id !== 'SYSTEM' ? log.transaction_id + ': ' : '') + desc,
+                txId: log.transaction_id !== 'SYSTEM' ? log.transaction_id : undefined,
+                tag: 'live-log-' + log.id
+              });
+              addToast(decision.title + ': ' + desc, 'info');
             }
           }
 

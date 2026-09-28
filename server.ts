@@ -11,8 +11,20 @@ import { queryD1, ensureD1TablesExist, importFullMigrationFile } from "./src/clo
 dotenv.config();
 
 async function startServer() {
+
+
+
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+  // Cloud Run & Load Balancer Liveness/Readiness probes
+  app.get(["/healthz", "/_health", "/api/health"], (req, res) => {
+    res.status(200).json({
+      status: "healthy",
+      service: "backcharge-nasional-api",
+      timestamp: new Date().toISOString()
+    });
+  });
 
   // Enable CORS middleware so deployed frontend (e.g. Cloudflare Pages) can connect to the Cloud Run backend
   app.use((req, res, next) => {
