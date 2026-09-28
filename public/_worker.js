@@ -128,9 +128,7 @@ export default {
     // 1. Status Check Endpoint
     if (pathname === "/api/d1/status" && request.method === "GET") {
       const isDbAvailable = !!env.DB;
-      if (isDbAvailable) {
-        ensureD1SchemaWorker(env.DB).catch(e => console.warn("Schema indexing notice:", e));
-      }
+      // Schema already created during initial setup; no DDL write overhead on status checks
       return new Response(
         JSON.stringify({
           success: true,
