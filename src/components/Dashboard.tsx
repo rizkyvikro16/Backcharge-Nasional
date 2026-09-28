@@ -2361,7 +2361,7 @@ export default function Dashboard({
       {/* 4. DISTRIBUSI KATEGORI & regional BREAKDOWN GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* BREAKDOWN PERFORM & OTORITAS CABANG (Full Width) - Hidden for Admin role */}
+        {/* RANKING BEST PERFORMANCE PELUNASAN BACKCHARGE (Full Width) - Hidden for Admin role */}
         {!isAdmin && (
           <div className="lg:col-span-12 bg-white p-6 rounded-3xl border border-slate-200 shadow-md space-y-5 flex flex-col justify-between">
             
