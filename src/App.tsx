@@ -577,7 +577,7 @@ export default function App() {
     return localStorage.getItem('backcharge_use_d1') !== 'false';
   });
   const [d1Error, setD1Error] = useState<string | null>(null);
-  const [showD1Modal, setShowD1Modal] = useState<boolean>(true);
+  const [showD1Modal, setShowD1Modal] = useState<boolean>(false);
   const [migratingD1, setMigratingD1] = useState<boolean>(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
   const [showNotifSettings, setShowNotifSettings] = useState(false);
@@ -921,7 +921,7 @@ export default function App() {
   }, [transactions, currentUser, readNotifIds]);
 
   // Shared fast D1 query executor
-  const executeD1Query = useCallback(async (sql: string, params: any[] = []): Promise<any[]> => {
+  const executeD1Query = useCallback(async (sql: string, params: any[] = [], attempt = 1): Promise<any[]> => {
     let res: Response;
     try {
       res = await fetch(getApiUrl("/api/d1/query"), {
@@ -930,11 +930,28 @@ export default function App() {
         body: JSON.stringify({ sql, params })
       });
     } catch (networkErr: any) {
+      if (attempt <= 4) {
+        await new Promise(r => setTimeout(r, attempt * 350));
+        return executeD1Query(sql, params, attempt + 1);
+      }
       console.warn("Koneksi D1 gagal:", networkErr?.message || networkErr);
-      throw new Error(`Koneksi D1 tidak dapat dijangkau: ${networkErr?.message || 'Network error'}`);
+      throw new Error("Koneksi D1 tidak dapat dijangkau: " + (networkErr?.message || 'Network error'));
     }
 
     const text = await res.text();
+    const isRateExceeded = res.status === 429 || 
+      text.includes("Rate exceeded") || 
+      text.includes("rate limit") || 
+      text.includes("too many requests") ||
+      text.includes("10022");
+
+    if (isRateExceeded && attempt <= 6) {
+      const delayMs = attempt * 500 + Math.floor(Math.random() * 300);
+      console.warn("⚠️ D1 Rate Limit (429). Retrying query in " + delayMs + "ms (attempt " + attempt + "/6)...");
+      await new Promise(r => setTimeout(r, delayMs));
+      return executeD1Query(sql, params, attempt + 1);
+    }
+
     let d: any = {};
     try { 
       d = JSON.parse(text); 
@@ -947,17 +964,32 @@ export default function App() {
             });
           } catch {}
         }
-        throw new Error(`Koneksi API D1 terintersepsi (Status ${res.status}). Mengulang koneksi ke server...`);
+        if (attempt <= 3) {
+          await new Promise(r => setTimeout(r, 400));
+          return executeD1Query(sql, params, attempt + 1);
+        }
+        throw new Error("Koneksi API D1 terintersepsi (Status " + res.status + "). Mengulang koneksi ke server...");
       }
-      throw new Error(`Respons D1 tidak valid (${res.status}): ${text.substring(0, 100) || 'Kosong'}`);
+      if (isRateExceeded) {
+        throw new Error("Rate limit sementara Cloudflare D1. Sistem otomatis melakukan backoff.");
+      }
+      throw new Error("Respons D1 (" + res.status + "): " + (text.substring(0, 100) || 'Kosong'));
     }
+
     if (!d.success) {
       if (d.error && (d.error.includes("Database binding 'DB'") || d.error.includes("binding 'DB'"))) {
         console.warn("Cloudflare D1 binding DB not yet attached in Pages settings. Falling back to local cache.");
         return [];
       }
+      const errStr = (d.error || "").toLowerCase();
+      if ((errStr.includes("rate limit") || errStr.includes("rate exceeded")) && attempt <= 6) {
+        const delayMs = attempt * 500 + Math.floor(Math.random() * 300);
+        await new Promise(r => setTimeout(r, delayMs));
+        return executeD1Query(sql, params, attempt + 1);
+      }
       throw new Error(d.error || "Gagal kueri D1");
     }
+
     return d.results || [];
   }, []);
 
