@@ -4,7 +4,7 @@ import {
   Layers, ShieldAlert, ArrowRight, Award,
   Calendar, FileSpreadsheet, Search,
   Mail, FileText, Info, ArrowUpRight, ArrowDownRight, Lock, Loader2,
-  AlertCircle, BarChart3, X, AlertTriangle
+  AlertCircle, BarChart3, X, AlertTriangle, History
 } from 'lucide-react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -259,6 +259,145 @@ export default function Dashboard({
 
     return { activeCount: actCount, activeValue: actValue, priorCount: pCount, priorValue: pValue };
   }, [transactions, startDate, endDate, selectedBranchFilter, filteredTransactions, userBranches]);
+
+  // 2B. Period Segmentation Calculation: Cutoff (Pre-Current Month) vs Current Month
+  const periodStats = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth(); // 0 = Jan, ..., 8 = Sep, etc.
+
+    // Start of current month (e.g. 2026-09-01)
+    const currentMonthStartStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
+    
+    // Cut-off date: last day of previous month (e.g. 2026-08-31)
+    const lastDayPrevMonthObj = new Date(currentYear, currentMonth, 0);
+    const cutoffDateStr = `${lastDayPrevMonthObj.getFullYear()}-${String(lastDayPrevMonthObj.getMonth() + 1).padStart(2, '0')}-${String(lastDayPrevMonthObj.getDate()).padStart(2, '0')}`;
+    
+    // End of current month (e.g. 2026-09-30)
+    const lastDayCurrMonthObj = new Date(currentYear, currentMonth + 1, 0);
+    const currentMonthEndStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(lastDayCurrMonthObj.getDate()).padStart(2, '0')}`;
+
+    const monthNamesId = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    const currentMonthName = monthNamesId[currentMonth];
+    const cutoffMonthName = monthNamesId[lastDayPrevMonthObj.getMonth()];
+    const currentMonthLabel = `${currentMonthName} ${currentYear}`;
+    const cutoffDateLabel = `${lastDayPrevMonthObj.getDate()} ${cutoffMonthName} ${lastDayPrevMonthObj.getFullYear()}`;
+
+    // 1. Cutoff (Pre-current month) Transactions (Card 1 & Card 2)
+    let cutoffCount = 0;
+    let cutoffValue = 0;
+    let cutoffLunasCount = 0;
+    let cutoffLunasValue = 0;
+    let cutoffOsCount = 0;
+    let cutoffOsValue = 0;
+
+    // 2. Current Month Transactions (Card 3 & Card 4)
+    let currentMonthCount = 0;
+    let currentMonthValue = 0;
+    let currentMonthLunasCount = 0;
+    let currentMonthLunasValue = 0;
+    let currentMonthOsCount = 0;
+    let currentMonthOsValue = 0;
+
+    // 3. Grand Total (Card 5)
+    let grandTotalCount = 0;
+    let grandTotalValue = 0;
+    let grandTotalLunasCount = 0;
+    let grandTotalLunasValue = 0;
+    let grandTotalOsCount = 0;
+    let grandTotalOsValue = 0;
+
+    filteredTransactions.forEach(t => {
+      const val = Number(t.value) || 0;
+      const isLunas = t.status_payment === 'Lunas';
+      
+      let tDate = '';
+      if (t.tanggal) {
+        if (t.tanggal.includes('T')) tDate = t.tanggal.split('T')[0];
+        else if (t.tanggal.includes('/')) {
+          const p = t.tanggal.split('/');
+          if (p[0].length === 4) tDate = `${p[0]}-${p[1].padStart(2, '0')}-${p[2].padStart(2, '0')}`;
+          else if (p[2].length === 4) tDate = `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`;
+        } else {
+          tDate = t.tanggal;
+        }
+      } else if (t.created_at) {
+        tDate = t.created_at.split('T')[0];
+      }
+
+      grandTotalCount++;
+      grandTotalValue += val;
+      if (isLunas) {
+        grandTotalLunasCount++;
+        grandTotalLunasValue += val;
+      } else {
+        grandTotalOsCount++;
+        grandTotalOsValue += val;
+      }
+
+      // Check if transaction is in Cutoff (Before current month start) or Current Month
+      if (tDate && tDate < currentMonthStartStr) {
+        cutoffCount++;
+        cutoffValue += val;
+        if (isLunas) {
+          cutoffLunasCount++;
+          cutoffLunasValue += val;
+        } else {
+          cutoffOsCount++;
+          cutoffOsValue += val;
+        }
+      } else {
+        currentMonthCount++;
+        currentMonthValue += val;
+        if (isLunas) {
+          currentMonthLunasCount++;
+          currentMonthLunasValue += val;
+        } else {
+          currentMonthOsCount++;
+          currentMonthOsValue += val;
+        }
+      }
+    });
+
+    const cutoffSettlementRatio = cutoffValue > 0 ? Math.round((cutoffLunasValue / cutoffValue) * 100) : 0;
+    const currentMonthSettlementRatio = currentMonthValue > 0 ? Math.round((currentMonthLunasValue / currentMonthValue) * 100) : 0;
+    const grandSettlementRatio = grandTotalValue > 0 ? Math.round((grandTotalLunasValue / grandTotalValue) * 100) : 0;
+
+    return {
+      currentMonthLabel,
+      currentMonthName,
+      cutoffMonthName,
+      cutoffDateLabel,
+      cutoffDateStr,
+      currentMonthStartStr,
+      currentMonthEndStr,
+      lastDayCurrMonth: lastDayCurrMonthObj.getDate(),
+      cutoffCount,
+      cutoffValue,
+      cutoffLunasCount,
+      cutoffLunasValue,
+      cutoffOsCount,
+      cutoffOsValue,
+      cutoffSettlementRatio,
+      currentMonthCount,
+      currentMonthValue,
+      currentMonthLunasCount,
+      currentMonthLunasValue,
+      currentMonthOsCount,
+      currentMonthOsValue,
+      currentMonthSettlementRatio,
+      grandTotalCount,
+      grandTotalValue,
+      grandTotalLunasCount,
+      grandTotalLunasValue,
+      grandTotalOsCount,
+      grandTotalOsValue,
+      grandSettlementRatio
+    };
+  }, [filteredTransactions]);
 
   const getPercentChange = (current: number, prior: number) => {
     if (prior === 0) {
@@ -1354,144 +1493,153 @@ export default function Dashboard({
       </div>
 
       {/* 2. EXECUTIVE KPI CARDS GRID (3. KPI TAMBAHAN) */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        
-        {/* CARD 1: TOTAL TRANSAKSI */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4.5">
+        {/* CARD 1: TRANSAKSI TGL AWAL S.D. CUTOFF SEBELUM BULAN BERJALAN */}
         <div 
-          onClick={() => onSelectDashboardFilter?.({})}
-          className="bg-white p-4.5 rounded-3xl border border-slate-200 border-t-4 border-t-blue-500 shadow-md hover:shadow-xl hover:border-blue-400 transition-all duration-300 relative group overflow-hidden flex flex-col justify-between cursor-pointer active:scale-[0.98] transform"
-          title="Klik untuk menyaring semua transaksi"
+          onClick={() => onSelectDashboardFilter?.({ endDate: periodStats.cutoffDateStr })}
+          className="bg-white p-4.5 rounded-3xl border border-slate-200 border-t-4 border-t-blue-500 shadow-md hover:shadow-xl hover:border-blue-300 transition-all duration-300 relative group overflow-hidden flex flex-col justify-between cursor-pointer active:scale-[0.98] transform"
+          title={`Klik untuk menyaring transaksi s.d. cut-off ${periodStats.cutoffDateLabel}`}
         >
           <div className="flex justify-between items-start">
-            <div>
+            <div className="space-y-1 min-w-0 pr-1">
               <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider font-sans group-hover:text-blue-600 transition-colors flex items-center gap-1">
-                <span>TOTAL TRANSAKSI</span>
+                <span>S.D. CUTOFF BULAN LALU</span>
               </p>
-              <h3 className="text-3xl font-black text-slate-900 mt-1">{totalCount}</h3>
+              <h3 className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">{periodStats.cutoffCount}</h3>
+              <p className="text-xs font-black text-blue-700 truncate mt-0.5">{formatRupiah(periodStats.cutoffValue)}</p>
             </div>
-            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-2xl group-hover:scale-110 transition-transform shadow-sm">
+            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
               <Layers className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-slate-100 flex items-center space-x-1">
-            <span className={`text-[10px] font-extrabold flex items-center ${countChange.isUp ? 'text-emerald-600' : 'text-rose-600'}`}>
-              {countChange.isUp ? <ArrowUpRight className="w-3.5 h-3.5 inline mr-0.5" /> : <ArrowDownRight className="w-3.5 h-3.5 inline mr-0.5" />}
-              Naik {countChange.percent}%
+          <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-[10px] font-extrabold text-blue-600 flex items-center truncate">
+              <History className="w-3.5 h-3.5 mr-0.5 flex-shrink-0" />
+              Cutoff {periodStats.cutoffMonthName}
             </span>
-            <span className="text-[9px] text-slate-400 font-semibold">dari periode lalu</span>
+            <span className="text-[8.5px] text-slate-400 font-semibold truncate">s.d. {periodStats.cutoffDateLabel}</span>
           </div>
         </div>
 
-        {/* CARD 2: TOTAL BAK LUNAS */}
+        {/* CARD 2: REALISASI & OS S.D. CUTOFF */}
         <div 
-          onClick={() => onSelectDashboardFilter?.({ statusPayment: 'Lunas', stage: '6_done' })}
+          onClick={() => onSelectDashboardFilter?.({ statusPayment: 'Lunas', endDate: periodStats.cutoffDateStr })}
           className="bg-emerald-50/30 p-4.5 rounded-3xl border border-emerald-200/80 border-t-4 border-t-emerald-500 shadow-md hover:shadow-xl hover:border-emerald-400 transition-all duration-300 relative group overflow-hidden flex flex-col justify-between cursor-pointer active:scale-[0.98] transform"
-          title="Klik untuk menyaring transaksi yang LUNAS"
+          title={`Klik untuk melihat rincian terbayar & OS s.d. cutoff ${periodStats.cutoffDateLabel}`}
         >
           <div className="flex justify-between items-start">
-            <div>
-              <p className="text-[9px] font-black text-emerald-800 uppercase tracking-wider font-sans group-hover:text-emerald-600 transition-colors">TOTAL BACKCHARGE LUNAS</p>
-              <h3 className="text-3xl font-black text-slate-900 mt-1">{lunasCount}</h3>
-              <p className="text-xs font-black text-emerald-700 mt-0.5">{formatRupiah(lunasValue)}</p>
+            <div className="space-y-0.5 min-w-0 pr-1">
+              <p className="text-[9px] font-black text-emerald-800 uppercase tracking-wider font-sans group-hover:text-emerald-600 transition-colors">
+                TERBAYAR &amp; OS S.D. CUTOFF
+              </p>
+              <h3 className="text-xl sm:text-2xl font-black text-emerald-950 mt-1 truncate">{formatRupiah(periodStats.cutoffLunasValue)}</h3>
+              <p className="text-[10px] font-extrabold text-emerald-700 flex items-center gap-1 mt-0.5">
+                <CheckCircle className="w-3 h-3 flex-shrink-0" />
+                {periodStats.cutoffLunasCount} Transaksi Lunas
+              </p>
             </div>
-            <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-2xl group-hover:scale-110 transition-transform shadow-sm">
+            <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
               <CheckCircle className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2 pt-2 border-t border-emerald-100/80 flex items-center space-x-1">
-            <span className="text-[10px] text-emerald-600 font-extrabold flex items-center">
-              <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" />
-              Naik 20%
+          <div className="mt-2 pt-2 border-t border-emerald-100/80 flex items-center justify-between">
+            <div className="min-w-0">
+              <span className="text-[8px] font-black text-amber-800 uppercase tracking-wider block">OS Belum Bayar:</span>
+              <span className="text-[11px] font-black text-amber-700 block truncate">{formatRupiah(periodStats.cutoffOsValue)} ({periodStats.cutoffOsCount} OS)</span>
+            </div>
+            <span className="px-1.5 py-0.5 text-[8.5px] font-black rounded-md bg-emerald-100 text-emerald-800 flex-shrink-0">
+              {periodStats.cutoffSettlementRatio}% Lunas
             </span>
-            <span className="text-[9px] text-slate-400 font-semibold">dari periode lalu</span>
           </div>
         </div>
 
-        {/* CARD 3: TOTAL PENDING */}
+        {/* CARD 3: TOTAL BULAN BERJALAN */}
         <div 
-          onClick={() => onSelectDashboardFilter?.({ statusPayment: 'Belum Bayar' })}
-          className={`p-4.5 rounded-3xl border border-t-4 border-t-amber-500 shadow-md hover:shadow-xl transition-all duration-300 relative group overflow-hidden flex flex-col justify-between cursor-pointer active:scale-[0.98] transform ${
-            pendingCount > 0 
-              ? 'bg-gradient-to-b from-amber-50/90 to-amber-100/40 border-amber-300 ring-2 ring-amber-400/30' 
-              : 'bg-white border-slate-200'
-          }`}
-          title="Klik untuk menyaring transaksi yang PENDING (belum bayar)"
+          onClick={() => onSelectDashboardFilter?.({ startDate: periodStats.currentMonthStartStr, endDate: periodStats.currentMonthEndStr })}
+          className="bg-purple-50/20 p-4.5 rounded-3xl border border-purple-200/80 border-t-4 border-t-purple-500 shadow-md hover:shadow-xl hover:border-purple-300 transition-all duration-300 relative group overflow-hidden flex flex-col justify-between cursor-pointer active:scale-[0.98] transform"
+          title={`Klik untuk menyaring transaksi bulan berjalan (${periodStats.currentMonthLabel})`}
         >
           <div className="flex justify-between items-start">
-            <div>
-              <div className="flex items-center gap-1.5">
-                <p className="text-[9px] font-black text-amber-800 uppercase tracking-wider font-sans">TOTAL BACKCHARGE BELUM BAYAR</p>
-                {pendingCount > 0 && (
-                  <span className="px-1.5 py-0.5 text-[8px] font-extrabold rounded-full bg-amber-500 text-white animate-pulse">
-                    ATENSI
-                  </span>
-                )}
-              </div>
-              <h3 className="text-3xl font-black text-amber-950 mt-1">{pendingCount}</h3>
-              <p className="text-xs font-black text-amber-700 mt-0.5">{formatRupiah(pendingValue)}</p>
+            <div className="space-y-1 min-w-0 pr-1">
+              <p className="text-[9px] font-black text-purple-900 uppercase tracking-wider font-sans group-hover:text-purple-700 transition-colors flex items-center gap-1">
+                <span>TOTAL BULAN BERJALAN</span>
+              </p>
+              <h3 className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">{periodStats.currentMonthCount}</h3>
+              <p className="text-xs font-black text-purple-700 truncate mt-0.5">{formatRupiah(periodStats.currentMonthValue)}</p>
             </div>
-            <div className="p-2.5 bg-amber-500 text-white rounded-2xl group-hover:scale-110 transition-transform shadow-sm">
+            <div className="p-2.5 bg-purple-100 text-purple-700 rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
+              <Calendar className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-purple-100 flex items-center justify-between">
+            <span className="text-[10px] font-extrabold text-purple-700 flex items-center truncate">
+              <Calendar className="w-3.5 h-3.5 mr-0.5 flex-shrink-0" />
+              {periodStats.currentMonthName}
+            </span>
+            <span className="text-[8.5px] text-slate-400 font-semibold truncate">1 - ${periodStats.lastDayCurrMonth} ${periodStats.currentMonthName}</span>
+          </div>
+        </div>
+
+        {/* CARD 4: REALISASI & OS BULAN BERJALAN */}
+        <div 
+          onClick={() => onSelectDashboardFilter?.({ statusPayment: 'Belum Bayar', startDate: periodStats.currentMonthStartStr })}
+          className="bg-amber-50/30 p-4.5 rounded-3xl border border-amber-200/80 border-t-4 border-t-amber-500 shadow-md hover:shadow-xl hover:border-amber-300 transition-all duration-300 relative group overflow-hidden flex flex-col justify-between cursor-pointer active:scale-[0.98] transform"
+          title={`Klik untuk melihat rincian terbayar & OS bulan berjalan (${periodStats.currentMonthLabel})`}
+        >
+          <div className="flex justify-between items-start">
+            <div className="space-y-0.5 min-w-0 pr-1">
+              <p className="text-[9px] font-black text-amber-900 uppercase tracking-wider font-sans group-hover:text-amber-700 transition-colors">
+                TERBAYAR &amp; OS BULAN BERJALAN
+              </p>
+              <h3 className="text-xl sm:text-2xl font-black text-emerald-950 mt-1 truncate">{formatRupiah(periodStats.currentMonthLunasValue)}</h3>
+              <p className="text-[10px] font-extrabold text-emerald-700 flex items-center gap-1 mt-0.5">
+                <CheckCircle className="w-3 h-3 flex-shrink-0" />
+                {periodStats.currentMonthLunasCount} Transaksi Lunas
+              </p>
+            </div>
+            <div className="p-2.5 bg-amber-500 text-white rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
               <Clock className="w-4 h-4 animate-spin-slow" />
             </div>
           </div>
-          <div className="mt-2 pt-2 border-t border-amber-200/80 flex items-center space-x-1">
-            <span className="text-[10px] text-amber-700 font-extrabold flex items-center">
-              <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" />
-              Naik 5%
+          <div className="mt-2 pt-2 border-t border-amber-200/80 flex items-center justify-between">
+            <div className="min-w-0">
+              <span className="text-[8px] font-black text-amber-900 uppercase tracking-wider block">OS Belum Bayar:</span>
+              <span className="text-[11px] font-black text-rose-700 block truncate">{formatRupiah(periodStats.currentMonthOsValue)} ({periodStats.currentMonthOsCount} OS)</span>
+            </div>
+            <span className="px-1.5 py-0.5 text-[8.5px] font-black rounded-md bg-amber-100 text-amber-900 flex-shrink-0">
+              {periodStats.currentMonthSettlementRatio}% Lunas
             </span>
-            <span className="text-[9px] text-amber-800/60 font-semibold">dari periode lalu</span>
           </div>
         </div>
 
-        {/* CARD 4: TOTAL BACKCHARGE TIDAK TERTAGIH */}
-        <div 
-          onClick={() => onSelectDashboardFilter?.({ statusConfirm: 'Ditolak / Negosiasi Ulang' })}
-          className="bg-white p-4.5 rounded-3xl border border-slate-200 border-t-4 border-t-rose-500 shadow-md hover:shadow-xl hover:border-rose-300 transition-all duration-300 relative group overflow-hidden flex flex-col justify-between cursor-pointer active:scale-[0.98] transform"
-          title="Klik untuk menyaring transaksi Backcharge tidak tertagih"
-        >
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider font-sans group-hover:text-rose-600 transition-colors">TOTAL BACKCHARGE TIDAK TERTAGIH</p>
-              <h3 className="text-3xl font-black text-slate-900 mt-1">{rejectCount}</h3>
-              <p className="text-xs font-black text-rose-600 mt-0.5">{formatRupiah(rejectValue)}</p>
-            </div>
-            <div className="p-2.5 bg-rose-50 text-rose-600 rounded-2xl group-hover:scale-110 transition-transform shadow-sm">
-              <ShieldAlert className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center space-x-1">
-            <span className="text-[10px] text-emerald-600 font-extrabold flex items-center">
-              <ArrowDownRight className="w-3.5 h-3.5 mr-0.5" />
-              Turun 100%
-            </span>
-            <span className="text-[9px] text-slate-400 font-semibold">dari periode lalu</span>
-          </div>
-        </div>
-
-        {/* CARD 5: TOTAL NILAI TAGIHAN */}
+        {/* CARD 5: TOTAL NILAI TAGIHAN & OS AKUMULASI */}
         <div 
           onClick={() => onSelectDashboardFilter?.({ statusPayment: 'Belum Bayar' })}
-          className="bg-gradient-to-br from-indigo-600 to-blue-700 text-white p-4.5 rounded-3xl border border-indigo-700 border-t-4 border-t-indigo-400 shadow-xl hover:shadow-2xl transition-all duration-300 relative group overflow-hidden flex flex-col justify-between col-span-2 md:col-span-1 cursor-pointer active:scale-[0.98] transform ring-2 ring-indigo-400/30"
-          title="Klik untuk melihat rincian transaksi outstanding belum bayar"
+          className="bg-gradient-to-br from-indigo-600 to-blue-700 text-white p-4.5 rounded-3xl border border-indigo-700 border-t-4 border-t-indigo-400 shadow-xl hover:shadow-2xl transition-all duration-300 relative group overflow-hidden flex flex-col justify-between col-span-1 sm:col-span-2 lg:col-span-1 cursor-pointer active:scale-[0.98] transform ring-2 ring-indigo-400/30"
+          title="Klik untuk melihat rincian seluruh tagihan dan total outstanding akumulasi"
         >
           <div className="flex justify-between items-start">
-            <div>
-              <p className="text-[9px] font-black text-indigo-200 uppercase tracking-wider font-sans">TOTAL NILAI TAGIHAN</p>
-              <h3 className="text-2xl font-black text-white mt-1.5 drop-shadow-sm">{formatRupiah(activeValue)}</h3>
+            <div className="space-y-0.5 min-w-0 pr-1">
+              <p className="text-[9px] font-black text-indigo-200 uppercase tracking-wider font-sans">
+                TOTAL NILAI TAGIHAN &amp; OS
+              </p>
+              <h3 className="text-xl sm:text-2xl font-black text-white mt-1 drop-shadow-sm truncate">{formatRupiah(periodStats.grandTotalValue)}</h3>
+              <p className="text-[10px] font-extrabold text-indigo-100 truncate mt-0.5">
+                OS: {formatRupiah(periodStats.grandTotalOsValue)} ({periodStats.grandTotalOsCount} OS)
+              </p>
             </div>
-            <div className="p-2.5 bg-white/20 backdrop-blur-md text-white rounded-2xl group-hover:scale-110 transition-transform shadow-sm">
+            <div className="p-2.5 bg-white/20 backdrop-blur-md text-white rounded-2xl group-hover:scale-110 transition-transform shadow-sm flex-shrink-0">
               <span className="font-black text-xs">Rp</span>
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-indigo-500/50 flex items-center space-x-1">
-            <span className="text-[10px] text-indigo-100 font-extrabold flex items-center">
-              {valueChange.isUp ? <ArrowUpRight className="w-3.5 h-3.5 inline mr-0.5" /> : <ArrowDownRight className="w-3.5 h-3.5 inline mr-0.5" />}
-              Naik {valueChange.percent}%
+          <div className="mt-3 pt-2 border-t border-indigo-500/50 flex items-center justify-between">
+            <span className="text-[10px] text-indigo-100 font-extrabold flex items-center truncate">
+              <TrendingUp className="w-3.5 h-3.5 inline mr-0.5 flex-shrink-0" />
+              Total {periodStats.grandTotalCount} Kasus
             </span>
-            <span className="text-[9px] text-indigo-200/80 font-semibold">dari periode lalu</span>
+            <span className="text-[8.5px] text-indigo-200 font-semibold flex-shrink-0">{periodStats.grandSettlementRatio}% Rasio</span>
           </div>
         </div>
-
       </div>
 
       {/* 3B. WORKFLOW PIPELINE PER KATEGORI (WITHOUT STAGE 8) - REDESIGNED TO MATRIX GRID */}

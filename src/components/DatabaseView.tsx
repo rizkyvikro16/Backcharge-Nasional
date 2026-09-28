@@ -96,6 +96,12 @@ export default function DatabaseView({
       if (activeDashboardFilter.statusConfirm !== undefined) {
         setSelectedConfirmStatus(activeDashboardFilter.statusConfirm);
       }
+      if (activeDashboardFilter.startDate !== undefined) {
+        setFilterStartDate(activeDashboardFilter.startDate);
+      }
+      if (activeDashboardFilter.endDate !== undefined) {
+        setFilterEndDate(activeDashboardFilter.endDate);
+      }
     }
   }, [activeDashboardFilter]);
 

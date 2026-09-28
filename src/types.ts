@@ -220,6 +220,8 @@ export interface DashboardFilter {
   branch?: string;
   statusPayment?: string;
   statusConfirm?: string;
+  startDate?: string;
+  endDate?: string;
   alert?: 'due' | 'pending' | 'high_value' | '';
 }
 
