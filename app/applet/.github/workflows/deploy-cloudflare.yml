@@ -1,0 +1,60 @@
+name: Automated Push & Deploy to Cloudflare (Workers & Pages)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  deploy-pages:
+    name: 🚀 Deploy Cloudflare Pages (Frontend & Functions)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Install Dependencies
+        run: npm ci || npm install
+
+      - name: 🔨 Build Frontend Applet
+        run: npm run build:pages
+        env:
+          NODE_ENV: production
+
+      - name: ⚡ Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=backcharge-nasional --commit-dirty=true
+
+  deploy-worker:
+    name: ⚡ Deploy Cloudflare Worker (D1 Edge API)
+    runs-on: ubuntu-latest
+    needs: deploy-pages
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 📦 Install Dependencies
+        run: npm ci || npm install
+
+      - name: ⚡ Deploy Edge Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy cloudflare-api-worker.js --name=backcharge-worker-api --compatibility-date=2024-09-01

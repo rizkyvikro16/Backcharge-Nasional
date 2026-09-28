@@ -10,7 +10,10 @@
     "start": "node dist/server.js",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js dist/server.cjs",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "deploy:pages": "npm run build:pages && npx wrangler pages deploy dist --project-name=backcharge-nasional",
+    "deploy:worker": "npx wrangler deploy --config=wrangler.worker.toml",
+    "deploy:all": "npm run deploy:pages && npm run deploy:worker"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",

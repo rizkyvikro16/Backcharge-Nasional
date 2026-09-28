@@ -1,0 +1,10 @@
+name = "backcharge-worker-api"
+main = "cloudflare-api-worker.js"
+compatibility_date = "2024-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cloudflare D1 Database Binding
+[[d1_databases]]
+binding = "DB"
+database_name = "backcharge-db"
+database_id = "155712d3-90aa-439c-a7db-af868f08f681"
