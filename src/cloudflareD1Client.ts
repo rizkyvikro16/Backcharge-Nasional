@@ -256,76 +256,23 @@ export function clearD1QueryCache() {
  * and returns the short relative URL (/uploads/img_....jpg) so D1 memory is never burdened.
  */
 export function saveBase64ToDisk(base64Str: string): string {
-  if (!base64Str || typeof base64Str !== "string") return base64Str;
-  if (!base64Str.startsWith("data:") || !base64Str.includes(";base64,")) return base64Str;
-
-  try {
-    const commaIndex = base64Str.indexOf(",");
-    if (commaIndex === -1) return base64Str;
-
-    const prefix = base64Str.substring(0, commaIndex).toLowerCase();
-    const rawData = base64Str.substring(commaIndex + 1).replace(/\s/g, '');
-    if (!rawData) return base64Str;
-
-    let ext = "jpg";
-    if (prefix.includes("png")) ext = "png";
-    else if (prefix.includes("webp")) ext = "webp";
-    else if (prefix.includes("pdf")) ext = "pdf";
-    else if (prefix.includes("gif")) ext = "gif";
-    else if (prefix.includes("svg")) ext = "svg";
-
-    const buffer = Buffer.from(rawData, "base64");
-    const safeName = `img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
-    const uploadsDir = path.join(process.cwd(), "uploads");
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-    const filePath = path.join(uploadsDir, safeName);
-    fs.writeFileSync(filePath, buffer);
-    console.log(`[STORAGE OPTIMIZER] Converted base64 (${(base64Str.length / 1024).toFixed(1)} KB) -> /uploads/${safeName}`);
-    return `/uploads/${safeName}`;
-  } catch (err: any) {
-    console.warn("[STORAGE OPTIMIZER] Gagal mengonversi base64:", err.message);
-    return base64Str;
-  }
+  // Pass through base64 data URLs so Cloudflare Pages edge deployments can display them directly
+  return base64Str;
 }
 
 /**
- * Strips and converts all base64 data URLs in query parameters into short /uploads/ URLs.
+ * Strips and converts all base64 data URLs in query parameters safely.
  */
 export function sanitizeSqlParams(params: any[]): any[] {
   if (!Array.isArray(params)) return params;
-  return params.map(p => {
-    if (typeof p === "string") {
-      if (p.startsWith("data:") && p.includes(";base64,")) {
-        return saveBase64ToDisk(p);
-      }
-      if (p.includes("data:image/") && p.includes(";base64,")) {
-        return p.replace(/data:image\/[a-zA-Z0-9.+]+;base64,[A-Za-z0-9+/=]+/g, (match) => {
-          return saveBase64ToDisk(match);
-        });
-      }
-    }
-    return p;
-  });
+  return params;
 }
 
 /**
- * Strips and converts all inline base64 string literals in SQL strings into short /uploads/ URLs.
+ * Strips and converts all inline base64 string literals in SQL strings safely.
  */
 export function sanitizeSqlString(sql: string): string {
-  if (!sql || typeof sql !== "string" || !sql.includes("data:")) return sql;
-  return sql
-    .replace(/'data:[^']+;base64,[^']+'/gi, (match) => {
-      const rawVal = match.slice(1, -1);
-      const shortUrl = saveBase64ToDisk(rawVal);
-      return `'${shortUrl}'`;
-    })
-    .replace(/"data:[^"]+;base64,[^"]+"/gi, (match) => {
-      const rawVal = match.slice(1, -1);
-      const shortUrl = saveBase64ToDisk(rawVal);
-      return `"${shortUrl}"`;
-    });
+  return sql;
 }
 
 /**
@@ -558,24 +505,7 @@ async function queryD1Direct(sql: string, params: any[] = []): Promise<any[]> {
   const queryResult: D1QueryResponse = data.result?.[0];
   let results = queryResult?.results || [];
 
-  // Automatically convert any base64 fields in returned rows to short disk URLs so browser & memory stay light
-  if (Array.isArray(results) && results.length > 0) {
-    results = results.map(row => {
-      if (typeof row === "object" && row !== null) {
-        let changed = false;
-        const newRow = { ...row };
-        for (const [k, v] of Object.entries(newRow)) {
-          if (typeof v === "string" && v.startsWith("data:") && v.includes(";base64,")) {
-            newRow[k] = saveBase64ToDisk(v);
-            changed = true;
-          }
-        }
-        return changed ? newRow : row;
-      }
-      return row;
-    });
-  }
-
+  // Return query results directly to frontend
   if (isReadQuery) {
     queryCache.set(cacheKey, {
       data: results,
