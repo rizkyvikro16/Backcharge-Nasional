@@ -123,8 +123,10 @@ export default {
     }
 
     const url = new URL(request.url);
+    const pathname = url.pathname.replace(/\/+$/, "");
+
     // File Data & Uploads proxy route (relays static disk files from Express app)
-    if (pathname === "/api/file-data" || pathname === "/api/file/data" || pathname.startsWith("/uploads/")) {
+    if (pathname === "/api/file-data" || pathname === "/api/file/data" || pathname.startsWith("/uploads")) {
       const originUrl = `https://ais-dev-d2jxy6lmt46fvtybeg4n24-563947435575.asia-southeast1.run.app${url.pathname}${url.search}`;
       try {
         const proxyRes = await fetch(originUrl, {
