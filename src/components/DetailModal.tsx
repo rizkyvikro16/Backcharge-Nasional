@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, Trash2, Upload, Download, FileText, 
   Image, Eye,
-  Cloud, Loader2, ExternalLink, User
+  Cloud, Loader2, ExternalLink, User, AlertCircle
 } from 'lucide-react';
 import { Backcharge, Profile, isRegionalHeadRole, hasRole } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
 import { getApiUrl } from '../lib/api';
+import { resolveFileUrl, openFileInNewTab } from '../lib/fileResolver';
+import { ResolvedImage } from './ResolvedImage';
 
 interface DetailModalProps {
   transaction: Backcharge;
@@ -32,6 +34,166 @@ const getDrivePreviewUrl = (url: string): string => {
   }
   return url;
 };
+
+// Resilient component to safely load and render images & PDFs from local disk, API, or data URLs
+function SafeLightboxContent({ 
+  url, 
+  title, 
+  onDownload 
+}: { 
+  url: string; 
+  title: string; 
+  onDownload: () => void;
+}) {
+  const [dataUrl, setDataUrl] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [hasError, setHasError] = useState<boolean>(false);
+  const [isPdf, setIsPdf] = useState<boolean>(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    setHasError(false);
+
+    if (!url) {
+      setHasError(true);
+      setIsLoading(false);
+      return;
+    }
+
+    // 1. Direct Data URLs (instant memory load)
+    if (url.startsWith('data:')) {
+      setDataUrl(url);
+      setIsPdf(url.startsWith('data:application/pdf'));
+      setIsLoading(false);
+      return;
+    }
+
+    // 2. Direct Web URLs (Google Drive etc.)
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      setDataUrl(url);
+      setIsPdf(/\.pdf($|\?)/i.test(url));
+      setIsLoading(false);
+      return;
+    }
+
+    // 3. Local server file paths (/uploads/... or /api/...)
+    const fetchFileData = async () => {
+      try {
+        const queryUrl = getApiUrl(`/api/file-data?path=${encodeURIComponent(url)}`);
+        const res = await fetch(queryUrl);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.data && isMounted) {
+            setDataUrl(json.data);
+            setIsPdf(json.mimeType === 'application/pdf' || url.toLowerCase().endsWith('.pdf'));
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("API file-data fetch notice:", err);
+      }
+
+      try {
+        // Fallback: fetch binary file directly via /api/files/
+        const filename = url.split('/').pop() || '';
+        const streamUrl = getApiUrl(`/api/files/${encodeURIComponent(filename)}`);
+        const res = await fetch(streamUrl);
+        if (res.ok) {
+          const blob = await res.blob();
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            if (isMounted) {
+              const resUrl = reader.result as string;
+              setDataUrl(resUrl);
+              setIsPdf(blob.type === 'application/pdf' || url.toLowerCase().endsWith('.pdf'));
+              setIsLoading(false);
+            }
+          };
+          reader.readAsDataURL(blob);
+          return;
+        }
+      } catch (streamErr) {
+        console.warn("Direct file stream fetch notice:", streamErr);
+      }
+
+      if (isMounted) {
+        setDataUrl(getApiUrl(url));
+        setIsPdf(url.toLowerCase().endsWith('.pdf'));
+        setIsLoading(false);
+      }
+    };
+
+    fetchFileData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [url]);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 bg-slate-900/90 rounded-2xl border border-slate-800 text-slate-300 shadow-2xl animate-in zoom-in-95">
+        <Loader2 className="w-9 h-9 animate-spin text-blue-500 mb-3" />
+        <p className="text-xs font-bold text-slate-200">Memuat berkas foto & dokumen...</p>
+        <span className="text-[10px] text-slate-400 mt-1 font-mono truncate max-w-xs">{url}</span>
+      </div>
+    );
+  }
+
+  if (hasError || !dataUrl) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 bg-slate-900 border border-slate-800 rounded-2xl text-slate-300 text-center max-w-md shadow-2xl animate-in zoom-in-95">
+        <div className="w-12 h-12 bg-amber-500/10 rounded-full flex items-center justify-center text-amber-500 mb-3">
+          <AlertCircle className="w-6 h-6" />
+        </div>
+        <h4 className="text-sm font-bold text-slate-200 mb-1">Pratinjau Langsung Tidak Tersedia</h4>
+        <p className="text-[11px] text-slate-400 mb-4">Berkas tersimpan aman di server.</p>
+        <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            onClick={onDownload}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow transition-all cursor-pointer flex items-center space-x-1.5"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Unduh Berkas</span>
+          </button>
+          <a
+            href={getApiUrl(url)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all cursor-pointer flex items-center space-x-1.5"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Buka di Tab Baru</span>
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  if (isPdf) {
+    return (
+      <iframe 
+        src={dataUrl} 
+        className="w-full max-w-4xl h-[75vh] rounded-xl border border-slate-800 bg-white shadow-2xl" 
+        title="PDF Document Viewer"
+      />
+    );
+  }
+
+  return (
+    <img 
+      src={dataUrl} 
+      alt={title} 
+      loading="eager"
+      decoding="async"
+      className="max-w-full max-h-[75vh] object-contain rounded-xl border border-slate-800 shadow-2xl animate-in zoom-in-95 duration-200" 
+      onError={() => setHasError(true)}
+    />
+  );
+}
 
 export default function DetailModal({ 
   transaction, 
@@ -133,8 +295,27 @@ export default function DetailModal({
   
   // New States for Lightbox and Actions
   const [lightboxFile, setLightboxFile] = useState<{ url: string; title: string; docName?: string } | null>(null);
+  const [resolvedLightboxUrl, setResolvedLightboxUrl] = useState<string>('');
+  const [lightboxLoading, setLightboxLoading] = useState<boolean>(false);
   const [localHandoverSalesAdminFile, setLocalHandoverSalesAdminFile] = useState<string | null>(null);
   const [localHandoverSalesAdminFileName, setLocalHandoverSalesAdminFileName] = useState('');
+
+  useEffect(() => {
+    if (!lightboxFile || !lightboxFile.url) {
+      setResolvedLightboxUrl('');
+      setLightboxLoading(false);
+      return;
+    }
+    let isMounted = true;
+    setLightboxLoading(true);
+    resolveFileUrl(lightboxFile.url).then(res => {
+      if (isMounted) {
+        setResolvedLightboxUrl(res);
+        setLightboxLoading(false);
+      }
+    });
+    return () => { isMounted = false; };
+  }, [lightboxFile]);
 
   // Helper to generate standard file name: [nama lampiran dokumen]_[id bc]_[nopol]_[customer]
   const getFormattedFileName = (
@@ -618,13 +799,27 @@ export default function DetailModal({
 
     // 1b. Check if it's relative server URL (/uploads/...)
     if (fileData.startsWith('/uploads/') || fileData.includes('/uploads/')) {
-      const link = document.createElement('a');
-      link.href = getApiUrl(fileData);
-      link.target = '_blank';
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const triggerDownload = (href: string) => {
+        const link = document.createElement('a');
+        link.href = href;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+
+      fetch(getApiUrl(`/api/file-data?path=${encodeURIComponent(fileData)}`))
+        .then(res => res.json())
+        .then(json => {
+          if (json.data) {
+            triggerDownload(json.data);
+          } else {
+            triggerDownload(getApiUrl(fileData));
+          }
+        })
+        .catch(() => {
+          triggerDownload(getApiUrl(fileData));
+        });
       return;
     }
 
@@ -2387,8 +2582,8 @@ export default function DetailModal({
 
                     {localHandoverSalesAdminFile && (
                       <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 p-2 flex flex-col items-center justify-center max-h-32">
-                        {localHandoverSalesAdminFile.startsWith('data:') ? (
-                          <img src={localHandoverSalesAdminFile} alt="Preview serah terima" loading="lazy" decoding="async" className="object-contain max-h-28" />
+                        {localHandoverSalesAdminFile.startsWith('data:') || localHandoverSalesAdminFile.startsWith('/uploads/') ? (
+                          <ResolvedImage src={localHandoverSalesAdminFile} alt="Preview serah terima" loading="lazy" decoding="async" className="object-contain max-h-28" />
                         ) : (
                           <div className="text-center py-2 text-[10px] text-emerald-600 font-bold flex flex-col items-center">
                             <Cloud className="w-6 h-6 mb-1 text-emerald-500" />
@@ -2660,8 +2855,8 @@ export default function DetailModal({
 
                       {localHandoverSalesAdminFile && (
                         <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 p-2 flex flex-col items-center justify-center max-h-32">
-                          {localHandoverSalesAdminFile.startsWith('data:') ? (
-                            <img src={localHandoverSalesAdminFile} alt="Preview serah terima" loading="lazy" decoding="async" className="object-contain max-h-28" />
+                          {localHandoverSalesAdminFile.startsWith('data:') || localHandoverSalesAdminFile.startsWith('/uploads/') ? (
+                            <ResolvedImage src={localHandoverSalesAdminFile} alt="Preview serah terima" loading="lazy" decoding="async" className="object-contain max-h-28" />
                           ) : (
                             <div className="text-center py-2 text-[10px] text-emerald-600 font-bold flex flex-col items-center">
                               <Cloud className="w-6 h-6 mb-1 text-emerald-500" />
@@ -2866,21 +3061,19 @@ export default function DetailModal({
                 </button>
               )}
 
-              {lightboxFile.url && (lightboxFile.url.startsWith('http') || lightboxFile.url.startsWith('/uploads/')) && (
-                <a 
-                  href={getApiUrl(lightboxFile.url)}
-                  target="_blank"
-                  rel="noopener noreferrer"
+              {lightboxFile.url && (
+                <button 
+                  onClick={() => openFileInNewTab(lightboxFile.url, lightboxFile.title)}
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center space-x-1 transition-all cursor-pointer"
                   title="Buka Dokumen di Tab Baru"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Buka di Tab Baru</span>
-                </a>
+                </button>
               )}
               <button 
                 onClick={() => setLightboxFile(null)} 
-                className="p-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition-all"
+                className="p-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition-all cursor-pointer"
                 title="Tutup Pratinjau"
               >
                 <X className="w-4 h-4" />
@@ -2890,17 +3083,20 @@ export default function DetailModal({
 
           {/* Lightbox Content Body */}
           <div className="flex-grow flex items-center justify-center overflow-auto py-6 print:py-0 print:block print:overflow-visible">
-            {lightboxFile.url.startsWith('data:image/') || lightboxFile.url.startsWith('/uploads/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(lightboxFile.url) ? (
-              <img 
-                src={lightboxFile.url.startsWith('data:') ? lightboxFile.url : getApiUrl(lightboxFile.url)} 
+            {lightboxLoading ? (
+              <div className="flex flex-col items-center justify-center p-12 text-white space-y-3">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+                <span className="text-xs font-bold font-sans">Memuat pratinjau berkas...</span>
+              </div>
+            ) : (resolvedLightboxUrl.startsWith('data:image/') || resolvedLightboxUrl.startsWith('blob:') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(resolvedLightboxUrl) || lightboxFile.url.startsWith('/uploads/')) ? (
+              <ResolvedImage 
+                src={lightboxFile.url} 
                 alt={lightboxFile.title} 
-                loading="lazy"
-                decoding="async"
                 className="max-w-full max-h-[75vh] object-contain rounded-xl border border-slate-800 shadow-2xl animate-in zoom-in-95 duration-200" 
               />
-            ) : lightboxFile.url.startsWith('data:application/pdf') || /\.pdf$/i.test(lightboxFile.url) ? (
+            ) : (resolvedLightboxUrl.startsWith('data:application/pdf') || /\.pdf$/i.test(resolvedLightboxUrl)) ? (
               <iframe 
-                src={lightboxFile.url.startsWith('data:') ? lightboxFile.url : getApiUrl(lightboxFile.url)} 
+                src={resolvedLightboxUrl} 
                 className="w-full max-w-4xl h-[75vh] rounded-xl border border-slate-800 bg-white" 
                 title="PDF Viewer"
               />

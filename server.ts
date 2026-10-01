@@ -59,8 +59,15 @@ async function startServer() {
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
-  // Sajikan folder uploads secara statis
-  app.use("/uploads", express.static(uploadsDir));
+  // Sajikan folder uploads secara statis dengan header CORS dan Cache-Control lengkap
+  app.use("/uploads", (req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Range");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    if (req.method === "OPTIONS") return res.sendStatus(200);
+    next();
+  }, express.static(uploadsDir, { maxAge: "365d", immutable: true }));
 
   // Max upload size 15MB for documents/photos
   const upload = multer({
@@ -279,6 +286,58 @@ async function startServer() {
       return res.status(200).json({ success: true, ...result });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // API Route to retrieve file/image content as data URL (bulletproof for iframe/webview rendering)
+  app.get(["/api/file-data", "/api/file/data"], (req, res) => {
+    try {
+      const rawPath = (req.query.path as string) || (req.query.file as string) || "";
+      if (!rawPath) {
+        return res.status(400).json({ error: "Parameter path atau file diperlukan" });
+      }
+      const filename = path.basename(rawPath);
+      const filePath = path.join(uploadsDir, filename);
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: `Berkas tidak ditemukan: ${filename}` });
+      }
+      const ext = path.extname(filename).toLowerCase().replace('.', '') || 'jpg';
+      let mimeType = 'image/jpeg';
+      if (ext === 'png') mimeType = 'image/png';
+      else if (ext === 'webp') mimeType = 'image/webp';
+      else if (ext === 'gif') mimeType = 'image/gif';
+      else if (ext === 'pdf') mimeType = 'application/pdf';
+      else if (ext === 'svg') mimeType = 'image/svg+xml';
+
+      const fileBuffer = fs.readFileSync(filePath);
+      const base64Data = `data:${mimeType};base64,${fileBuffer.toString('base64')}`;
+
+      return res.status(200).json({
+        success: true,
+        filename,
+        mimeType,
+        size: fileBuffer.length,
+        data: base64Data
+      });
+    } catch (err: any) {
+      console.error("[FILE DATA API] Error:", err.message);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Direct file stream endpoint with explicit headers and caching
+  app.get(["/api/files/:filename", "/api/uploads/:filename"], (req, res) => {
+    try {
+      const filename = path.basename(req.params.filename);
+      const filePath = path.join(uploadsDir, filename);
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: "Berkas tidak ditemukan" });
+      }
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      return res.sendFile(filePath);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
     }
   });
 
