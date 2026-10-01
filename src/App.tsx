@@ -552,8 +552,38 @@ export default function App() {
   
   // UI states
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
+  const [activeDetailRecord, setActiveDetailRecord] = useState<Backcharge | null>(null);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Direct single-row Primary Key fetcher for opening records from any page across millions of records
+  useEffect(() => {
+    if (!selectedTransactionId) {
+      setActiveDetailRecord(null);
+      return;
+    }
+
+    const localFound = transactions.find(t => t.id === selectedTransactionId);
+    if (localFound) {
+      setActiveDetailRecord(localFound);
+    }
+
+    let isMounted = true;
+    fetch(getApiUrl(`/api/d1/backcharges/detail/${encodeURIComponent(selectedTransactionId)}`))
+      .then(res => res.json())
+      .then(d => {
+        if (isMounted && d.success && d.data) {
+          setActiveDetailRecord(unpackExtraFields(d.data));
+        }
+      })
+      .catch(err => {
+        console.warn("Direct detail query notice:", err?.message || err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedTransactionId, transactions]);
 
   // Safety timeout guard: Prevent loading overlay from sticking for more than 8 seconds
   useEffect(() => {
@@ -905,77 +935,112 @@ export default function App() {
     }
   }, [transactions, currentUser, readNotifIds]);
 
+  // Shared in-flight query map to coalesce identical requests on the frontend
+  const inFlightClientQueries = useRef<Map<string, Promise<any[]>>>(new Map());
+
   // Shared fast D1 query executor
   const executeD1Query = useCallback(async (sql: string, params: any[] = [], attempt = 1): Promise<any[]> => {
-    let res: Response;
-    try {
-      res = await fetch(getApiUrl("/api/d1/query"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql, params })
-      });
-    } catch (networkErr: any) {
-      if (attempt <= 4) {
-        await new Promise(r => setTimeout(r, attempt * 350));
-        return executeD1Query(sql, params, attempt + 1);
-      }
-      console.warn("Koneksi D1 gagal:", networkErr?.message || networkErr);
-      throw new Error("Koneksi D1 tidak dapat dijangkau: " + (networkErr?.message || 'Network error'));
+    const trimmedSql = sql.trim();
+    const isReadQuery = /^(SELECT|PRAGMA|EXPLAIN)/i.test(trimmedSql);
+    const dedupeKey = `${trimmedSql}:::${JSON.stringify(params || [])}`;
+
+    // If already in flight, reuse the active promise
+    if (attempt === 1 && isReadQuery && inFlightClientQueries.current.has(dedupeKey)) {
+      return inFlightClientQueries.current.get(dedupeKey)!;
     }
 
-    const text = await res.text();
-    const isRateExceeded = res.status === 429 || 
-      text.includes("Rate exceeded") || 
-      text.includes("rate limit") || 
-      text.includes("too many requests") ||
-      text.includes("10022");
-
-    if (isRateExceeded && attempt <= 6) {
-      const delayMs = attempt * 500 + Math.floor(Math.random() * 300);
-      console.warn("⚠️ D1 Rate Limit (429). Retrying query in " + delayMs + "ms (attempt " + attempt + "/6)...");
-      await new Promise(r => setTimeout(r, delayMs));
-      return executeD1Query(sql, params, attempt + 1);
-    }
-
-    let d: any = {};
-    try { 
-      d = JSON.parse(text); 
-    } catch {
-      if (text.trim().startsWith("<!") || text.trim().startsWith("<html")) {
-        if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-          try {
-            navigator.serviceWorker.getRegistrations().then(registrations => {
-              for (const reg of registrations) reg.unregister();
-            });
-          } catch {}
-        }
-        if (attempt <= 3) {
-          await new Promise(r => setTimeout(r, 400));
+    const runQuery = async (): Promise<any[]> => {
+      let res: Response;
+      try {
+        res = await fetch(getApiUrl("/api/d1/query"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sql, params })
+        });
+      } catch (networkErr: any) {
+        if (attempt <= 4) {
+          await new Promise(r => setTimeout(r, attempt * 400));
           return executeD1Query(sql, params, attempt + 1);
         }
-        throw new Error("Koneksi API D1 terintersepsi (Status " + res.status + "). Mengulang koneksi ke server...");
+        console.warn("Koneksi D1 gagal:", networkErr?.message || networkErr);
+        throw new Error("Koneksi D1 tidak dapat dijangkau: " + (networkErr?.message || 'Network error'));
       }
-      if (isRateExceeded) {
-        throw new Error("Rate limit sementara Cloudflare D1. Sistem otomatis melakukan backoff.");
-      }
-      throw new Error("Respons D1 (" + res.status + "): " + (text.substring(0, 100) || 'Kosong'));
-    }
 
-    if (!d.success) {
-      if (d.error && (d.error.includes("Database binding 'DB'") || d.error.includes("binding 'DB'"))) {
-        console.warn("Cloudflare D1 binding DB not yet attached in Pages settings. Falling back to local cache.");
-        return [];
-      }
-      const errStr = (d.error || "").toLowerCase();
-      if ((errStr.includes("rate limit") || errStr.includes("rate exceeded")) && attempt <= 6) {
-        const delayMs = attempt * 500 + Math.floor(Math.random() * 300);
+      const text = await res.text();
+      const isRateExceeded = res.status === 429 || 
+        text.includes("Rate exceeded") || 
+        text.includes("rate limit") || 
+        text.includes("too many requests") ||
+        text.includes("10022");
+
+      if (isRateExceeded && attempt <= 6) {
+        const delayMs = Math.min(6000, attempt * 800 + Math.floor(Math.random() * 400));
+        console.warn("⚠️ D1 Rate Limit (429). Retrying query in " + delayMs + "ms (attempt " + attempt + "/6)...");
         await new Promise(r => setTimeout(r, delayMs));
         return executeD1Query(sql, params, attempt + 1);
       }
-      throw new Error(d.error || "Gagal kueri D1");
+
+      let d: any = {};
+      try { 
+        d = JSON.parse(text); 
+      } catch {
+        if (text.trim().startsWith("<!") || text.trim().startsWith("<html")) {
+          if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+            try {
+              navigator.serviceWorker.getRegistrations().then(registrations => {
+                for (const reg of registrations) reg.unregister();
+              });
+            } catch {}
+          }
+          if (attempt <= 3) {
+            await new Promise(r => setTimeout(r, 400));
+            return executeD1Query(sql, params, attempt + 1);
+          }
+          if (isReadQuery) {
+            console.warn("Koneksi API mengembalikan halaman SPA. Menggunakan cadangan data lokal.");
+            return [];
+          }
+          throw new Error("Koneksi API D1 terintersepsi (Status " + res.status + ").");
+        }
+        if (isRateExceeded) {
+          if (isReadQuery) return [];
+          throw new Error("Rate limit sementara Cloudflare D1.");
+        }
+        if (isReadQuery) return [];
+        throw new Error("Respons D1 (" + res.status + "): " + (text.substring(0, 100) || 'Kosong'));
+      }
+
+      if (!d.success) {
+        if (d.error && (d.error.includes("Database binding 'DB'") || d.error.includes("binding 'DB'"))) {
+          console.warn("Cloudflare D1 binding DB not yet attached in Pages settings. Falling back to local cache.");
+          return [];
+        }
+        const errStr = (d.error || "").toLowerCase();
+        if ((errStr.includes("rate limit") || errStr.includes("rate exceeded")) && attempt <= 6) {
+          const delayMs = Math.min(6000, attempt * 800 + Math.floor(Math.random() * 400));
+          await new Promise(r => setTimeout(r, delayMs));
+          return executeD1Query(sql, params, attempt + 1);
+        }
+        if (isReadQuery) {
+          console.warn("D1 query returned unsuccessful, falling back gracefully:", d.error);
+          return [];
+        }
+        throw new Error(d.error || "Gagal kueri D1");
+      }
+
+      return d.results || [];
+    };
+
+    const promise = runQuery();
+
+    if (isReadQuery && attempt === 1) {
+      inFlightClientQueries.current.set(dedupeKey, promise);
+      promise.finally(() => {
+        inFlightClientQueries.current.delete(dedupeKey);
+      });
     }
 
-    return d.results || [];
+    return promise;
   }, []);
 
   // Helper for 0ms Optimistic UI Updates & Instant Local Storage Cache Sync
@@ -1140,86 +1205,21 @@ export default function App() {
 
             const cachedMaxUpdated = localStorage.getItem("backcharge_cache_max_updated") || "";
             const cachedMaxCreated = localStorage.getItem("backcharge_cache_max_created") || "";
-            const cachedCount = Number(localStorage.getItem("backcharge_cache_count")) || cachedTxs.length;
+            let finalTxs: Backcharge[] = cachedTxs;
 
-            let shouldFetchFull = forceFull || cachedTxs.length === 0;
-            let finalTxs = cachedTxs;
+            // Always fetch 100% actual live data directly from Cloudflare D1
+            const bcsPromise = fetchAllBackchargesFromD1(backchargesQuery, queryParams);
 
-            // Probe metadata fingerprint with 1-row read if local cache exists
-            if (!shouldFetchFull && cachedTxs.length > 0) {
-              try {
-                // Uses idx_backcharges_updated_at and idx_backcharges_created_at -> Exactly 1 Row Read in D1!
-                let probeSql = "SELECT COUNT(*) as total_count, MAX(updated_at) as max_updated, MAX(created_at) as max_created FROM backcharges WHERE 1=1";
-                if (!isNationalOrAll && activeUser) {
-                  const allowedBranches = getRoleAllowedBranches(activeUser.role, activeUser.branch);
-                  if (allowedBranches.length > 0 && allowedBranches.length < ALL_SYSTEM_BRANCHES.length) {
-                    const branchList = allowedBranches.map(b => "'" + b.replace(/'/g, "''") + "'").join(",");
-                    probeSql += " AND branch IN (" + branchList + ")";
-                  }
-                }
-
-                const probeRes = await executeD1Query(probeSql);
-                const meta = probeRes?.[0] || {};
-                const totalCount = Number(meta.total_count) || 0;
-                const maxUpdated = String(meta.max_updated || "");
-                const maxCreated = String(meta.max_created || "");
-
-                if (totalCount === cachedCount && maxUpdated === cachedMaxUpdated && cachedCount > 0) {
-                  // 100% IDENTICAL TO D1: Zero extra rows read from backcharges!
-                  finalTxs = cachedTxs;
-                } else if (totalCount >= cachedCount && cachedMaxUpdated && (maxUpdated !== cachedMaxUpdated || maxCreated !== cachedMaxCreated)) {
-                  // DELTA FETCH: Read ONLY rows that were newly created or updated (indexed scan)
-                  let deltaSql = "SELECT * FROM backcharges WHERE (updated_at > ? OR created_at > ?)";
-                  if (!isNationalOrAll && activeUser) {
-                    const allowedBranches = getRoleAllowedBranches(activeUser.role, activeUser.branch);
-                    if (allowedBranches.length > 0 && allowedBranches.length < ALL_SYSTEM_BRANCHES.length) {
-                      const branchList = allowedBranches.map(b => "'" + b.replace(/'/g, "''") + "'").join(",");
-                      deltaSql += " AND branch IN (" + branchList + ")";
-                    }
-                  }
-                  deltaSql += " ORDER BY updated_at DESC LIMIT 500";
-
-                  const deltaRes = await executeD1Query(deltaSql, [cachedMaxUpdated, cachedMaxCreated || cachedMaxUpdated]);
-                  if (deltaRes && Array.isArray(deltaRes) && deltaRes.length > 0) {
-                    const unpackedDelta = deltaRes.map(unpackExtraFields);
-                    const map = new Map<string, Backcharge>(cachedTxs.map(t => [t.id, t]));
-                    unpackedDelta.forEach((dt: Backcharge) => map.set(dt.id, dt));
-                    finalTxs = Array.from(map.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-                  }
-                  try {
-                    localStorage.setItem("backcharge_cache_max_updated", maxUpdated);
-                    localStorage.setItem("backcharge_cache_max_created", maxCreated);
-                    localStorage.setItem("backcharge_cache_count", String(finalTxs.length));
-                  } catch {}
-                } else {
-                  shouldFetchFull = true;
-                }
-              } catch (probeErr) {
-                console.warn("Probe check notice, falling back to full fetch:", probeErr);
-                shouldFetchFull = true;
-              }
-            }
-
-            // Fallback or explicit Full Refresh (e.g. user clicked refresh button or cache empty)
-            let bcsPromise: Promise<any[]>;
-            if (shouldFetchFull) {
-              bcsPromise = fetchAllBackchargesFromD1(backchargesQuery, queryParams);
-            } else {
-              bcsPromise = Promise.resolve(null as any);
-            }
-
-            // Ultra-lean queries for supporting tables (50 logs and 30 inquiries instead of hundreds)
-            const [bcs, logsData, profilesData, inquiriesData] = await Promise.all([
-              bcsPromise,
-              executeD1Query("SELECT * FROM activity_logs ORDER BY id DESC LIMIT 50"),
-              executeD1Query(profilesQuery),
-              executeD1Query("SELECT * FROM contact_inquiries ORDER BY created_at DESC LIMIT 30")
-            ]);
+            // Ultra-lean queries executed cleanly without bursting D1 REST API concurrency limits
+            const bcs = await bcsPromise;
+            const logsData = await executeD1Query("SELECT * FROM activity_logs ORDER BY id DESC LIMIT 50");
+            const profilesData = await executeD1Query(profilesQuery);
+            const inquiriesData = await executeD1Query("SELECT * FROM contact_inquiries ORDER BY created_at DESC LIMIT 30");
 
             isInitialLoadRef.current = false;
             if (bcs && Array.isArray(bcs)) {
-              finalTxs = bcs.map(unpackExtraFields);
-              if (finalTxs.length > 0) {
+              if (bcs.length > 0) {
+                finalTxs = bcs.map(unpackExtraFields);
                 const maxUp = finalTxs.reduce((max, t) => (t.updated_at && t.updated_at > max) ? t.updated_at : max, "");
                 const maxCr = finalTxs.reduce((max, t) => (t.created_at && t.created_at > max) ? t.created_at : max, "");
                 try {
@@ -1227,18 +1227,39 @@ export default function App() {
                   localStorage.setItem("backcharge_cache_max_created", maxCr);
                   localStorage.setItem("backcharge_cache_count", String(finalTxs.length));
                 } catch {}
+              } else {
+                // If D1 returned 0 backcharges, fallback to local storage mockDb so data never disappears
+                const localFallback = mockDb.getBackcharges();
+                if (localFallback && localFallback.length > 0) {
+                  finalTxs = localFallback;
+                }
               }
             }
 
+            let finalProfiles = (profilesData as Profile[]) || [];
+            if (!finalProfiles || finalProfiles.length === 0) {
+              finalProfiles = mockDb.getProfiles();
+            }
+
+            let finalLogs = (logsData as ActivityLog[]) || [];
+            if (!finalLogs || finalLogs.length === 0) {
+              finalLogs = mockDb.getLogs();
+            }
+
+            let finalInquiries = (inquiriesData as ContactInquiry[]) || [];
+            if (!finalInquiries || finalInquiries.length === 0) {
+              finalInquiries = mockDb.getContactInquiries();
+            }
+
             setTransactions(finalTxs as Backcharge[]);
-            setLogs((logsData as ActivityLog[]) || []);
-            setProfiles((profilesData as Profile[]) || []);
-            setInquiries((inquiriesData as ContactInquiry[]) || []);
+            setLogs(finalLogs);
+            setProfiles(finalProfiles);
+            setInquiries(finalInquiries);
 
             try {
               localStorage.setItem("backcharge_cache_txs", JSON.stringify(finalTxs));
-              localStorage.setItem("backcharge_cache_logs", JSON.stringify(logsData));
-              localStorage.setItem("backcharge_cache_profs", JSON.stringify(profilesData));
+              localStorage.setItem("backcharge_cache_logs", JSON.stringify(finalLogs));
+              localStorage.setItem("backcharge_cache_profs", JSON.stringify(finalProfiles));
               localStorage.setItem("backcharge_cache_time_v2", String(Date.now()));
               localStorage.setItem("backcharge_cache_user", activeUser?.email || "");
             } catch (cacheErr) {
@@ -1378,15 +1399,6 @@ export default function App() {
 
   // Login handler
   const handleLoginSuccess = (profile: Profile) => {
-    try {
-      localStorage.removeItem('backcharge_cache_txs');
-      localStorage.removeItem('backcharge_cache_logs');
-      localStorage.removeItem('backcharge_cache_profs');
-      localStorage.removeItem('backcharge_cache_time_v2');
-      localStorage.removeItem('backcharge_cache_user');
-    } catch (e) {}
-    setTransactions([]);
-    setLoading(true);
     setCurrentUser(profile);
     localStorage.setItem('backcharge_session_profile', JSON.stringify(profile));
     addToast(`Otentikasi Berhasil! Selamat datang, ${profile.full_name}.`, 'success');
@@ -2595,14 +2607,26 @@ export default function App() {
       </div>
 
       {/* 6. GLOBAL DETAIL MODAL FOR TRANSACTION STEPS */}
-      {selectedTransactionId && selectedTransaction && (
+      {selectedTransactionId && (activeDetailRecord || selectedTransaction) && (
         <DetailModal 
-          transaction={selectedTransaction}
+          transaction={activeDetailRecord || selectedTransaction!}
           currentUser={currentUser!}
           profiles={profiles}
-          onClose={() => setSelectedTransactionId(null)}
-          onUpdateStatus={handleUpdateTransaction}
-          onDeleteTransaction={handleDeleteTransaction}
+          onClose={() => {
+            setSelectedTransactionId(null);
+            setActiveDetailRecord(null);
+          }}
+          onUpdateStatus={(id, updates, log) => {
+            handleUpdateTransaction(id, updates, log);
+            if (activeDetailRecord && activeDetailRecord.id === id) {
+              setActiveDetailRecord(prev => prev ? { ...prev, ...updates } : null);
+            }
+          }}
+          onDeleteTransaction={(id) => {
+            handleDeleteTransaction(id);
+            setSelectedTransactionId(null);
+            setActiveDetailRecord(null);
+          }}
           addToast={addToast}
         />
       )}

@@ -4,9 +4,9 @@ import { createServer as createViteServer } from "vite";
 import multer from "multer";
 import { google } from "googleapis";
 import { Readable } from "stream";
-import dotenv from "dotenv";
 import fs from "fs";
-import { queryD1, ensureD1TablesExist, importFullMigrationFile } from "./src/cloudflareD1Client.ts";
+import dotenv from "dotenv";
+import { queryD1, ensureD1TablesExist, importFullMigrationFile, saveBase64ToDisk, cleanExistingD1Base64 } from "./src/cloudflareD1Client.ts";
 
 dotenv.config();
 
@@ -257,6 +257,31 @@ async function startServer() {
     }
   });
 
+  // API Route to convert base64 image strings to lightweight disk files (/uploads/...)
+  app.post("/api/upload-file", (req, res) => {
+    try {
+      const { base64, filename } = req.body || {};
+      if (!base64 || typeof base64 !== "string") {
+        return res.status(400).json({ error: "String Base64 diperlukan" });
+      }
+      const shortUrl = saveBase64ToDisk(base64);
+      return res.status(200).json({ success: true, url: shortUrl });
+    } catch (err: any) {
+      console.error("[UPLOAD-FILE API] Gagal mengonversi file:", err.message);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // API Route to clean existing base64 in Cloudflare D1
+  app.post("/api/d1/clean-base64", async (req, res) => {
+    try {
+      const result = await cleanExistingD1Base64();
+      return res.status(200).json({ success: true, ...result });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // ==========================================
   // CLOUDFLARE D1 SECURE DATABASE GATEWAY API
   // ==========================================
@@ -314,8 +339,289 @@ async function startServer() {
     });
   });
 
+  // =========================================================================
+  // SERVER-SIDE PAGINATED DATA ACCESS (Scalable up to 1,000,000+ Records)
+  // =========================================================================
+  
+  // 1d. Direct single record lookup by ID (Primary Key Query: 1 row, <5ms)
+  app.get(["/api/d1/backcharges/detail/:id", "/d1/backcharges/detail/:id"], async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!id) return res.status(400).json({ success: false, error: "ID transaksi diperlukan" });
+      const rows = await queryD1("SELECT * FROM backcharges WHERE id = ? LIMIT 1", [id]);
+      if (!rows || rows.length === 0) {
+        return res.status(404).json({ success: false, error: "Transaksi tidak ditemukan" });
+      }
+      res.json({ success: true, data: rows[0] });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
+  // 1e. Server-Side Paginated Query Engine (100-250 records per request with full SQL search, filter, sort)
+  const handlePaginatedBackcharges = async (req: any, res: any) => {
+    try {
+      const queryObj = { ...req.query, ...(req.body || {}) };
+      
+      const page = Math.max(1, parseInt(queryObj.page as string || "1", 10) || 1);
+      const limit = Math.min(250, Math.max(1, parseInt(queryObj.limit as string || "100", 10) || 100));
+      const offset = (page - 1) * limit;
+
+      const search = (queryObj.search as string || "").trim();
+      const category = (queryObj.category as string || "").trim();
+      const branch = (queryObj.branch as string || "").trim();
+      const statusPayment = (queryObj.statusPayment as string || "").trim();
+      const statusConfirm = (queryObj.statusConfirm as string || "").trim();
+      const statusSap = (queryObj.statusSap as string || "").trim();
+      const stage = (queryObj.stage as string || "").trim();
+      const alert = (queryObj.alert as string || "").trim();
+      const startDate = (queryObj.startDate as string || "").trim();
+      const endDate = (queryObj.endDate as string || "").trim();
+      const sortByRaw = (queryObj.sortBy as string || "created_at").trim();
+      const sortDir = (queryObj.sortDir as string || "DESC").toUpperCase() === "ASC" ? "ASC" : "DESC";
+
+      // Role & Branch restriction
+      const userRole = (queryObj.userRole as string || "").trim();
+      const userBranch = (queryObj.userBranch as string || "").trim();
+
+      const whereClauses: string[] = ["1=1"];
+      const params: any[] = [];
+
+      // 1. Role / User branch restriction
+      const isNasionalRole = !userRole || 
+        userRole === "Administrator" || 
+        userRole === "Division Head" || 
+        userBranch === "Nasional" || 
+        userBranch === "Semua Cabang" ||
+        userBranch.toLowerCase().includes("semua");
+
+      if (!isNasionalRole && userBranch) {
+        const branchList = userBranch.split(",").map(b => b.trim()).filter(Boolean);
+        if (branchList.length === 1) {
+          whereClauses.push("branch = ?");
+          params.push(branchList[0]);
+        } else if (branchList.length > 1) {
+          const placeholders = branchList.map(() => "?").join(",");
+          whereClauses.push(`branch IN (${placeholders})`);
+          params.push(...branchList);
+        }
+      }
+
+      // 2. Filter Cabang UI
+      if (branch && branch !== "Semua Cabang" && branch !== "Nasional") {
+        if (branch.includes(",")) {
+          const bList = branch.split(",").map(b => b.trim()).filter(Boolean);
+          const placeholders = bList.map(() => "?").join(",");
+          whereClauses.push(`branch IN (${placeholders})`);
+          params.push(...bList);
+        } else {
+          whereClauses.push("branch = ?");
+          params.push(branch);
+        }
+      }
+
+      // 3. Search (Server-side multi-column LIKE)
+      if (search) {
+        const searchPattern = `%${search}%`;
+        whereClauses.push("(id LIKE ? OR customer_name LIKE ? OR license_plate LIKE ? OR no_bak LIKE ? OR no_invoice LIKE ? OR no_spk LIKE ? OR no_sap LIKE ? OR nama_bro LIKE ?)");
+        params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+      }
+
+      // 4. Category
+      if (category) {
+        whereClauses.push("category = ?");
+        params.push(category);
+      }
+
+      // 5. Status Bayar
+      if (statusPayment) {
+        whereClauses.push("status_payment = ?");
+        params.push(statusPayment);
+      }
+
+      // 6. Status SAP
+      if (statusSap) {
+        whereClauses.push("status_sap = ?");
+        params.push(statusSap);
+      }
+
+      // 7. Status Confirm / Approval
+      if (statusConfirm) {
+        if (statusConfirm === "Ditolak / Negosiasi Ulang") {
+          whereClauses.push("(status_approval = 'Ditolak' OR regional_approval_status = 'Ditolak' OR division_approval_status = 'Ditolak' OR status_confirm = 'Ditolak / Negosiasi Ulang')");
+        } else {
+          whereClauses.push("status_confirm = ?");
+          params.push(statusConfirm);
+        }
+      }
+
+      // 8. Date Range
+      if (startDate) {
+        whereClauses.push("tanggal >= ?");
+        params.push(startDate);
+      }
+      if (endDate) {
+        whereClauses.push("tanggal <= ?");
+        params.push(endDate);
+      }
+
+      // 9. Stage mapping in SQL
+      if (stage) {
+        if (stage === "1_handover") {
+          whereClauses.push("status_handover = 'Pending'");
+        } else if (stage === "2_admin" || stage === "2_confirm") {
+          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin')");
+        } else if (stage === "3_sap_l1" || stage === "3_sap") {
+          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND (status_approval IS NULL OR status_approval = 'Belum Approval' OR status_approval = 'Pending') AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND status_payment != 'Lunas'");
+        } else if (stage === "4_invoice") {
+          whereClauses.push("status_handover != 'Pending' AND status_sap != 'Not Bill' AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND status_payment != 'Lunas' AND status_approval = 'Disetujui'");
+        } else if (stage === "5_payment") {
+          whereClauses.push("(no_invoice IS NOT NULL AND no_invoice != '-' AND no_invoice != '') OR status_payment = 'Lunas'");
+        } else if (stage === "6_done") {
+          whereClauses.push("status_payment = 'Lunas'");
+        }
+      }
+
+      // 10. Alert mapping in SQL
+      if (alert) {
+        const now = new Date();
+        const d15 = new Date(now.getTime() - 15 * 24 * 3600 * 1000).toISOString().split("T")[0];
+        const d7 = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString().split("T")[0];
+        const d30 = new Date(now.getTime() - 30 * 24 * 3600 * 1000).toISOString().split("T")[0];
+
+        if (alert === "due") {
+          whereClauses.push("status_payment = 'Belum Bayar' AND status_sap != 'Not Bill' AND (tanggal <= ? OR created_at <= ?)");
+          params.push(d15, d15);
+        } else if (alert === "pending") {
+          whereClauses.push("status_payment = 'Belum Bayar' AND status_sap != 'Not Bill' AND (tanggal <= ? OR created_at <= ?)");
+          params.push(d7, d7);
+        } else if (alert === "high_value") {
+          whereClauses.push("status_payment = 'Belum Bayar' AND status_sap != 'Not Bill' AND (tanggal <= ? OR created_at <= ?)");
+          params.push(d30, d30);
+        }
+      }
+
+      // Whitelist safe column names for sorting
+      const allowedSortCols = ["created_at", "updated_at", "tanggal", "value", "customer_name", "id", "branch", "category", "status_payment"];
+      const sortBy = allowedSortCols.includes(sortByRaw) ? sortByRaw : "created_at";
+
+      const whereSql = whereClauses.join(" AND ");
+
+      // Execute COUNT and paginated slice in safe sequence
+      const countSql = `SELECT COUNT(*) as total_count FROM backcharges WHERE ${whereSql}`;
+      const dataSql = `SELECT * FROM backcharges WHERE ${whereSql} ORDER BY ${sortBy} ${sortDir} LIMIT ? OFFSET ?`;
+
+      const countResult = await queryD1(countSql, params);
+      const totalCount = Number(countResult?.[0]?.total_count) || 0;
+
+      const pageParams = [...params, limit, offset];
+      const rows = await queryD1(dataSql, pageParams);
+
+      const totalPages = Math.ceil(totalCount / limit) || 1;
+      const hasMore = page < totalPages;
+
+      res.json({
+        success: true,
+        data: rows,
+        pagination: {
+          page,
+          limit,
+          total: totalCount,
+          totalPages,
+          hasMore,
+          offset
+        }
+      });
+    } catch (err: any) {
+      console.error("❌ Error in paginated backcharges gateway:", err.message);
+      res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  };
+
+  app.get(["/api/d1/backcharges/page", "/d1/backcharges/page"], handlePaginatedBackcharges);
+  app.post(["/api/d1/backcharges/page", "/d1/backcharges/page"], handlePaginatedBackcharges);
+
+  // 1f. Server-Side Aggregate Statistics for Dashboard (0 RAM footprint)
+  app.get(["/api/d1/backcharges/stats", "/d1/backcharges/stats"], async (req, res) => {
+    try {
+      const { branch, userBranch, userRole } = req.query;
+      const whereClauses: string[] = ["1=1"];
+      const params: any[] = [];
+
+      const isNasional = !userRole || 
+        userRole === "Administrator" || 
+        userRole === "Division Head" || 
+        userBranch === "Nasional" || 
+        userBranch === "Semua Cabang";
+
+      if (!isNasional && userBranch) {
+        const bList = String(userBranch).split(",").map(b => b.trim()).filter(Boolean);
+        if (bList.length > 0) {
+          const placeholders = bList.map(() => "?").join(",");
+          whereClauses.push(`branch IN (${placeholders})`);
+          params.push(...bList);
+        }
+      }
+
+      if (branch && branch !== "Semua Cabang" && branch !== "Nasional") {
+        whereClauses.push("branch = ?");
+        params.push(String(branch));
+      }
+
+      const whereSql = whereClauses.join(" AND ");
+
+      const summaryResult = await queryD1(`
+        SELECT 
+          COUNT(*) as total_count,
+          SUM(value) as total_value,
+          SUM(CASE WHEN status_payment = 'Lunas' THEN value ELSE 0 END) as total_paid_value,
+          SUM(CASE WHEN status_payment = 'Lunas' THEN 1 ELSE 0 END) as total_paid_count,
+          SUM(CASE WHEN status_payment = 'Belum Bayar' AND status_sap != 'Not Bill' THEN value ELSE 0 END) as total_os_value,
+          SUM(CASE WHEN status_payment = 'Belum Bayar' AND status_sap != 'Not Bill' THEN 1 ELSE 0 END) as total_os_count,
+          SUM(CASE WHEN status_sap = 'Not Bill' THEN value ELSE 0 END) as total_not_bill_value,
+          SUM(CASE WHEN status_sap = 'Not Bill' THEN 1 ELSE 0 END) as total_not_bill_count
+        FROM backcharges 
+        WHERE ${whereSql}
+      `, params);
+
+      const branchAggResult = await queryD1(`
+        SELECT 
+          branch, 
+          COUNT(*) as total_count,
+          SUM(value) as total_value,
+          SUM(CASE WHEN status_payment = 'Lunas' THEN value ELSE 0 END) as paid_value,
+          SUM(CASE WHEN status_payment = 'Belum Bayar' AND status_sap != 'Not Bill' THEN value ELSE 0 END) as os_value
+        FROM backcharges 
+        WHERE ${whereSql}
+        GROUP BY branch
+      `, params);
+
+      const catAggResult = await queryD1(`
+        SELECT 
+          category, 
+          COUNT(*) as total_count,
+          SUM(value) as total_value,
+          SUM(CASE WHEN status_payment = 'Lunas' THEN value ELSE 0 END) as paid_value
+        FROM backcharges 
+        WHERE ${whereSql}
+        GROUP BY category
+      `, params);
+
+      res.json({
+        success: true,
+        summary: summaryResult?.[0] || {},
+        branchStats: branchAggResult || [],
+        categoryStats: catAggResult || []
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
   // 2. Secure dynamic SQL execution gateway on D1 (Supporting GET/POST and with/without /api prefix)
   const handleD1QueryRequest = async (req: any, res: any) => {
+    let sql: string | undefined = undefined;
+    let params: any = undefined;
     try {
       let bodyData = req.body;
       
@@ -339,9 +645,6 @@ async function startServer() {
       }
 
       // 2. Extract sql from wherever we can find it
-      let sql: string | undefined = undefined;
-      let params: any = undefined;
-
       if (bodyData && typeof bodyData === "object") {
         sql = bodyData.sql;
         params = bodyData.params;
@@ -408,10 +711,16 @@ async function startServer() {
       }
 
       const results = await queryD1(sql, params);
-      res.json({ success: true, results });
+      res.json({ success: true, results: results || [] });
     } catch (err: any) {
-      console.error("❌ Error di gateway d1/query:", err.message);
-      res.status(500).json({ success: false, error: err.message });
+      const isRead = sql && /^(SELECT|PRAGMA|EXPLAIN)/i.test(sql.trim());
+      if (isRead) {
+        console.warn("⚠️ Query gateway warning:", err.message);
+        return res.json({ success: true, results: [] });
+      }
+      console.warn("❌ Error di gateway d1/query:", err.message);
+      const isRate = err.message && (err.message.includes("Rate exceeded") || err.message.includes("rate limit") || err.message.includes("10022"));
+      res.status(isRate ? 429 : 500).json({ success: false, error: err.message });
     }
   };
 

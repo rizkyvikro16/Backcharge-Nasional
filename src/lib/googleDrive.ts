@@ -275,15 +275,10 @@ export const uploadFileToDrive = async (
     if (response.ok) {
       const data = await response.json();
       
-      // Jika backend berhasil mendapatkan tautan Google Drive asli
-      if (data.isDrive || (data.webViewLink && (data.webViewLink.includes('drive.google.com') || data.webViewLink.includes('google.com') || data.webViewLink.includes('googleusercontent.com')))) {
-        console.log('[DRIVE CLOUD] Unggah Google Drive sukses!', data.webViewLink);
-        return data.webViewLink;
-      }
-      
-      // Simpan URL fallback lokal sebagai opsi cadangan terakhir
+      // Jika backend berhasil mendapatkan tautan Google Drive atau penyimpanan lokal server
       if (data.webViewLink) {
-        localFallbackUrl = data.webViewLink;
+        console.log('[DRIVE CLOUD] Unggah berkas sukses!', data.webViewLink);
+        return data.webViewLink;
       }
     }
   } catch (backendErr: any) {
@@ -301,7 +296,7 @@ export const uploadFileToDrive = async (
       const base64Data = await toBase64(optimizedFile);
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 detik timeout
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12 detik timeout
 
       const response = await fetch(appsScriptUrl, {
         method: 'POST',
@@ -333,23 +328,29 @@ export const uploadFileToDrive = async (
         }
       }
     } catch (gasErr: any) {
-      console.warn('[DRIVE APPS SCRIPT] Direct Apps Script gagal:', gasErr?.message);
+      console.warn('[DRIVE APPS SCRIPT] Direct Apps Script notice:', gasErr?.message);
     }
   }
 
-  // 4. PENYELAMATAN TERAKHIR: Jika tautan lokal server tersedia, gunakan agar data transaksi pengguna tidak hilang
-  if (localFallbackUrl) {
-    console.warn('[DRIVE FALLBACK] Menggunakan penyimpanan lokal sebagai penyelamat data:', localFallbackUrl);
-    return localFallbackUrl;
-  }
-
-  // 5. PENYELAMAT DATA MUTLAK (Zero Error Guarantee): Konversi ke Base64 Data URL terkompresi
+  // 4. PENYELAMATAN DATA: Simpan ke endpoint /api/upload-file untuk menghasilkan URL ringkas (/uploads/...)
   try {
     const base64Data = await toBase64(optimizedFile);
-    console.warn('[DRIVE FALLBACK] Berkas berhasil diamankan sebagai data URL lokal agar proses transaksi/approval 100% berhasil tanpa error.');
-    return base64Data;
+    const mime = optimizedFile.type || 'image/jpeg';
+    const dataUrl = `data:${mime};base64,${base64Data}`;
+    const uploadRes = await fetch(getApiUrl('/api/upload-file'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64: dataUrl, filename })
+    });
+    if (uploadRes.ok) {
+      const uploadJson = await uploadRes.json();
+      if (uploadJson.url) {
+        console.log('[STORAGE OPTIMIZER] Berkas dikonversi menjadi URL ringkas:', uploadJson.url);
+        return uploadJson.url;
+      }
+    }
   } catch (convErr) {
-    console.error('[DRIVE ERROR] Gagal konversi berkas:', convErr);
+    console.warn('[DRIVE ERROR] Gagal mengunggah ke /api/upload-file:', convErr);
   }
 
   throw new Error("Gagal mengunggah berkas. Mohon periksa format file Anda.");

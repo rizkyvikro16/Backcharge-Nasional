@@ -87,15 +87,54 @@ async function ensureD1SchemaWorker(db) {
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_timestamp ON activity_logs (timestamp DESC);`)
   ]);
 
-  // Seed default admin profiles if empty
+  // Seed default profiles if empty
   try {
     const countRes = await db.prepare("SELECT COUNT(*) as count FROM profiles").first();
     if (!countRes || countRes.count === 0) {
       await db.batch([
         db.prepare(`
           INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES 
-          ('1', 'administrator@assa.id', 'ASSA', 'Administrator', 'Nasional', '2026-06-28T14:38:20.522057+00:00', 'password123'),
-          ('l8hovd', 'assa@assa.id', 'ASSA', 'Administrator', 'Nasional', '2026-06-30T12:26:14.358+00:00', 'password123');
+          ('1', 'administrator@assa.id', 'ASSA Administrator', 'Administrator', 'Nasional', '2026-06-28T14:38:20.522057+00:00', 'password123'),
+          ('l8hovd', 'assa@assa.id', 'ASSA Admin', 'Administrator', 'Nasional', '2026-06-30T12:26:14.358+00:00', 'password123'),
+          ('1a', 'admin.pusat@company.id', 'Aris Munandar (HQ Admin)', 'Administrator', 'Nasional', '2026-06-28T00:00:00.000Z', 'password123'),
+          ('2', 'aso.jkt@company.id', 'Hendra Wijaya (ASO Megabranch)', 'ASO Megabranch', 'BSO GSO & AFFCO', '2026-06-28T00:00:00.000Z', 'password123'),
+          ('3', 'sales.jkt@company.id', 'Dewi Lestari (Sales Megabranch)', 'Sales Head', 'BSO Sudirman', '2026-06-28T00:00:00.000Z', 'password123'),
+          ('4', 'bro.sby@company.id', 'Bayu Saputra (BRO Sby)', 'BRO', 'Surabaya', '2026-06-28T00:00:00.000Z', 'password123'),
+          ('5', 'admin.sby@company.id', 'Siti Rahma (Admin Sby)', 'Admin', 'Surabaya', '2026-06-28T00:00:00.000Z', 'password123'),
+          ('6', 'aso.bdg@company.id', 'Budi Setiawan (ASO Bdg)', 'ASO', 'Bandung', '2026-06-28T00:00:00.000Z', 'password123'),
+          ('7', 'sales.mdn@company.id', 'Rian Pratama (Sales Mdn)', 'Sales Head', 'Medan', '2026-06-28T00:00:00.000Z', 'password123'),
+          ('8', 'kacab.jkt@company.id', 'Agus Salim (Kacab Megabranch)', 'Kepala Cabang', 'BSO GSO & AFFCO', '2026-06-28T00:00:00.000Z', 'password123'),
+          ('9', 'rbu.nas@company.id', 'Rudy Hartono (Division Head)', 'Division Head', 'Nasional', '2026-06-28T00:00:00.000Z', 'password123'),
+          ('10', 'rh.west@company.id', 'Herman Prasetyo (RH West)', 'Regional Head West', 'Lampung, Medan, Padang, Palembang, Pekanbaru', '2026-06-28T00:00:00.000Z', 'password123'),
+          ('11', 'aso.ptk@company.id', 'Eko Prasetyo (ASO Pontianak)', 'ASO Megabranch', 'BSO Pontianak', '2026-06-28T00:00:00.000Z', 'password123'),
+          ('12', 'rh.central@company.id', 'Bambang S (RH Central)', 'Regional Head Central', 'Bandung, BSO GSO & AFFCO, BSO Pontianak', '2026-06-28T00:00:00.000Z', 'password123'),
+          ('13', 'rh.east@company.id', 'Agus K (RH East)', 'Regional Head East', 'Bali, Balikpapan, Banjarmasin, Makassar, Malang, Manado, Semarang, Solo, Surabaya', '2026-06-28T00:00:00.000Z', 'password123');
+        `)
+      ]);
+    }
+  } catch (e) {}
+
+  // Seed default backcharges if empty
+  try {
+    const countBcs = await db.prepare("SELECT COUNT(*) as count FROM backcharges").first();
+    if (!countBcs || countBcs.count === 0) {
+      await db.batch([
+        db.prepare(`
+          INSERT INTO backcharges (
+            id, category, branch, no_bak, no_spk, no_sap, customer_name, license_plate, value,
+            status_sap, status_confirm, status_handover, no_invoice, status_payment, created_by,
+            created_at, updated_at, tanggal
+          ) VALUES 
+          ('BC-2026-0001', 'Own Risk', 'BSO GSO & AFFCO', 'BAK/2026/06/001', '-', 'SAP-OR-101', 'PT Carrefour Indonesia', 'B 9201 UBA', 4500000, 'Bill', 'Telah Dikonfirmasi', 'Diterima Admin', 'INV/2026/VI/011', 'Lunas', 'aso.jkt@company.id', '2026-06-28T10:00:00.000Z', '2026-06-28T10:00:00.000Z', '2026-06-28'),
+          ('BC-2026-0002', 'Maintenance', 'Surabaya', 'BAK/2026/06/002', 'SPK-MAINT-202', '-', 'PT Unilever Indonesia', 'L 1827 CV', 1200000, 'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin', '-', 'Belum Bayar', 'bro.sby@company.id', '2026-06-30T14:30:00.000Z', '2026-06-30T14:30:00.000Z', '2026-06-30'),
+          ('BC-2026-0003', 'Ekspedisi', 'Bandung', '-', 'SPK-EXP-303', '-', 'PT Indofood CBP', '-', 8500000, 'N/A', 'Belum Konfirmasi', 'Pending', '-', 'Belum Bayar', 'aso.bdg@company.id', '2026-07-01T09:15:00.000Z', '2026-07-01T09:15:00.000Z', '2026-07-01'),
+          ('BC-2026-0004', 'ETLE', 'BSO Pontianak', 'BAK/2026/07/004', '-', '-', 'PT Kalimantan Sawit Sejahtera', 'KB 1423 XX', 2500000, 'N/A', 'Belum Konfirmasi', 'Diserahkan ke Admin', '-', 'Belum Bayar', 'aso.ptk@company.id', '2026-07-02T11:20:00.000Z', '2026-07-02T11:20:00.000Z', '2026-07-02');
+        `),
+        db.prepare(`
+          INSERT INTO activity_logs (timestamp, transaction_id, performed_by, action_description) VALUES
+          ('2026-06-28T10:00:00.000Z', 'BC-2026-0001', 'aso.jkt@company.id', 'Membuat transaksi Backcharge baru kategori Own Risk di cabang BSO GSO & AFFCO'),
+          ('2026-06-29T11:00:00.000Z', 'BC-2026-0001', 'sales.jkt@company.id', 'Status Konfirmasi berubah menjadi Telah Dikonfirmasi'),
+          ('2026-06-30T14:30:00.000Z', 'BC-2026-0002', 'bro.sby@company.id', 'Membuat transaksi Backcharge baru kategori Maintenance di cabang Surabaya');
         `)
       ]);
     }

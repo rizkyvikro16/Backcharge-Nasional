@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Backcharge, Profile, isRegionalHeadRole, hasRole } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
+import { getApiUrl } from '../lib/api';
 
 interface DetailModalProps {
   transaction: Backcharge;
@@ -615,6 +616,18 @@ export default function DetailModal({
       return;
     }
 
+    // 1b. Check if it's relative server URL (/uploads/...)
+    if (fileData.startsWith('/uploads/') || fileData.includes('/uploads/')) {
+      const link = document.createElement('a');
+      link.href = getApiUrl(fileData);
+      link.target = '_blank';
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+
     // 2. If it's a web link or Google Drive URL
     if (fileData.startsWith('http://') || fileData.startsWith('https://')) {
       let downloadUrl = fileData;
@@ -650,23 +663,48 @@ export default function DetailModal({
     }
   };
 
-  // Upload new attachment file on detail view
-  const uploadNewFile = (
+  // Upload new attachment file on detail view (converts to short lightweight URL)
+  const uploadNewFile = async (
     e: React.ChangeEvent<HTMLInputElement>, 
     fieldName: 'file_bak_url' | 'file_handover_aso_sales_url' | 'file_handover_sales_admin_url',
     description: string
   ) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = reader.result as string;
-        const updates: Partial<Backcharge> = { [fieldName]: base64 };
+      if (addToast) addToast("Mengunggah dan merampingkan dokumen...", "info");
+      try {
+        const docName = fieldName === 'file_bak_url' ? 'Berkas_BAK' : 'Serah_Terima';
+        const fileNameToUpload = getFormattedFileName(docName, transaction, file.name);
+        let shortUrl: string;
+
+        try {
+          shortUrl = await uploadFileToDrive(file, fileNameToUpload, googleToken);
+        } catch (upErr: any) {
+          console.warn("Drive upload failed, saving via /api/upload-file:", upErr?.message);
+          const reader = new FileReader();
+          const base64Data = await new Promise<string>((resolve) => {
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(file);
+          });
+          const res = await fetch(getApiUrl('/api/upload-file'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ base64: base64Data, filename: fileNameToUpload })
+          });
+          const json = await res.json();
+          if (json?.url) {
+            shortUrl = json.url;
+          } else {
+            throw new Error("Gagal menyimpan dokumen ke server.");
+          }
+        }
+
+        const updates: Partial<Backcharge> = { [fieldName]: shortUrl };
         let logMsg = `Mengupload file lampiran baru: ${description}`;
 
         if (fieldName === 'file_handover_aso_sales_url') {
           updates.status_handover = 'Diserahkan ke Admin';
-          updates.file_handover_sales_admin_url = base64;
+          updates.file_handover_sales_admin_url = shortUrl;
           updates.tanggal_handover = transaction.tanggal_handover || new Date().toLocaleString('id-ID');
           logMsg = `ASO mengunggah Foto Bukti Serah Terima ASO ke Admin dan menyerahkan fisik berkas Backcharge lengkap ke departemen Admin`;
         }
@@ -676,8 +714,11 @@ export default function DetailModal({
           updates, 
           logMsg
         );
-      };
-      reader.readAsDataURL(file);
+        if (addToast) addToast("Dokumen berhasil disimpan dengan URL ringkas!", "success");
+      } catch (err: any) {
+        console.error("Gagal mengunggah file:", err);
+        if (addToast) addToast(`Gagal mengunggah file: ${err.message}`, "error");
+      }
     }
   };
 
@@ -2825,9 +2866,9 @@ export default function DetailModal({
                 </button>
               )}
 
-              {lightboxFile.url && lightboxFile.url.startsWith('http') && (
+              {lightboxFile.url && (lightboxFile.url.startsWith('http') || lightboxFile.url.startsWith('/uploads/')) && (
                 <a 
-                  href={lightboxFile.url}
+                  href={getApiUrl(lightboxFile.url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center space-x-1 transition-all cursor-pointer"
@@ -2849,17 +2890,17 @@ export default function DetailModal({
 
           {/* Lightbox Content Body */}
           <div className="flex-grow flex items-center justify-center overflow-auto py-6 print:py-0 print:block print:overflow-visible">
-            {lightboxFile.url.startsWith('data:image/') ? (
+            {lightboxFile.url.startsWith('data:image/') || lightboxFile.url.startsWith('/uploads/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(lightboxFile.url) ? (
               <img 
-                src={lightboxFile.url} 
+                src={lightboxFile.url.startsWith('data:') ? lightboxFile.url : getApiUrl(lightboxFile.url)} 
                 alt={lightboxFile.title} 
                 loading="lazy"
                 decoding="async"
                 className="max-w-full max-h-[75vh] object-contain rounded-xl border border-slate-800 shadow-2xl animate-in zoom-in-95 duration-200" 
               />
-            ) : lightboxFile.url.startsWith('data:application/pdf') ? (
+            ) : lightboxFile.url.startsWith('data:application/pdf') || /\.pdf$/i.test(lightboxFile.url) ? (
               <iframe 
-                src={lightboxFile.url} 
+                src={lightboxFile.url.startsWith('data:') ? lightboxFile.url : getApiUrl(lightboxFile.url)} 
                 className="w-full max-w-4xl h-[75vh] rounded-xl border border-slate-800 bg-white" 
                 title="PDF Viewer"
               />

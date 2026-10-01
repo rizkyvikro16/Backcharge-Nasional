@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Search, Download, 
   Upload, FileText, Check, AlertCircle, AlertTriangle, RefreshCw, X, Trash2,
-  Loader2, Edit, Info, ChevronDown, CheckCircle2, XCircle, User
+  Loader2, Edit, Info, ChevronDown, CheckCircle2, XCircle, User,
+  ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
 } from 'lucide-react';
 import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, isNationalOrAllBranches, hasRole, isRegionalHeadRole } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
+import { getApiUrl } from '../lib/api';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 
@@ -106,8 +108,15 @@ export default function DatabaseView({
   }, [activeDashboardFilter]);
 
   // Pagination states
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(100);
   const [currentPage, setCurrentPage] = useState(1);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [serverRows, setServerRows] = useState<Backcharge[] | null>(null);
+  const [serverTotalCount, setServerTotalCount] = useState<number | null>(null);
+  const [isServerLoading, setIsServerLoading] = useState(false);
+  const [sortBy, setSortBy] = useState<string>('created_at');
+  const [sortDir, setSortDir] = useState<'ASC' | 'DESC'>('DESC');
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Form states
   const [category, setCategory] = useState<BackchargeCategory>('Own Risk');
@@ -216,38 +225,43 @@ export default function DatabaseView({
 
     setName(file.name);
 
-    const isDriveActive = googleToken || serviceAccountActive || appsScriptActive;
-
-    if (isDriveActive) {
-      setUploadingToDrive(prev => ({ ...prev, [uploadKey]: true }));
-      try {
-        const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
-        setFile(driveUrl);
-        setFormError(null);
-        if (addToast) {
-          addToast("Dokumen berhasil diunggah ke Google Drive!", "success");
-        }
-      } catch (err: any) {
-        console.error("Auto Google Drive upload failed, falling back to local base64.", err);
-        // Fallback to local Base64
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setFile(reader.result as string);
-        };
-        reader.readAsDataURL(file);
-        if (addToast) {
-          addToast("File diamankan ke penyimpanan lokal.", "info");
-        }
-      } finally {
-        setUploadingToDrive(prev => ({ ...prev, [uploadKey]: false }));
+    setUploadingToDrive(prev => ({ ...prev, [uploadKey]: true }));
+    try {
+      const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
+      setFile(driveUrl);
+      setFormError(null);
+      if (addToast) {
+        addToast("Dokumen berhasil diunggah dengan URL ringkas!", "success");
       }
-    } else {
-      // Standard local Base64 storage
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFile(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    } catch (err: any) {
+      console.warn("Upload gagal, mencoba simpan URL ringkas server...", err);
+      try {
+        const reader = new FileReader();
+        const base64Data = await new Promise<string>((resolve) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+        const uploadRes = await fetch(getApiUrl('/api/upload-file'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ base64: base64Data, filename: file.name })
+        });
+        if (uploadRes.ok) {
+          const uploadJson = await uploadRes.json();
+          if (uploadJson.url) {
+            setFile(uploadJson.url);
+            if (addToast) addToast("Dokumen berhasil dirampingkan ke penyimpanan lokal.", "success");
+            return;
+          }
+        }
+      } catch (convErr) {
+        console.error("Gagal mengunggah file:", convErr);
+      }
+      if (addToast) {
+        addToast("Gagal mengunggah berkas: " + err.message, "error");
+      }
+    } finally {
+      setUploadingToDrive(prev => ({ ...prev, [uploadKey]: false }));
     }
   };
 
@@ -1090,35 +1104,42 @@ export default function DatabaseView({
 
     setName(file.name);
 
-    const isDriveActive = googleToken || serviceAccountActive || appsScriptActive;
-
-    if (isDriveActive) {
-      setUploadingToDrive(prev => ({ ...prev, [uploadKey]: true }));
-      try {
-        const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
-        setFile(driveUrl);
-        if (addToast) {
-          addToast("Dokumen berhasil diunggah ke Google Drive!", "success");
-        }
-      } catch (err: any) {
-        console.error("Auto Google Drive upload failed, falling back to local base64.", err);
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setFile(reader.result as string);
-        };
-        reader.readAsDataURL(file);
-        if (addToast) {
-          addToast("File diamankan ke penyimpanan lokal.", "info");
-        }
-      } finally {
-        setUploadingToDrive(prev => ({ ...prev, [uploadKey]: false }));
+    setUploadingToDrive(prev => ({ ...prev, [uploadKey]: true }));
+    try {
+      const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
+      setFile(driveUrl);
+      if (addToast) {
+        addToast("Dokumen berhasil diunggah dengan URL ringkas!", "success");
       }
-    } else {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFile(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    } catch (err: any) {
+      console.warn("Auto Drive upload failed, saving as lightweight local file...", err);
+      try {
+        const reader = new FileReader();
+        const base64Data = await new Promise<string>((resolve) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+        const uploadRes = await fetch(getApiUrl('/api/upload-file'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ base64: base64Data, filename: file.name })
+        });
+        if (uploadRes.ok) {
+          const uploadJson = await uploadRes.json();
+          if (uploadJson.url) {
+            setFile(uploadJson.url);
+            if (addToast) addToast("Dokumen berhasil dirampingkan ke penyimpanan lokal.", "success");
+            return;
+          }
+        }
+      } catch (convErr) {
+        console.error("Gagal mengonversi file:", convErr);
+      }
+      if (addToast) {
+        addToast("Gagal mengunggah berkas: " + err.message, "error");
+      }
+    } finally {
+      setUploadingToDrive(prev => ({ ...prev, [uploadKey]: false }));
     }
   };
 
@@ -1220,16 +1241,109 @@ export default function DatabaseView({
     }
   };
 
+  // Debounce search query input (350ms) to eliminate excessive D1 calls
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   // Auto reset pagination page when filters or search change
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, selectedCategory, selectedBranch, filterStartDate, filterEndDate, selectedStage, selectedPaymentStatus, selectedConfirmStatus, selectedSapStatus, activeAlertFilter, activeDashboardFilter]);
+  }, [debouncedSearch, selectedCategory, selectedBranch, filterStartDate, filterEndDate, selectedStage, selectedPaymentStatus, selectedConfirmStatus, selectedSapStatus, activeAlertFilter, activeDashboardFilter]);
 
-  // Memoized transactions filtering for optimal rendering performance & minimal re-computations
+  // Server-Side Paginated Query Engine (Scales to 1,000,000+ Records without memory overflow)
+  useEffect(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    const queryParams = new URLSearchParams({
+      page: String(currentPage),
+      limit: String(pageSize),
+      search: debouncedSearch,
+      category: selectedCategory,
+      branch: selectedBranch,
+      userRole: currentUser.role || '',
+      userBranch: currentUser.branch || '',
+      statusPayment: selectedPaymentStatus,
+      statusConfirm: selectedConfirmStatus,
+      statusSap: selectedSapStatus,
+      stage: selectedStage,
+      alert: activeAlertFilter || activeDashboardFilter?.alert || '',
+      startDate: filterStartDate,
+      endDate: filterEndDate,
+      sortBy: sortBy,
+      sortDir: sortDir
+    });
+
+    setIsServerLoading(true);
+
+    fetch(getApiUrl(`/api/d1/backcharges/page?${queryParams.toString()}`), {
+      signal: controller.signal
+    })
+      .then(res => res.json())
+      .then(d => {
+        if (d.success && Array.isArray(d.data)) {
+          setServerRows(d.data);
+          setServerTotalCount(typeof d.pagination?.total === 'number' ? d.pagination.total : d.data.length);
+        } else {
+          setServerRows(null);
+          setServerTotalCount(null);
+        }
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          setServerRows(null);
+          setServerTotalCount(null);
+        }
+      })
+      .finally(() => {
+        setIsServerLoading(false);
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    debouncedSearch,
+    selectedCategory,
+    selectedBranch,
+    filterStartDate,
+    filterEndDate,
+    selectedStage,
+    selectedPaymentStatus,
+    selectedConfirmStatus,
+    selectedSapStatus,
+    activeAlertFilter,
+    activeDashboardFilter,
+    currentPage,
+    pageSize,
+    sortBy,
+    sortDir,
+    currentUser
+  ]);
+
+  const handleSortColumn = (col: string) => {
+    if (sortBy === col) {
+      setSortDir(prev => prev === 'ASC' ? 'DESC' : 'ASC');
+    } else {
+      setSortBy(col);
+      setSortDir('DESC');
+    }
+    setCurrentPage(1);
+  };
+
+  // Memoized transactions filtering for fallback & offline caching
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
-      const searchLower = search.toLowerCase();
+      const searchLower = debouncedSearch.toLowerCase();
       const matchesSearch = 
+        !debouncedSearch ||
         t.id.toLowerCase().includes(searchLower) || 
         t.customer_name.toLowerCase().includes(searchLower) ||
         (t.license_plate || '').toLowerCase().includes(searchLower) ||
@@ -1298,7 +1412,7 @@ export default function DatabaseView({
         } else if (selectedStage === '4_invoice') {
           const isNotBill = t.status_sap === 'Not Bill';
           if (isNotBill) {
-            matchesStage = false; // Not Bill does not enter Tahap Belum Cetak Invoice Admin
+            matchesStage = false;
           } else {
             const val = t.value || 0;
             const isMaintenance = t.category === 'Maintenance';
@@ -1331,16 +1445,18 @@ export default function DatabaseView({
 
       return matchesSearch && matchesCategory && matchesBranch && matchesDateRange && matchesStage && matchesPaymentStatus && matchesConfirmStatus && matchesSapStatus && matchesAlertFilter;
     });
-  }, [transactions, search, selectedCategory, selectedBranch, filterStartDate, filterEndDate, selectedStage, selectedPaymentStatus, selectedConfirmStatus, selectedSapStatus, activeAlertFilter, activeDashboardFilter]);
+  }, [transactions, debouncedSearch, selectedCategory, selectedBranch, filterStartDate, filterEndDate, selectedStage, selectedPaymentStatus, selectedConfirmStatus, selectedSapStatus, activeAlertFilter, activeDashboardFilter]);
 
   // Pagination computations
-  const totalItems = filteredTransactions.length;
-  const totalPages = Math.ceil(totalItems / pageSize);
+  const totalItems = serverTotalCount !== null ? serverTotalCount : filteredTransactions.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
   const activePage = Math.min(currentPage, Math.max(1, totalPages));
-  const paginatedTransactions = filteredTransactions.slice(
+  
+  const displayTransactions = serverRows !== null ? serverRows : filteredTransactions.slice(
     (activePage - 1) * pageSize,
     activePage * pageSize
   );
+  const paginatedTransactions = displayTransactions;
 
   // Bulk selection & update permissions based on role
   const canUpdateHandover = isAsoUser || isSuperAdmin;
@@ -2276,7 +2392,7 @@ export default function DatabaseView({
           <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-slate-50/50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
+                <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider select-none text-[11px]">
                   <th className="p-3 text-center w-10">
                     <input 
                       type="checkbox"
@@ -2286,17 +2402,57 @@ export default function DatabaseView({
                       title="Pilih/Batal Semua di halaman ini"
                     />
                   </th>
-                  <th className="p-3 whitespace-nowrap">ID / Kota</th>
-                  <th className="p-3 whitespace-nowrap text-slate-500">TGL BAK</th>
-                  <th className="p-3">Kategori</th>
-                  <th className="p-3">Customer</th>
-                  <th className="p-3 whitespace-nowrap">Nopol</th>
-                  <th className="p-3">Backcharge (Rp)</th>
-                  <th className="p-3 text-center whitespace-nowrap">Status SAP</th>
+                  <th className="p-3 whitespace-nowrap cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('id')}>
+                    <div className="flex items-center space-x-1">
+                      <span>ID / Kota</span>
+                      {sortBy === 'id' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                    </div>
+                  </th>
+                  <th className="p-3 whitespace-nowrap text-slate-500 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('tanggal')}>
+                    <div className="flex items-center space-x-1">
+                      <span>TGL BAK</span>
+                      {sortBy === 'tanggal' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                    </div>
+                  </th>
+                  <th className="p-3 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('category')}>
+                    <div className="flex items-center space-x-1">
+                      <span>Kategori</span>
+                      {sortBy === 'category' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                    </div>
+                  </th>
+                  <th className="p-3 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('customer_name')}>
+                    <div className="flex items-center space-x-1">
+                      <span>Customer</span>
+                      {sortBy === 'customer_name' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                    </div>
+                  </th>
+                  <th className="p-3 whitespace-nowrap cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('license_plate')}>
+                    <div className="flex items-center space-x-1">
+                      <span>Nopol</span>
+                      {sortBy === 'license_plate' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                    </div>
+                  </th>
+                  <th className="p-3 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('value')}>
+                    <div className="flex items-center space-x-1">
+                      <span>Backcharge (Rp)</span>
+                      {sortBy === 'value' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                    </div>
+                  </th>
+                  <th className="p-3 text-center whitespace-nowrap cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('status_sap')}>
+                    <div className="flex items-center justify-center space-x-1">
+                      <span>Status SAP</span>
+                      {sortBy === 'status_sap' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                    </div>
+                  </th>
                   <th className="p-3 whitespace-nowrap">Penginput</th>
                   <th className="p-3">Fisik Berkas</th>
                   <th className="p-3">Invoice</th>
-                  <th className="p-3">Pembayaran</th>
+                  <th className="p-3 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('status_payment')}>
+                    <div className="flex items-center space-x-1">
+                      <span>Pembayaran</span>
+                      {sortBy === 'status_payment' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                    </div>
+                  </th>
                   {canWrite && <th className="p-3 text-center">Aksi</th>}
                 </tr>
               </thead>
@@ -2578,63 +2734,125 @@ export default function DatabaseView({
           </div>
 
           {/* Pagination Controls bar */}
-          <div className="bg-slate-50 px-4 py-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-slate-500 font-bold text-xs select-none">
-            <div className="flex items-center space-x-2">
-              <span>Tampilkan:</span>
-              <select 
-                value={pageSize} 
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-slate-700 font-extrabold focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-              >
-                {[10, 25, 50, 100, 250, 500, 1000, 5000, 999999].map(size => (
-                  <option key={size} value={size}>
-                    {size === 999999 ? 'Semua Data' : `${size.toLocaleString('id-ID')} data`}
-                  </option>
-                ))}
-              </select>
-              <span className="text-slate-400 font-medium">
-                | Menampilkan {totalItems > 0 ? (activePage - 1) * pageSize + 1 : 0} - {Math.min(activePage * pageSize, totalItems)} dari {totalItems} data Backcharge
+          <div className="bg-slate-50 px-4 py-3 border-t border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3 text-slate-600 font-bold text-xs select-none">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center space-x-1.5">
+                <span className="text-slate-500">Tampilkan:</span>
+                <select 
+                  value={pageSize} 
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-slate-800 font-extrabold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-2xs"
+                >
+                  {[25, 50, 100, 200, 250].map(size => (
+                    <option key={size} value={size}>
+                      {size} per halaman
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <span className="text-slate-400">|</span>
+              <span className="text-slate-700 font-extrabold">
+                Menampilkan <span className="text-blue-600 font-black">{totalItems > 0 ? ((activePage - 1) * pageSize + 1).toLocaleString('id-ID') : 0}</span> - <span className="text-blue-600 font-black">{Math.min(activePage * pageSize, totalItems).toLocaleString('id-ID')}</span> dari <span className="text-slate-900 font-black">{totalItems.toLocaleString('id-ID')}</span> data Backcharge
               </span>
+              {isServerLoading && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded-full animate-pulse border border-blue-200">
+                  <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Memuat data...
+                </span>
+              )}
             </div>
 
-            <div className="flex items-center space-x-1.5">
+            <div className="flex items-center space-x-1">
               <button
                 type="button"
-                disabled={activePage === 1}
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                className={`px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-black hover:bg-slate-50 transition-all ${activePage === 1 ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                disabled={activePage === 1 || isServerLoading}
+                onClick={() => setCurrentPage(1)}
+                className={`p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 transition-all ${activePage === 1 ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                title="Halaman Pertama"
               >
-                Prev
+                <ChevronsLeft className="w-4 h-4 text-slate-700" />
               </button>
-              
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let pageNum = i + 1;
-                if (activePage > 3 && totalPages > 5) {
-                  pageNum = activePage - 3 + i;
-                  if (pageNum + (4 - i) > totalPages) {
-                    pageNum = totalPages - 4 + i;
-                  }
-                }
-                return (
-                  <button
-                    key={pageNum}
-                    type="button"
-                    onClick={() => setCurrentPage(pageNum)}
-                    className={`w-8 h-8 rounded-lg border font-bold transition-all ${activePage === pageNum ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
 
               <button
                 type="button"
-                disabled={activePage === totalPages || totalPages === 0}
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                className={`px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-black hover:bg-slate-50 transition-all ${activePage === totalPages || totalPages === 0 ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                disabled={activePage === 1 || isServerLoading}
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                className={`px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 transition-all flex items-center gap-1 font-bold ${activePage === 1 ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                title="Halaman Sebelumnya"
               >
-                Next
+                <ChevronLeft className="w-4 h-4 text-slate-700" />
+                <span className="hidden sm:inline">Prev</span>
               </button>
+              
+              <div className="flex items-center space-x-1 px-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum = i + 1;
+                  if (activePage > 3 && totalPages > 5) {
+                    pageNum = activePage - 3 + i;
+                    if (pageNum + (4 - i) > totalPages) {
+                      pageNum = totalPages - 4 + i;
+                    }
+                  }
+                  if (pageNum < 1) pageNum = 1;
+                  return (
+                    <button
+                      key={pageNum}
+                      type="button"
+                      disabled={isServerLoading}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg border font-black text-xs transition-all ${activePage === pageNum ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'}`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                disabled={activePage === totalPages || totalPages === 0 || isServerLoading}
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                className={`px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 transition-all flex items-center gap-1 font-bold ${activePage === totalPages || totalPages === 0 ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                title="Halaman Berikutnya"
+              >
+                <span className="hidden sm:inline">Next</span>
+                <ChevronRight className="w-4 h-4 text-slate-700" />
+              </button>
+
+              <button
+                type="button"
+                disabled={activePage === totalPages || totalPages === 0 || isServerLoading}
+                onClick={() => setCurrentPage(totalPages)}
+                className={`p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 transition-all ${activePage === totalPages || totalPages === 0 ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                title="Halaman Terakhir"
+              >
+                <ChevronsRight className="w-4 h-4 text-slate-700" />
+              </button>
+
+              {totalPages > 5 && (
+                <div className="hidden lg:flex items-center space-x-1 pl-2 border-l border-slate-200 text-slate-500 text-[11px]">
+                  <span>Ke Hal:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    defaultValue={activePage}
+                    key={`jump-${activePage}`}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const val = parseInt((e.target as HTMLInputElement).value, 10);
+                        if (!isNaN(val) && val >= 1 && val <= totalPages) {
+                          setCurrentPage(val);
+                        }
+                      }
+                    }}
+                    className="w-12 px-1.5 py-1 bg-white border border-slate-300 rounded text-center font-bold text-slate-800"
+                  />
+                  <span>/ {totalPages}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
