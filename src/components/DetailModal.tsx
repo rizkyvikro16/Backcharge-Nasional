@@ -1097,7 +1097,7 @@ export default function DetailModal({
     (isDivisionHeadView && txValue > 15000000);
 
   const isSuperAdmin = hasRole(currentUser.role, 'Administrator');
-  const canDelete = isSuperAdmin || hasRole(currentUser.role, 'ASO') || hasRole(currentUser.role, 'ASO Megabranch') || hasRole(currentUser.role, 'Maintenance Center') || hasRole(currentUser.role, 'Admin');
+  const canDelete = isSuperAdmin || hasRole(currentUser.role, 'ASO') || hasRole(currentUser.role, 'ASO Megabranch') || hasRole(currentUser.role, 'Maintenance Center');
   const isRegionalHeadUser = isRegionalHeadView || isSuperAdmin;
   const isDivisionHeadUser = isDivisionHeadView || isSuperAdmin;
   const isKacabUser = isKacabRole;

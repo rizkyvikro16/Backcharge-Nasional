@@ -1888,12 +1888,24 @@ export default function App() {
 
   // 2B. DELETE TRANSACTION WORKFLOW (ADMINISTRATOR, ASO, MAINTENANCE CENTER)
   const handleDeleteTransaction = async (id: string) => {
-    if (!currentUser || (!hasRole(currentUser.role, 'Administrator') && !hasRole(currentUser.role, 'ASO') && !hasRole(currentUser.role, 'ASO Megabranch') && !hasRole(currentUser.role, 'Maintenance Center') && !hasRole(currentUser.role, 'Admin'))) {
-      addToast("Akses Ditolak: Hanya Administrator, ASO, ASO Megabranch, atau Maintenance Center yang boleh menghapus data!", "error");
+    const isAllowedToDelete = currentUser && (
+      hasRole(currentUser.role, 'Administrator') ||
+      hasRole(currentUser.role, 'ASO') ||
+      hasRole(currentUser.role, 'ASO Megabranch') ||
+      hasRole(currentUser.role, 'Maintenance Center')
+    );
+
+    if (!isAllowedToDelete) {
+      addToast("Akses Ditolak: Hanya Administrator, ASO, ASO Megabranch, atau Maintenance Center yang berhak menghapus data transaksi!", "error");
       return;
     }
 
-    if (!window.confirm(`Apakah Anda yakin ingin menghapus data Backcharge dengan ID ${id} secara permanen? Tindakan ini tidak dapat dibatalkan.`)) {
+    const target = transactions.find(t => t.id === id);
+    const details = target 
+      ? `(Customer: ${target.customer_name || '-'}, Cabang: ${target.branch || '-'}, Nilai: Rp ${Number(target.value || 0).toLocaleString('id-ID')}, No Polisi: ${target.license_plate || '-'})`
+      : '';
+
+    if (!window.confirm(`KONFIRMASI PENGHAPUSAN TRANSAKSI:\n\nApakah Anda yakin ingin menghapus data Backcharge ${id} ${details}?\n\nRiwayat aktivitas transaksi ini akan tetap disimpan secara permanen di Log Sistem untuk keperluan audit.`)) {
       return;
     }
 
@@ -1901,7 +1913,12 @@ export default function App() {
 
     try {
       if (isD1Active) {
-        await executeD1Query(`DELETE FROM activity_logs WHERE transaction_id = ?`, [id]);
+        // Catat bukti audit log penghapusan transaksi (Activity logs terdahulu TIDAK dihapus agar tetap bisa diaudit)
+        const deletionLogMessage = `PENGHAPUSAN TRANSAKSI OLEH ${currentUser.role.toUpperCase()} (${currentUser.email}): ID ${id} ${details}`;
+        await executeD1Query(
+          `INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)`,
+          [id, currentUser.email, deletionLogMessage]
+        );
         await executeD1Query(`DELETE FROM backcharges WHERE id = ?`, [id]);
       } else {
         mockDb.deleteBackcharge(id);
@@ -1910,7 +1927,7 @@ export default function App() {
       // Update local state & cache
       updateTransactionsStateAndCache(prev => prev.filter(t => t.id !== id));
       setSelectedTransactionId(prevId => prevId === id ? null : prevId);
-      addToast(`Backcharge ${id} berhasil dihapus!`, 'success');
+      addToast(`Backcharge ${id} berhasil dihapus dan dicatat di Log Sistem!`, 'success');
     } catch (err: any) {
       console.error("Gagal hapus transaksi:", err);
       addToast(`Gagal menghapus transaksi: ${err.message}`, 'error');

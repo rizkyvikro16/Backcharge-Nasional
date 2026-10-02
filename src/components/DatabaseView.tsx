@@ -2700,7 +2700,7 @@ export default function DatabaseView({
                               >
                                 <Edit className="w-4 h-4" />
                               </button>
-                              {(hasRole(currentUser.role, 'Administrator') || isAsoUser || hasRole(currentUser.role, 'Admin')) && (
+                              {(hasRole(currentUser.role, 'Administrator') || isAsoUser || hasRole(currentUser.role, 'ASO Megabranch') || hasRole(currentUser.role, 'Maintenance Center')) && (
                                 <button
                                   type="button"
                                   onClick={() => {
