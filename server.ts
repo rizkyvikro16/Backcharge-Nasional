@@ -264,13 +264,46 @@ async function startServer() {
     }
   });
 
-  // API Route to convert base64 image strings to lightweight disk files (/uploads/...)
-  app.post("/api/upload-file", (req, res) => {
+  // API Route to convert base64 image strings directly to Google Drive URLs
+  app.post("/api/upload-file", async (req, res) => {
     try {
       const { base64, filename } = req.body || {};
       if (!base64 || typeof base64 !== "string") {
         return res.status(400).json({ error: "String Base64 diperlukan" });
       }
+
+      const cleanBase64 = base64.includes(",") ? base64.split(",")[1] : base64;
+      const appsScriptUrl = process.env.VITE_GOOGLE_APPS_SCRIPT_URL || 
+                            process.env.GOOGLE_APPS_SCRIPT_URL || 
+                            "https://script.google.com/macros/s/AKfycbwtd0ETxA17JRECbuhpPjnQRvmlI8OmExOOmbl5hlxWDY1O33rV99OZ68eVnQ7Sp_n-/exec";
+      const targetFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID || "1YDe87vD-540Tupk2gwp9qGfvGNBBoZEQ";
+
+      const gasResponse = await fetch(appsScriptUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          fileBase64: cleanBase64,
+          fileName: filename || `upload_${Date.now()}.jpg`,
+          mimeType: "image/jpeg",
+          folderId: targetFolderId,
+          parentId: targetFolderId,
+        }),
+        redirect: "follow",
+      });
+
+      if (gasResponse.ok) {
+        const gasData: any = await gasResponse.json().catch(async () => {
+          const txt = await gasResponse.text();
+          try { return JSON.parse(txt); } catch { return { fileUrl: txt }; }
+        });
+
+        const fileUrl = gasData?.fileUrl || gasData?.url || (gasData?.id ? `https://drive.google.com/file/d/${gasData.id}/view` : null);
+        if (fileUrl) {
+          return res.status(200).json({ success: true, url: fileUrl });
+        }
+      }
+
+      // Fallback if Apps Script unreachable
       const shortUrl = saveBase64ToDisk(base64);
       return res.status(200).json({ success: true, url: shortUrl });
     } catch (err: any) {
