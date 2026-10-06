@@ -898,7 +898,8 @@ export default function App() {
         }
       } catch (err: any) {
         if (!isWorkerHost) setIsD1Active(false);
-        setD1Error(err.message || String(err));
+        console.warn("Notice checking D1 status:", err?.message || err);
+        fetchData();
       }
     };
     checkD1Status();
@@ -963,6 +964,9 @@ export default function App() {
           return executeD1Query(sql, params, attempt + 1);
         }
         console.warn("Koneksi D1 gagal:", networkErr?.message || networkErr);
+        if (isReadQuery) {
+          return [];
+        }
         throw new Error("Koneksi D1 tidak dapat dijangkau: " + (networkErr?.message || 'Network error'));
       }
 
@@ -1350,7 +1354,11 @@ export default function App() {
           setIsD1Active(false);
         }
         
-        setD1Error(err.message || String(err));
+        if (!restoredFromCache && transactions.length === 0) {
+          setD1Error(err.message || String(err));
+        } else {
+          setD1Error(null);
+        }
       } finally {
         setLoading(false);
         isFetchingRef.current = false;

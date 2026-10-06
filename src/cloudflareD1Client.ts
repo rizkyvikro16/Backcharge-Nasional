@@ -305,7 +305,8 @@ export async function cleanExistingD1Base64(): Promise<{ cleaned: number; remain
     console.log(`[STORAGE CLEANER] Ditemukan ${initialCount} record di D1 yang menggunakan base64 panjang. Memulai perampingan batch...`);
 
     let iteration = 0;
-    const MAX_BATCHES = 25;
+    const MAX_BATCHES = 10;
+    const processedIds = new Set<string>();
 
     while (iteration < MAX_BATCHES) {
       iteration++;
@@ -326,20 +327,19 @@ export async function cleanExistingD1Base64(): Promise<{ cleaned: number; remain
         break;
       }
 
+      let newlyCleanedInBatch = 0;
       for (const r of rows) {
+        if (processedIds.has(r.id)) continue;
+        processedIds.add(r.id);
+
         const updates: string[] = [];
         const updateParams: any[] = [];
         
         const checkAndReplace = (colName: string, val: any) => {
-          if (typeof val === "string") {
-            if (val.startsWith("data:") && val.includes(";base64,")) {
-              const shortUrl = saveBase64ToDisk(val);
-              updates.push(`${colName} = ?`);
-              updateParams.push(shortUrl);
-            } else if (val.startsWith("/uploads/")) {
-              updates.push(`${colName} = ?`);
-              updateParams.push(val);
-            }
+          if (typeof val === "string" && val.startsWith("data:")) {
+            const shortUrl = saveBase64ToDisk(val);
+            updates.push(`${colName} = ?`);
+            updateParams.push(shortUrl);
           }
         };
 
@@ -355,12 +355,14 @@ export async function cleanExistingD1Base64(): Promise<{ cleaned: number; remain
           updateParams.push(r.id);
           await queryD1Direct(`UPDATE backcharges SET ${updates.join(", ")} WHERE id = ?`, updateParams);
           totalCleaned++;
+          newlyCleanedInBatch++;
           console.log(`[STORAGE CLEANER] Record D1 [${r.id}] berhasil dirampingkan ke URL pendek (${totalCleaned}/${initialCount}).`);
-          await new Promise(res => setTimeout(res, 250));
+          await new Promise(res => setTimeout(res, 100));
         }
       }
 
-      await new Promise(res => setTimeout(res, 500));
+      if (newlyCleanedInBatch === 0) break;
+      await new Promise(res => setTimeout(res, 200));
     }
 
     const finalCheck = await queryD1Direct(`
@@ -601,33 +603,30 @@ export async function queryD1(sql: string, params: any[] = []): Promise<any[]> {
     }
   }
 
-  // 2. In-flight request coalescing (deduplication)
-  if (isReadQuery && inFlightQueries.has(cacheKey)) {
-    return inFlightQueries.get(cacheKey)!;
-  }
-
-  const queryExecutionPromise = (async () => {
-    const nextInQueue = async () => {
-      const result = await queryD1WithRetry(cleanSql, cleanParams);
-      // Safe pacing gap between consecutive Cloudflare REST API requests
-      await new Promise(r => setTimeout(r, 200));
-      return result;
-    };
-    
-    const resultPromise = queryQueuePromise.then(nextInQueue, nextInQueue);
-    queryQueuePromise = resultPromise.catch(() => {}); // keep queue moving forward
-    
-    return resultPromise;
-  })();
-
+  // 2. Read queries execute directly with in-flight deduplication (no queue blockage)
   if (isReadQuery) {
-    inFlightQueries.set(cacheKey, queryExecutionPromise);
-    queryExecutionPromise.finally(() => {
+    if (inFlightQueries.has(cacheKey)) {
+      return inFlightQueries.get(cacheKey)!;
+    }
+    const readPromise = queryD1WithRetry(cleanSql, cleanParams);
+    inFlightQueries.set(cacheKey, readPromise);
+    readPromise.finally(() => {
       inFlightQueries.delete(cacheKey);
     });
+    return readPromise;
   }
 
-  return queryExecutionPromise;
+  // 3. Write queries (mutations) are safely serialized to prevent SQLite locks
+  const nextInQueue = async () => {
+    const result = await queryD1WithRetry(cleanSql, cleanParams);
+    await new Promise(r => setTimeout(r, 100));
+    return result;
+  };
+  
+  const resultPromise = queryQueuePromise.then(nextInQueue, nextInQueue);
+  queryQueuePromise = resultPromise.catch(() => {});
+  
+  return resultPromise;
 }
 
 /**

@@ -308,12 +308,19 @@ export default function DetailModal({
     }
     let isMounted = true;
     setLightboxLoading(true);
-    resolveFileUrl(lightboxFile.url).then(res => {
-      if (isMounted) {
-        setResolvedLightboxUrl(res);
-        setLightboxLoading(false);
-      }
-    });
+    resolveFileUrl(lightboxFile.url)
+      .then(res => {
+        if (isMounted) {
+          setResolvedLightboxUrl(res);
+          setLightboxLoading(false);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setResolvedLightboxUrl(lightboxFile.url);
+          setLightboxLoading(false);
+        }
+      });
     return () => { isMounted = false; };
   }, [lightboxFile]);
 

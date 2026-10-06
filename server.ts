@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import multer from "multer";
 import { google } from "googleapis";
 import { Readable } from "stream";
@@ -18,7 +17,7 @@ async function startServer() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   // Cloud Run & Load Balancer Liveness/Readiness probes
-  app.get(["/healthz", "/_health", "/api/health"], (req, res) => {
+  app.get(["/healthz", "/_health", "/health", "/api/health"], (req, res) => {
     res.status(200).json({
       status: "healthy",
       service: "backcharge-nasional-api",
@@ -30,7 +29,7 @@ async function startServer() {
   app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, PATCH, DELETE");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, apikey");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, apikey, Accept, Origin, X-Requested-With, Cache-Control, Pragma");
     if (req.method === "OPTIONS") {
       return res.sendStatus(200);
     }
@@ -379,6 +378,7 @@ async function startServer() {
   // ==========================================
   
   // 1. Get D1 Configuration status and test authentication
+  let d1AuthCache: { configured: boolean; authorized: boolean; lastCheck: number } | null = null;
   app.get("/api/d1/status", async (req, res) => {
     const isConfigured = !!(
       process.env.CLOUDFLARE_ACCOUNT_ID &&
@@ -388,9 +388,14 @@ async function startServer() {
     if (!isConfigured) {
       return res.json({ configured: false, authorized: false });
     }
+    // Return cached authorization if checked recently (<60s)
+    if (d1AuthCache && (Date.now() - d1AuthCache.lastCheck < 60000)) {
+      return res.json({ configured: d1AuthCache.configured, authorized: d1AuthCache.authorized });
+    }
     try {
       // Test the credentials with a rapid lightweight D1 SQL query
       await queryD1("SELECT 1");
+      d1AuthCache = { configured: true, authorized: true, lastCheck: Date.now() };
       res.json({ configured: true, authorized: true });
     } catch (err: any) {
       console.warn("⚠️ Cloudflare D1 is configured but unauthorized/invalid:", err.message);
@@ -521,8 +526,17 @@ async function startServer() {
 
       // 4. Category
       if (category) {
-        whereClauses.push("category = ?");
-        params.push(category);
+        if (category === "Maintenance & ETLE") {
+          whereClauses.push("(category = 'Maintenance' OR category = 'ETLE')");
+        } else if (category.includes(",")) {
+          const catList = category.split(",").map((c: string) => c.trim());
+          const placeholders = catList.map(() => "?").join(", ");
+          whereClauses.push(`category IN (${placeholders})`);
+          params.push(...catList);
+        } else {
+          whereClauses.push("category = ?");
+          params.push(category);
+        }
       }
 
       // 5. Status Bayar
@@ -549,12 +563,12 @@ async function startServer() {
 
       // 8. Date Range
       if (startDate) {
-        whereClauses.push("tanggal >= ?");
-        params.push(startDate);
+        whereClauses.push("(tanggal >= ? OR (tanggal IS NULL AND created_at >= ?))");
+        params.push(startDate, startDate);
       }
       if (endDate) {
-        whereClauses.push("tanggal <= ?");
-        params.push(endDate);
+        whereClauses.push("(tanggal <= ? OR (tanggal IS NULL AND created_at <= ?))");
+        params.push(endDate + " 23:59:59", endDate + " 23:59:59");
       }
 
       // 9. Stage mapping in SQL
@@ -840,9 +854,36 @@ async function startServer() {
     res.status(404).json({ success: false, error: `API endpoint not found: ${req.method} ${req.url}` });
   });
 
-  // Vite middleware for development
+  // Global API error handler ensuring CORS and JSON response
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("❌ Express unhandled error:", err?.message || err);
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, PATCH, DELETE");
+    res.setHeader("Access-Control-Allow-Headers", "*");
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(err.status || 500).json({
+      success: false,
+      error: err?.message || "Internal Server Error"
+    });
+  });
+
+  // Vite middleware for development vs static production serve
   let vite: any;
-  if (process.env.NODE_ENV !== "production") {
+  const distPath = path.join(process.cwd(), "dist");
+  const distExists = fs.existsSync(path.join(distPath, "index.html"));
+  const isProd = process.env.NODE_ENV === "production" || distExists;
+
+  if (isProd && distExists) {
+    console.log(`[SERVER] Serving production build from ${distPath}`);
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  } else {
+    console.log("[SERVER] Starting Vite development server middleware mode");
+    const { createServer: createViteServer } = await import("vite");
     vite = await createViteServer({
       server: { 
         middlewareMode: true,
@@ -851,24 +892,22 @@ async function startServer() {
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
   }
 
   const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
   });
 
   // Handle WebSocket upgrade requests for Vite dev server in middleware mode
-  if (process.env.NODE_ENV !== "production" && vite) {
+  if (!isProd && vite) {
     server.on("upgrade", (req, socket, head) => {
       vite.ws.handleUpgrade(req, socket, head);
     });
   }
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("❌ Fatal error starting server:", err);
+  process.exit(1);
+});
+

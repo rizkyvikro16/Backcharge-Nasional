@@ -83,27 +83,15 @@ export default function DatabaseView({
   // Synchronize dashboard filters with local state
   useEffect(() => {
     if (activeDashboardFilter) {
-      if (activeDashboardFilter.category !== undefined) {
-        setSelectedCategory(activeDashboardFilter.category);
-      }
-      if (activeDashboardFilter.stage !== undefined) {
-        setSelectedStage(activeDashboardFilter.stage);
-      }
+      setSelectedCategory(activeDashboardFilter.category !== undefined ? activeDashboardFilter.category : '');
+      setSelectedStage(activeDashboardFilter.stage !== undefined ? activeDashboardFilter.stage : '');
       if (activeDashboardFilter.branch !== undefined) {
         setSelectedBranch(activeDashboardFilter.branch);
       }
-      if (activeDashboardFilter.statusPayment !== undefined) {
-        setSelectedPaymentStatus(activeDashboardFilter.statusPayment);
-      }
-      if (activeDashboardFilter.statusConfirm !== undefined) {
-        setSelectedConfirmStatus(activeDashboardFilter.statusConfirm);
-      }
-      if (activeDashboardFilter.startDate !== undefined) {
-        setFilterStartDate(activeDashboardFilter.startDate);
-      }
-      if (activeDashboardFilter.endDate !== undefined) {
-        setFilterEndDate(activeDashboardFilter.endDate);
-      }
+      setSelectedPaymentStatus(activeDashboardFilter.statusPayment !== undefined ? activeDashboardFilter.statusPayment : '');
+      setSelectedConfirmStatus(activeDashboardFilter.statusConfirm !== undefined ? activeDashboardFilter.statusConfirm : '');
+      setFilterStartDate(activeDashboardFilter.startDate !== undefined ? activeDashboardFilter.startDate : '');
+      setFilterEndDate(activeDashboardFilter.endDate !== undefined ? activeDashboardFilter.endDate : '');
     }
   }, [activeDashboardFilter]);
 
@@ -1350,7 +1338,13 @@ export default function DatabaseView({
         t.no_bak.toLowerCase().includes(searchLower) ||
         t.no_invoice.toLowerCase().includes(searchLower);
 
-      const matchesCategory = !selectedCategory || t.category === selectedCategory;
+      let matchesCategory = !selectedCategory || t.category === selectedCategory;
+      if (selectedCategory === 'Maintenance & ETLE') {
+        matchesCategory = t.category === 'Maintenance' || t.category === 'ETLE';
+      } else if (selectedCategory && selectedCategory.includes(',')) {
+        const catList = selectedCategory.split(',').map(c => c.trim().toLowerCase());
+        matchesCategory = catList.includes((t.category || '').toLowerCase());
+      }
       const isAllBranch = !selectedBranch || isNationalOrAllBranches(selectedBranch);
       const selectedBranchList = selectedBranch ? getUserBranches(selectedBranch).map(b => b.toLowerCase()) : [];
       const matchesBranch = isAllBranch || 
@@ -1372,16 +1366,28 @@ export default function DatabaseView({
 
       let matchesDateRange = true;
       if (filterStartDate || filterEndDate) {
-        if (!t.tanggal) {
+        let tDate = '';
+        if (t.tanggal) {
+          if (t.tanggal.includes('T')) tDate = t.tanggal.split('T')[0];
+          else if (t.tanggal.includes('/')) {
+            const p = t.tanggal.split('/');
+            if (p[0].length === 4) tDate = `${p[0]}-${p[1].padStart(2, '0')}-${p[2].padStart(2, '0')}`;
+            else if (p[2].length === 4) tDate = `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`;
+          } else {
+            tDate = t.tanggal.split(' ')[0];
+          }
+        } else if (t.created_at) {
+          tDate = t.created_at.split('T')[0].split(' ')[0];
+        }
+
+        if (filterStartDate && tDate && tDate < filterStartDate) {
           matchesDateRange = false;
-        } else {
-          const tDate = t.tanggal.split('T')[0].split(' ')[0];
-          if (filterStartDate && tDate < filterStartDate) {
-            matchesDateRange = false;
-          }
-          if (filterEndDate && tDate > filterEndDate) {
-            matchesDateRange = false;
-          }
+        }
+        if (filterEndDate && tDate && tDate > filterEndDate) {
+          matchesDateRange = false;
+        }
+        if (!tDate) {
+          matchesDateRange = false;
         }
       }
 
@@ -2200,6 +2206,7 @@ export default function DatabaseView({
               className="text-xs border border-slate-200 rounded-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-slate-700 cursor-pointer shadow-sm transition-all"
             >
               <option value="">Semua Kategori</option>
+              <option value="Maintenance & ETLE">Maintenance &amp; ETLE</option>
               <option value="Own Risk">Own Risk</option>
               <option value="Maintenance">Maintenance</option>
               <option value="Ekspedisi">Ekspedisi</option>
