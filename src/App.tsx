@@ -1894,6 +1894,109 @@ export default function App() {
     }
   };
 
+  // 2B. HIGH-PERFORMANCE ATOMIC BULK UPDATE TRANSACTIONS
+  const handleBulkUpdateTransactions = async (
+    itemsToUpdate: { id: string; updates: Partial<Backcharge> }[],
+    generalLogMessage: string,
+    onProgress?: (current: number, total: number) => void
+  ) => {
+    if (!currentUser || itemsToUpdate.length === 0) return;
+    setLoading(true);
+
+    try {
+      const nowStr = new Date().toISOString();
+      const total = itemsToUpdate.length;
+      let processed = 0;
+
+      // Prepare map of updated records
+      const updatedMap = new Map<string, Backcharge>();
+      const logsToAdd: ActivityLog[] = [];
+
+      itemsToUpdate.forEach(({ id, updates }) => {
+        const target = transactions.find(t => t.id === id);
+        if (target) {
+          const updated: Backcharge = {
+            ...target,
+            ...updates,
+            updated_at: nowStr
+          };
+          updated.no_bak = packExtraFields(updated);
+          updatedMap.set(id, updated);
+
+          logsToAdd.push({
+            id: String(Date.now() + Math.random()),
+            timestamp: nowStr,
+            transaction_id: id,
+            performed_by: currentUser.email,
+            action_description: generalLogMessage || `Update status massal transaksi ${id}`
+          });
+        }
+      });
+
+      if (isD1Active) {
+        // Execute in safe chunks of 15 to stay within HTTP payload and execution limits
+        const BATCH_SIZE = 15;
+        for (let i = 0; i < itemsToUpdate.length; i += BATCH_SIZE) {
+          const batch = itemsToUpdate.slice(i, i + BATCH_SIZE);
+          
+          await Promise.all(
+            batch.map(async ({ id, updates }) => {
+              const cleaned = cleanDbPayload({
+                ...updates,
+                no_bak: updatedMap.get(id)?.no_bak,
+                updated_at: nowStr
+              });
+              const cols = Object.keys(cleaned);
+              if (cols.length > 0) {
+                const setClause = cols.map(c => `${c} = ?`).join(', ');
+                const vals = [...Object.values(cleaned), id];
+                await executeD1Query(`UPDATE backcharges SET ${setClause} WHERE id = ?`, vals);
+              }
+            })
+          );
+
+          processed = Math.min(i + batch.length, total);
+          if (onProgress) onProgress(processed, total);
+        }
+
+        // Insert batch summary into activity_logs
+        await executeD1Query(
+          "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
+          ['BATCH_UPDATE', currentUser.email, `Update status massal (${itemsToUpdate.length} transaksi): ${generalLogMessage}`]
+        ).catch(() => {});
+      } else {
+        // Offline / Mock database save
+        updatedMap.forEach(updatedTx => {
+          mockDb.saveBackcharge(updatedTx, currentUser.email);
+        });
+        if (onProgress) onProgress(total, total);
+      }
+
+      // Single atomic React state update
+      updateTransactionsStateAndCache(prev =>
+        prev.map(t => updatedMap.get(t.id) || t)
+      );
+
+      if (logsToAdd.length > 0) {
+        setLogs(prev => [...logsToAdd.slice(0, 50), ...prev]);
+      }
+
+      addToast(`Berhasil memperbarui ${itemsToUpdate.length} transaksi secara massal!`, 'success');
+
+      sendBrowserNotification({
+        title: '🔄 Update Status Massal Berhasil',
+        body: `Berhasil memperbarui status untuk ${itemsToUpdate.length} transaksi.`,
+        tag: 'bulk-update-' + Date.now()
+      });
+    } catch (err: any) {
+      console.error("Gagal melakukan update status massal:", err);
+      addToast(`Gagal update status massal: ${err.message}`, 'error');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 2B. DELETE TRANSACTION WORKFLOW (ADMINISTRATOR, ASO, MAINTENANCE CENTER)
   const handleDeleteTransaction = async (id: string) => {
     const isAllowedToDelete = currentUser && (
@@ -2593,6 +2696,7 @@ export default function App() {
               onSelectTransaction={setSelectedTransactionId}
               onDeleteTransaction={handleDeleteTransaction}
               onUpdateTransaction={handleUpdateTransaction}
+              onBulkUpdateTransactions={handleBulkUpdateTransactions}
               activeAlertFilter={activeAlertFilter}
               onClearAlertFilter={() => {
                 setActiveAlertFilter('');

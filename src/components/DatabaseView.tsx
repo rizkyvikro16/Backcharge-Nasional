@@ -24,6 +24,11 @@ interface DatabaseViewProps {
   onSelectTransaction: (id: string) => void;
   onDeleteTransaction?: (id: string) => void;
   onUpdateTransaction?: (id: string, updates: Partial<Backcharge>, logMessage: string) => Promise<void> | void;
+  onBulkUpdateTransactions?: (
+    itemsToUpdate: { id: string; updates: Partial<Backcharge> }[],
+    generalLogMessage: string,
+    onProgress?: (current: number, total: number) => void
+  ) => Promise<void>;
   activeAlertFilter?: 'due' | 'pending' | 'high_value' | '';
   onClearAlertFilter?: () => void;
   activeDashboardFilter?: DashboardFilter | null;
@@ -41,6 +46,7 @@ export default function DatabaseView({
   onSelectTransaction,
   onDeleteTransaction,
   onUpdateTransaction,
+  onBulkUpdateTransactions,
   activeAlertFilter,
   onClearAlertFilter,
   activeDashboardFilter,
@@ -50,12 +56,14 @@ export default function DatabaseView({
   
   // Role permissions
   const userRole = currentUser.role as string;
-  const isAsoUser = userRole === 'ASO' || userRole === 'Maintenance Center' || userRole === 'ASO Megabranch';
-  const isSalesHeadUser = userRole === 'Sales Head' || userRole === 'Sales / Sales Head';
-  const isKacabUser = userRole === 'Kepala Cabang' || userRole === 'kacab';
-  const isBroUser = userRole === 'BRO';
-  const isAdminUser = userRole === 'Admin';
-  const isSuperAdmin = userRole === 'Administrator';
+  const isAsoUser = hasRole(userRole, 'ASO') || hasRole(userRole, 'Maintenance Center') || hasRole(userRole, 'ASO Megabranch');
+  const isSalesHeadUser = hasRole(userRole, 'Sales Head') || hasRole(userRole, 'Sales / Sales Head') || hasRole(userRole, 'SM Megabranch');
+  const isKacabUser = hasRole(userRole, 'Kepala Cabang') || hasRole(userRole, 'kacab');
+  const isRegionalHead = isRegionalHeadRole(userRole);
+  const isDivisionHead = hasRole(userRole, 'Division Head') || hasRole(userRole, 'RBU');
+  const isBroUser = hasRole(userRole, 'BRO') || hasRole(userRole, 'BRO Megabranch');
+  const isAdminUser = hasRole(userRole, 'Admin') || hasRole(userRole, 'Admin Head');
+  const isSuperAdmin = hasRole(userRole, 'Administrator');
 
   // Search & filter states
   const [search, setSearch] = useState('');
@@ -261,12 +269,15 @@ export default function DatabaseView({
   // Bulk selection & update states
   const [selectedTxIds, setSelectedTxIds] = useState<string[]>([]);
   const [showBulkModal, setShowBulkModal] = useState(false);
+  const [showBulkConfirmStep, setShowBulkConfirmStep] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
   const [bulkStatusHandover, setBulkStatusHandover] = useState<string>('');
   const [bulkFileHandover, setBulkFileHandover] = useState<string | null>(null);
   const [bulkFileHandoverName, setBulkFileHandoverName] = useState<string>('');
   const [bulkTanggalHandover, setBulkTanggalHandover] = useState<string>('');
   const [bulkStatusSap, setBulkStatusSap] = useState<string>('');
   const [bulkStatusPayment, setBulkStatusPayment] = useState<string>('');
+  const [bulkPaymentDate, setBulkPaymentDate] = useState<string>('');
   const [bulkStatusApproval, setBulkStatusApproval] = useState<string>('');
   const [bulkLogReason, setBulkLogReason] = useState<string>('');
   const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
@@ -1465,10 +1476,10 @@ export default function DatabaseView({
   const paginatedTransactions = displayTransactions;
 
   // Bulk selection & update permissions based on role
-  const canUpdateHandover = isAsoUser || isSuperAdmin;
+  const canUpdateHandover = isAsoUser || isAdminUser || isSuperAdmin;
   const canUpdateSap = isSalesHeadUser || isSuperAdmin;
   const canUpdatePayment = isAdminUser || isSuperAdmin;
-  const canUpdateApproval = isSalesHeadUser || isKacabUser || isSuperAdmin;
+  const canUpdateApproval = isSalesHeadUser || isKacabUser || isRegionalHead || isDivisionHead || isSuperAdmin;
 
   // BRO and read-only roles cannot perform bulk update
   const canBulkUpdate = !isBroUser && (canUpdateHandover || canUpdateSap || canUpdatePayment || canUpdateApproval);
@@ -1500,108 +1511,155 @@ export default function DatabaseView({
     setSelectedTxIds([]);
   };
 
-  const handleBulkSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Handle Bulk Status Update Submit
+  const handleBulkSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (selectedTxIds.length === 0 || isBulkSubmitting || !canBulkUpdate) return;
 
-    const updates: Partial<Backcharge> = {};
+    const hasAnyChange = 
+      (canUpdateHandover && (bulkStatusHandover || bulkFileHandover || bulkTanggalHandover)) ||
+      (canUpdateSap && bulkStatusSap) ||
+      (canUpdatePayment && bulkStatusPayment) ||
+      (canUpdateApproval && bulkStatusApproval);
+
+    if (!hasAnyChange) {
+      setBulkErrorMessage('Pilih setidaknya satu status atau unggah dokumen serah terima sebelum menerapkan perubahan massal.');
+      return;
+    }
+
+    await handleExecuteBulkSubmit();
+  };
+
+  // Execute bulk status update with batching and progress tracking
+  const handleExecuteBulkSubmit = async () => {
+    if (selectedTxIds.length === 0 || isBulkSubmitting || !canBulkUpdate) return;
+
+    const baseUpdates: Partial<Backcharge> = {};
     if (canUpdateHandover) {
-      if (bulkStatusHandover) updates.status_handover = bulkStatusHandover;
+      if (bulkStatusHandover) baseUpdates.status_handover = bulkStatusHandover;
       if (bulkFileHandover) {
-        updates.file_handover_sales_admin_url = bulkFileHandover;
-        updates.file_handover_aso_sales_url = bulkFileHandover;
+        baseUpdates.file_handover_sales_admin_url = bulkFileHandover;
+        baseUpdates.file_handover_aso_sales_url = bulkFileHandover;
         if (!bulkStatusHandover) {
-          updates.status_handover = 'Diserahkan ke Admin';
+          baseUpdates.status_handover = 'Diserahkan ke Admin';
         }
       }
       if (bulkTanggalHandover) {
-        updates.tanggal_handover = bulkTanggalHandover;
+        baseUpdates.tanggal_handover = bulkTanggalHandover;
       } else if (bulkFileHandover || bulkStatusHandover) {
-        updates.tanggal_handover = new Date().toLocaleString('id-ID');
+        baseUpdates.tanggal_handover = new Date().toLocaleString('id-ID');
       }
     }
-    if (canUpdateSap && bulkStatusSap) updates.status_sap = bulkStatusSap;
-    if (canUpdatePayment && bulkStatusPayment) updates.status_payment = bulkStatusPayment;
-
-    if (Object.keys(updates).length === 0 && (!canUpdateApproval || !bulkStatusApproval)) {
-      setBulkErrorMessage('Pilih setidaknya satu status atau unggah dokumen serah terima!');
-      return;
+    if (canUpdateSap && bulkStatusSap) {
+      baseUpdates.status_sap = bulkStatusSap;
     }
-
-    const updatesList: string[] = [];
-    if (bulkStatusApproval) updatesList.push(`• Status Approval: ${bulkStatusApproval}`);
-    if (bulkStatusSap) updatesList.push(`• Status SAP: ${bulkStatusSap}`);
-    if (bulkStatusPayment) updatesList.push(`• Status Pembayaran: ${bulkStatusPayment}`);
-    if (bulkStatusHandover) updatesList.push(`• Status Serah Terima: ${bulkStatusHandover}`);
-    if (bulkFileHandover) updatesList.push(`• Lampiran Dokumen Serah Terima Massal: ${bulkFileHandoverName || 'Berkas Terlampir'}`);
-    if (bulkTanggalHandover) updatesList.push(`• Tanggal Serah Terima: ${bulkTanggalHandover}`);
-
-    const confirmMessage = `PERINGATAN UPDATE MASSAL!\n\nAnda akan melakukan Update Status & Dokumen Massal untuk ${selectedTxIds.length} transaksi sekaligus:\n${updatesList.join('\n')}\n\nApakah Anda yakin ingin menerapkan perubahan ini?`;
-    if (!window.confirm(confirmMessage)) {
-      return;
+    if (canUpdatePayment && bulkStatusPayment) {
+      baseUpdates.status_payment = bulkStatusPayment;
+      if (bulkStatusPayment === 'Lunas') {
+        baseUpdates.payment_date = bulkPaymentDate || new Date().toISOString().split('T')[0];
+      } else if (bulkStatusPayment === 'Belum Bayar') {
+        baseUpdates.payment_date = '';
+      }
     }
 
     setIsBulkSubmitting(true);
     setBulkErrorMessage(null);
     setBulkSuccessMessage(null);
+    setBulkProgress({ current: 0, total: selectedTxIds.length });
 
     try {
       const reason = bulkLogReason.trim() || `Update status & dokumen massal (${selectedTxIds.length} transaksi) oleh ${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-      
-      if (onUpdateTransaction) {
-        for (const id of selectedTxIds) {
-          const item = transactions.find(t => t.id === id);
-          const itemUpdates: Partial<Backcharge> = { ...updates };
+      const itemsToUpdate: { id: string; updates: Partial<Backcharge> }[] = [];
 
-          if (bulkStatusApproval && item) {
-            const isKacab = hasRole(currentUser.role, 'Kepala Cabang') || hasRole(currentUser.role, 'kacab');
-            const isSH = hasRole(currentUser.role, 'Sales Head') || hasRole(currentUser.role, 'Sales / Sales Head');
-            const isAdmin = hasRole(currentUser.role, 'Administrator');
-            const isRH = isRegionalHeadRole(currentUser.role as string);
-            const isDH = hasRole(currentUser.role, 'Division Head');
-            const val = item.value || 0;
-            const isMaintenance = item.category === 'Maintenance';
-            const isTPL = item.category === 'TPL';
+      for (const id of selectedTxIds) {
+        const item = transactions.find(t => t.id === id);
+        const itemUpdates: Partial<Backcharge> = { ...baseUpdates };
 
-            let canApproveThisItem = isAdmin;
-            const tier1Approved = item.status_approval === 'Disetujui';
-            const isRegionalHeadReq = isMaintenance 
-              ? (val > 7500000) 
-              : (val > 5000000);
-            const tier2Approved = !isRegionalHeadReq || item.regional_approval_status === 'Disetujui';
+        if (bulkStatusApproval && item) {
+          const isKacab = hasRole(currentUser.role, 'Kepala Cabang') || hasRole(currentUser.role, 'kacab');
+          const isSH = hasRole(currentUser.role, 'Sales Head') || hasRole(currentUser.role, 'Sales / Sales Head') || hasRole(currentUser.role, 'SM Megabranch');
+          const isAdmin = hasRole(currentUser.role, 'Administrator');
+          const isRH = isRegionalHeadRole(currentUser.role as string);
+          const isDH = hasRole(currentUser.role, 'Division Head') || hasRole(currentUser.role, 'RBU');
+          const val = Number(item.value) || 0;
+          const isMaintenance = item.category === 'Maintenance';
+          const isTPL = item.category === 'TPL';
 
-            if (isKacab && (isMaintenance || isTPL) && (!item.status_approval || item.status_approval === 'Belum Approval')) {
-              itemUpdates.status_approval = bulkStatusApproval;
-              itemUpdates.approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-              itemUpdates.approved_at = new Date().toLocaleString('id-ID');
-            } else if (isSH && (item.category === 'Own Risk' || item.category === 'Ekspedisi' || item.category === 'ETLE' || item.category === 'Unclaimable Insurance' || item.category === 'Dokumen Kendaraan') && (!item.status_approval || item.status_approval === 'Belum Approval')) {
-              itemUpdates.status_approval = bulkStatusApproval;
-              itemUpdates.approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-              itemUpdates.approved_at = new Date().toLocaleString('id-ID');
-            } else if (isRH && isRegionalHeadReq && tier1Approved && (!item.regional_approval_status || item.regional_approval_status === 'Belum Approval')) {
+          const tier1Approved = item.status_approval === 'Disetujui';
+          const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
+          const isDivisionHeadReq = val > 15000000;
+          const tier2Approved = !isRegionalHeadReq || item.regional_approval_status === 'Disetujui';
+
+          if (isAdmin) {
+            itemUpdates.status_approval = bulkStatusApproval;
+            itemUpdates.approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
+            itemUpdates.approved_at = new Date().toLocaleString('id-ID');
+            if (bulkStatusApproval === 'Disetujui') {
+              if (isRegionalHeadReq) {
+                itemUpdates.regional_approval_status = 'Disetujui';
+                itemUpdates.regional_approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
+                itemUpdates.regional_approved_at = new Date().toLocaleString('id-ID');
+              }
+              if (isDivisionHeadReq) {
+                itemUpdates.division_approval_status = 'Disetujui';
+                itemUpdates.division_approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
+                itemUpdates.division_approved_at = new Date().toLocaleString('id-ID');
+              }
+            } else if (bulkStatusApproval === 'Ditolak' || bulkStatusApproval === 'Belum Approval') {
               itemUpdates.regional_approval_status = bulkStatusApproval;
-              itemUpdates.regional_approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-              itemUpdates.regional_approved_at = new Date().toLocaleString('id-ID');
-            } else if (isDH && val > 15000000 && tier1Approved && tier2Approved && (!item.division_approval_status || item.division_approval_status === 'Belum Approval')) {
               itemUpdates.division_approval_status = bulkStatusApproval;
-              itemUpdates.division_approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-              itemUpdates.division_approved_at = new Date().toLocaleString('id-ID');
-            } else if (isAdmin) {
-              itemUpdates.status_approval = bulkStatusApproval;
-              itemUpdates.approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-              itemUpdates.approved_at = new Date().toLocaleString('id-ID');
             }
+          } else if (isKacab && (isMaintenance || isTPL)) {
+            itemUpdates.status_approval = bulkStatusApproval;
+            itemUpdates.approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
+            itemUpdates.approved_at = new Date().toLocaleString('id-ID');
+          } else if (isSH && (item.category === 'Own Risk' || item.category === 'Ekspedisi' || item.category === 'ETLE' || item.category === 'Unclaimable Insurance' || item.category === 'Dokumen Kendaraan')) {
+            itemUpdates.status_approval = bulkStatusApproval;
+            itemUpdates.approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
+            itemUpdates.approved_at = new Date().toLocaleString('id-ID');
+          } else if (isRH && isRegionalHeadReq && tier1Approved) {
+            itemUpdates.regional_approval_status = bulkStatusApproval;
+            itemUpdates.regional_approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
+            itemUpdates.regional_approved_at = new Date().toLocaleString('id-ID');
+          } else if (isDH && isDivisionHeadReq && tier1Approved && tier2Approved) {
+            itemUpdates.division_approval_status = bulkStatusApproval;
+            itemUpdates.division_approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
+            itemUpdates.division_approved_at = new Date().toLocaleString('id-ID');
           }
+        }
 
-          if (Object.keys(itemUpdates).length > 0) {
-            await onUpdateTransaction(id, itemUpdates, `${reason} - Transaksi ${id}`);
-          }
+        if (Object.keys(itemUpdates).length > 0) {
+          itemsToUpdate.push({ id, updates: itemUpdates });
         }
       }
 
-      setBulkSuccessMessage(`Berhasil memperbarui ${selectedTxIds.length} transaksi!`);
+      if (itemsToUpdate.length === 0) {
+        setBulkErrorMessage('Tidak ada transaksi yang memenuhi syarat wewenang role Anda untuk perubahan status yang dipilih.');
+        setIsBulkSubmitting(false);
+        return;
+      }
+
+      if (onBulkUpdateTransactions) {
+        await onBulkUpdateTransactions(itemsToUpdate, reason, (curr, tot) => {
+          setBulkProgress({ current: curr, total: tot });
+        });
+      } else if (onUpdateTransaction) {
+        let done = 0;
+        for (const { id, updates: itemUpdates } of itemsToUpdate) {
+          await onUpdateTransaction(id, itemUpdates, `${reason} - Transaksi ${id}`);
+          done++;
+          setBulkProgress({ current: done, total: itemsToUpdate.length });
+        }
+      }
+
+      setBulkSuccessMessage(`Berhasil memperbarui ${itemsToUpdate.length} transaksi secara massal!`);
+      if (addToast) {
+        addToast(`Berhasil memperbarui status untuk ${itemsToUpdate.length} transaksi.`, 'success');
+      }
+
       setTimeout(() => {
         setShowBulkModal(false);
+        setShowBulkConfirmStep(false);
         setSelectedTxIds([]);
         setBulkStatusHandover('');
         setBulkFileHandover(null);
@@ -1609,10 +1667,13 @@ export default function DatabaseView({
         setBulkTanggalHandover('');
         setBulkStatusSap('');
         setBulkStatusPayment('');
+        setBulkPaymentDate('');
         setBulkStatusApproval('');
         setBulkLogReason('');
-      }, 1500);
+        setBulkProgress(null);
+      }, 1200);
     } catch (err: any) {
+      console.error("Bulk update error:", err);
       setBulkErrorMessage(err.message || 'Gagal memperbarui status secara massal.');
     } finally {
       setIsBulkSubmitting(false);
@@ -3285,12 +3346,15 @@ export default function DatabaseView({
                   <span className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-pulse"></span>
                   Update Status Massal ({selectedTxIds.length} Transaksi)
                 </h3>
-                <p className="text-[10px] text-slate-400 font-bold mt-1">Ubah status beberapa transaksi sekaligus secara cepat.</p>
+                <p className="text-[10px] text-slate-400 font-bold mt-1">Ubah status beberapa transaksi sekaligus secara cepat dan aman.</p>
               </div>
               <button 
                 type="button"
-                onClick={() => setShowBulkModal(false)}
-                className="p-1.5 hover:bg-slate-200 text-slate-400 hover:text-slate-600 rounded-xl transition-all cursor-pointer"
+                onClick={() => {
+                  if (!isBulkSubmitting) setShowBulkModal(false);
+                }}
+                disabled={isBulkSubmitting}
+                className="p-1.5 hover:bg-slate-200 text-slate-400 hover:text-slate-600 rounded-xl transition-all cursor-pointer disabled:opacity-40"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -3298,6 +3362,26 @@ export default function DatabaseView({
 
             {/* Scrollable Form Body */}
             <form onSubmit={handleBulkSubmit} className="flex-grow overflow-y-auto p-6 space-y-4 custom-scrollbar">
+              {bulkProgress && (
+                <div className="p-3.5 bg-blue-50/90 border border-blue-200 rounded-2xl space-y-2 animate-in fade-in">
+                  <div className="flex justify-between items-center text-xs font-extrabold text-blue-900">
+                    <span className="flex items-center gap-1.5">
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                      Memproses Pembaruan Status Massal...
+                    </span>
+                    <span className="font-mono bg-blue-200/70 text-blue-900 px-2 py-0.5 rounded-lg text-[10px]">
+                      {bulkProgress.current} / {bulkProgress.total} ({Math.round((bulkProgress.current / Math.max(1, bulkProgress.total)) * 100)}%)
+                    </span>
+                  </div>
+                  <div className="w-full bg-blue-200/80 rounded-full h-2.5 overflow-hidden">
+                    <div 
+                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out shadow-xs"
+                      style={{ width: `${(bulkProgress.current / Math.max(1, bulkProgress.total)) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
               {bulkSuccessMessage && (
                 <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs rounded-xl font-medium flex items-center space-x-2 animate-bounce">
                   <Check className="w-4 h-4 flex-shrink-0" />
@@ -3312,7 +3396,7 @@ export default function DatabaseView({
                 </div>
               )}
 
-              <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs font-semibold text-blue-900 space-y-1">
+              <div className="p-3.5 bg-blue-50/80 border border-blue-100 rounded-2xl text-xs font-semibold text-blue-900 space-y-1.5">
                 <div className="flex justify-between items-center">
                   <p className="font-extrabold">Transaksi Terpilih ({selectedTxIds.length}):</p>
                   <span className="text-[9px] bg-blue-200 text-blue-800 font-extrabold px-2 py-0.5 rounded-full uppercase">
@@ -3321,10 +3405,10 @@ export default function DatabaseView({
                 </div>
                 <div className="text-[10px] text-blue-700 font-mono flex flex-wrap gap-1 max-h-20 overflow-y-auto custom-scrollbar pt-1">
                   {selectedTxIds.map(id => (
-                    <span key={id} className="bg-blue-100/80 text-blue-800 px-1.5 py-0.5 rounded font-bold">{id}</span>
+                    <span key={id} className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-bold border border-blue-200/60">{id}</span>
                   ))}
                 </div>
-                <p className="text-[10px] text-blue-600 italic mt-1 font-normal">* Hanya bidang status sesuai wewenang role Anda yang dapat diubah.</p>
+                <p className="text-[10px] text-blue-600 italic mt-1 font-normal">* Hanya bidang status sesuai wewenang role Anda yang akan diproses.</p>
               </div>
 
               {!canBulkUpdate && (
@@ -3334,7 +3418,7 @@ export default function DatabaseView({
                     Otorisasi Tidak Mencukupi
                   </p>
                   <p className="text-[11px] text-amber-700">
-                    Role Anda (<strong>{currentUser.role}</strong>) tidak memiliki otorisasi untuk melakukan perubahan status massal.
+                    Role Anda (<strong>{currentUser.role}</strong>) tidak memiliki wewenang untuk melakukan perubahan status transaksi.
                   </p>
                 </div>
               )}
@@ -3365,7 +3449,9 @@ export default function DatabaseView({
                       >
                         <option value="">-- Tidak Diubah --</option>
                         <option value="Diserahkan ke Admin">Diserahkan ke Admin</option>
+                        <option value="Diterima Admin">Diterima Admin</option>
                         <option value="Pending">Pending (Berkas Masih di ASO)</option>
+                        <option value="Selesai">Selesai</option>
                       </select>
                     </div>
 
@@ -3431,7 +3517,7 @@ export default function DatabaseView({
                             <>
                               <Upload className="w-5 h-5 text-blue-500 group-hover:scale-110 transition-transform" />
                               <p className="text-xs font-bold text-slate-700">Pilih / Unggah Berkas Bukti Serah Terima (PDF / Foto)</p>
-                              <p className="text-[10px] text-slate-400">File ini akan otomatis dilampirkan ke {selectedTxIds.length} transaksi yang ditumpuk sekaligus</p>
+                              <p className="text-[10px] text-slate-400">File ini akan otomatis dilampirkan ke {selectedTxIds.length} transaksi yang dipilih sekaligus</p>
                             </>
                           )}
                         </div>
@@ -3441,69 +3527,92 @@ export default function DatabaseView({
                 </div>
               )}
 
-              {/* 3. Status SAP (Sales Head & Administrator) */}
+              {/* 2. Status SAP (Sales Head & Administrator) */}
               {canUpdateSap && (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
+                <div className="p-4 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-2">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase flex items-center justify-between">
                     <span>Status SAP / ERP Claim</span>
                     <span className="text-[8px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-extrabold">Wewenang Sales Head</span>
                   </label>
                   <select 
                     value={bulkStatusSap}
                     onChange={(e) => setBulkStatusSap(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
+                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
                   >
                     <option value="">-- Tidak Diubah --</option>
-                    <option value="N/A">N/A</option>
                     <option value="Bill">Bill (Dapat Ditagihkan)</option>
                     <option value="Not Bill">Not Bill (Tidak Ditagihkan)</option>
+                    <option value="N/A">N/A</option>
                   </select>
                 </div>
               )}
 
-              {/* 4. Status Pembayaran (Admin & Administrator) */}
+              {/* 3. Status Pembayaran (Admin & Administrator) */}
               {canUpdatePayment && (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
-                    <span>Status Pelunasan Pembayaran</span>
+                <div className="p-4 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-wide">Status Pelunasan Pembayaran</span>
                     <span className="text-[8px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-extrabold">Wewenang Admin</span>
-                  </label>
-                  <select 
-                    value={bulkStatusPayment}
-                    onChange={(e) => setBulkStatusPayment(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
-                  >
-                    <option value="">-- Tidak Diubah --</option>
-                    <option value="Belum Bayar">Belum Bayar</option>
-                    <option value="Lunas">Lunas</option>
-                  </select>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                        Status Pelunasan
+                      </label>
+                      <select 
+                        value={bulkStatusPayment}
+                        onChange={(e) => setBulkStatusPayment(e.target.value)}
+                        className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
+                      >
+                        <option value="">-- Tidak Diubah --</option>
+                        <option value="Lunas">Lunas</option>
+                        <option value="Belum Bayar">Belum Bayar</option>
+                      </select>
+                    </div>
+
+                    {bulkStatusPayment === 'Lunas' && (
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                          Tanggal Pelunasan (Opsional)
+                        </label>
+                        <input 
+                          type="date"
+                          value={bulkPaymentDate}
+                          onChange={(e) => setBulkPaymentDate(e.target.value)}
+                          placeholder="Hari ini jika kosong"
+                          className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {/* 5. Status Approval Backcharge (Sales Head, Kacab & Administrator) */}
+              {/* 4. Status Approval Backcharge (Sales Head, Kacab & Administrator) */}
               {canUpdateApproval && (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
+                <div className="p-4 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-2">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase flex items-center justify-between">
                     <span>Status Approval Backcharge</span>
                     <span className="text-[8px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-extrabold">
                       {isSalesHeadUser && !isSuperAdmin ? 'Wewenang Sales Head (OR, Ekspedisi, ETLE, UI, Dok)' :
                        isKacabUser && !isSuperAdmin ? 'Wewenang Kacab (Maintenance & TPL)' :
-                       'Wewenang RH & DH & Kacab & Sales Head'}
+                       'Wewenang RH / DH / Kacab / Sales Head'}
                     </span>
                   </label>
                   <select 
                     value={bulkStatusApproval}
                     onChange={(e) => setBulkStatusApproval(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
+                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
                   >
                     <option value="">-- Tidak Diubah --</option>
                     <option value="Disetujui">✅ Disetujui (Approved)</option>
                     <option value="Ditolak">❌ Tidak Disetujui (Not Approved)</option>
+                    <option value="Belum Approval">⏳ Belum Approval (Reset)</option>
                   </select>
                   <p className="text-[9px] text-slate-400 mt-1 font-medium">
-                    {isSalesHeadUser && !isSuperAdmin && '* Pilihan ini hanya akan memproses Backcharge kategori Own Risk, Ekspedisi, ETLE, Unclaimable Insurance, & Dokumen Kendaraan.'}
-                    {isKacabUser && !isSuperAdmin && '* Pilihan ini hanya akan memproses Backcharge kategori Maintenance (<=7.5jt) & TPL (<=5jt).'}
-                    {isSuperAdmin && '* Memproses sesuai wewenang role SH/Kacab/RH/DH dan limit nominal yang berlaku.'}
+                    {isSalesHeadUser && !isSuperAdmin && '* Pilihan ini memproses Backcharge kategori Own Risk, Ekspedisi, ETLE, Unclaimable Insurance, & Dokumen Kendaraan.'}
+                    {isKacabUser && !isSuperAdmin && '* Pilihan ini memproses Backcharge kategori Maintenance (<=7.5jt) & TPL (<=5jt).'}
+                    {isSuperAdmin && '* Memproses status approval dan menyinkronkan seluruh tier wewenang nominal yang berlaku.'}
                   </p>
                 </div>
               )}
@@ -3531,7 +3640,8 @@ export default function DatabaseView({
               <button 
                 type="button"
                 onClick={() => setShowBulkModal(false)}
-                className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
+                disabled={isBulkSubmitting}
+                className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-all cursor-pointer disabled:opacity-50"
               >
                 Batal
               </button>
@@ -3544,7 +3654,7 @@ export default function DatabaseView({
                 {isBulkSubmitting ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Memproses...</span>
+                    <span>Memproses ({bulkProgress ? `${bulkProgress.current}/${bulkProgress.total}` : selectedTxIds.length})...</span>
                   </>
                 ) : (
                   <>
