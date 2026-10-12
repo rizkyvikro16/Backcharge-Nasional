@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Search, Download, 
   Upload, FileText, Check, AlertCircle, AlertTriangle, RefreshCw, X, Trash2,
-  Loader2, Edit, Info, ChevronDown, CheckCircle2, XCircle, User,
+  Loader2, Edit, Info, ChevronDown, CheckCircle2, XCircle, User, Clock,
   ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
 } from 'lucide-react';
 import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, isNationalOrAllBranches, hasRole, isRegionalHeadRole } from '../types';
@@ -362,10 +362,12 @@ export default function DatabaseView({
       const stages = [
         '1. Menunggu Serah Terima Berkas',
         '2. Berkas di Admin',
-        '3. Menunggu Approval',
-        '4. Menunggu Cetak & Kirim Invoice',
-        '5. Menunggu Pelunasan',
-        '6. Selesai (Lunas)'
+        '3. Menunggu Approval SH / Kacab',
+        '4. Belum Approve RH',
+        '5. Belum Approve DH',
+        '6. Menunggu Cetak & Kirim Invoice',
+        '7. Menunggu Pelunasan',
+        '8. Selesai (Lunas)'
       ];
 
       const paymentStatuses = ['Belum Bayar', 'Lunas'];
@@ -490,7 +492,7 @@ export default function DatabaseView({
         [10, 'No Tilang', 'Nomor tilang (khusus kategori ETLE)', 'TLG-001 (isi "-" jika tidak ada)'],
         [11, 'PIC', 'Nama BRO / Broker / PIC pengaju', 'Budi Santoso'],
         [12, 'Alasan', 'Rincian / alasan timbulnya klaim', 'Klaim perbaikan bodi penyok akibat senggolan'],
-        [13, 'Tahap Proses', 'Pilih dari Dropdown Tahap Proses', '1. Menunggu Serah Terima Berkas s/d 6. Selesai (Lunas)'],
+        [13, 'Tahap Proses', 'Pilih dari Dropdown Tahap Proses', '1. Menunggu Serah Terima Berkas s/d 8. Selesai (Lunas)'],
         [14, 'No Invoice', 'Nomor invoice billing (jika sudah dicetak)', 'INV-2026-001 (isi "-" jika belum ada)'],
         [15, 'Status Bayar', 'Pilih dari Dropdown Status Bayar', 'Belum Bayar / Lunas'],
         [16, 'Status SAP', 'Pilih dari Dropdown Status SAP', 'Bill / Not Bill / N/A']
@@ -842,6 +844,8 @@ export default function DatabaseView({
           let finalStatusHandover = rawStatusHandover || 'Pending';
           let finalStatusApproval = rawStatusApproval || 'Belum Approval';
           let finalStatusConfirm = rawStatusConfirm || 'Telah Dikonfirmasi';
+          let finalRegStatus = rawRegStatus || 'Belum Approval';
+          let finalDivStatus = rawDivStatus || 'Belum Approval';
 
           if (rawTahapProses) {
             const cleanTahap = rawTahapProses.toLowerCase().trim();
@@ -851,18 +855,33 @@ export default function DatabaseView({
             } else if (cleanTahap.startsWith('2') || cleanTahap.includes('berkas di admin')) {
               finalStatusHandover = 'Diserahkan ke Admin';
               finalStatusApproval = 'Belum Approval';
+            } else if (cleanTahap.includes('belum approve rh') || cleanTahap.includes('regional head') || cleanTahap.includes('appr. rh')) {
+              finalStatusHandover = 'Diterima Admin';
+              finalStatusApproval = 'Disetujui';
+              finalRegStatus = 'Belum Approval';
+            } else if (cleanTahap.includes('belum approve dh') || cleanTahap.includes('division head') || cleanTahap.includes('appr. dh')) {
+              finalStatusHandover = 'Diterima Admin';
+              finalStatusApproval = 'Disetujui';
+              finalRegStatus = 'Disetujui';
+              finalDivStatus = 'Belum Approval';
             } else if (cleanTahap.startsWith('3') || cleanTahap.includes('sales head') || cleanTahap.includes('menunggu approval') || cleanTahap.includes('kacab')) {
               finalStatusHandover = 'Diterima Admin';
               finalStatusApproval = 'Belum Approval';
-            } else if (cleanTahap.startsWith('4') || cleanTahap.includes('cetak') || cleanTahap.includes('kirim invoice')) {
+            } else if (cleanTahap.startsWith('4') || cleanTahap.startsWith('6') || cleanTahap.includes('cetak') || cleanTahap.includes('kirim invoice')) {
               finalStatusHandover = 'Diterima Admin';
               finalStatusApproval = 'Disetujui';
-            } else if (cleanTahap.startsWith('5') || cleanTahap.includes('pelunasan') || cleanTahap.includes('menunggu pelunasan')) {
+              finalRegStatus = 'Disetujui';
+              finalDivStatus = 'Disetujui';
+            } else if (cleanTahap.startsWith('5') || cleanTahap.startsWith('7') || cleanTahap.includes('pelunasan') || cleanTahap.includes('menunggu pelunasan')) {
               finalStatusHandover = 'Diterima Admin';
               finalStatusApproval = 'Disetujui';
-            } else if (cleanTahap.startsWith('6') || cleanTahap.includes('selesai') || cleanTahap.includes('lunas')) {
+              finalRegStatus = 'Disetujui';
+              finalDivStatus = 'Disetujui';
+            } else if (cleanTahap.startsWith('6') || cleanTahap.startsWith('8') || cleanTahap.includes('selesai') || cleanTahap.includes('lunas')) {
               finalStatusHandover = 'Diterima Admin';
               finalStatusApproval = 'Disetujui';
+              finalRegStatus = 'Disetujui';
+              finalDivStatus = 'Disetujui';
               finalStatusPayment = 'Lunas';
             }
           }
@@ -896,11 +915,11 @@ export default function DatabaseView({
             approval_attachment_1_url: rawAppAtt1 || undefined,
             approval_attachment_2_url: rawAppAtt2 || undefined,
             approval_attachment_3_url: rawAppAtt3 || undefined,
-            regional_approval_status: rawRegStatus || 'Belum Approval',
+            regional_approval_status: finalRegStatus,
             regional_approved_by: rawRegBy || undefined,
             regional_approved_at: rawRegAt || undefined,
             regional_approval_note: rawRegNote || undefined,
-            division_approval_status: rawDivStatus || 'Belum Approval',
+            division_approval_status: finalDivStatus,
             division_approved_by: rawDivBy || undefined,
             division_approved_at: rawDivAt || undefined,
             division_approval_note: rawDivNote || undefined,
@@ -1415,12 +1434,12 @@ export default function DatabaseView({
           const isPendingL1 = !t.status_approval || t.status_approval === 'Belum Approval' || t.status_approval === 'Pending';
           matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && isPendingL1 && !stepInvoice && !stepPayment;
         } else if (selectedStage === '3_sap_rh') {
-          const val = t.value || 0;
+          const val = Number(t.value) || 0;
           const isMaintenance = t.category === 'Maintenance';
           const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
           matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && t.status_approval === 'Disetujui' && isRegionalHeadReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval') && !stepInvoice && !stepPayment;
         } else if (selectedStage === '3_sap_dh') {
-          const val = t.value || 0;
+          const val = Number(t.value) || 0;
           const isMaintenance = t.category === 'Maintenance';
           const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
           const isDivisionHeadReq = val > 15000000;
@@ -1431,7 +1450,7 @@ export default function DatabaseView({
           if (isNotBill) {
             matchesStage = false;
           } else {
-            const val = t.value || 0;
+            const val = Number(t.value) || 0;
             const isMaintenance = t.category === 'Maintenance';
             const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
             const isDivisionHeadReq = val > 15000000;
@@ -2217,7 +2236,7 @@ export default function DatabaseView({
                   {activeAlertFilter === 'pending' && 'Jatuh Tempo 7 Hari'}
                   {activeAlertFilter === 'high_value' && 'Jatuh Tempo 30 Hari'}
                   {activeDashboardFilter?.category && `Kategori: ${activeDashboardFilter.category}`}
-                  {activeDashboardFilter?.stage && `Tahap: ${activeDashboardFilter.stage === '1_handover' ? 'Fisik di ASO' : activeDashboardFilter.stage === '2_confirm' ? 'Berkas di Admin' : activeDashboardFilter.stage === '3_sap_l1' ? 'Belum Approve L1' : activeDashboardFilter.stage === '3_sap_rh' ? 'Belum Approve Regional Head' : activeDashboardFilter.stage === '3_sap_dh' ? 'Belum Approve Division Head' : activeDashboardFilter.stage === '4_invoice' ? 'Belum Cetak Invoice' : 'Kolektif Bayar'}`}
+                  {activeDashboardFilter?.stage && `Tahap: ${activeDashboardFilter.stage === '1_handover' ? 'Fisik di ASO' : activeDashboardFilter.stage === '2_confirm' || activeDashboardFilter.stage === '2_admin' ? 'Berkas di Admin' : activeDashboardFilter.stage === '3_sap_l1' || activeDashboardFilter.stage === '3_sap' ? 'Belum Approve SH / KACAB' : activeDashboardFilter.stage === '3_sap_rh' ? 'Belum Approve RH' : activeDashboardFilter.stage === '3_sap_dh' ? 'Belum Approve DH' : activeDashboardFilter.stage === '4_invoice' ? 'Belum Cetak Invoice' : activeDashboardFilter.stage === '5_payment' ? 'Menunggu Pelunasan' : 'Selesai (Lunas)'}`}
                   {activeDashboardFilter?.branch && `Cabang: ${activeDashboardFilter.branch}`}
                   {activeDashboardFilter?.statusPayment && `Status Bayar: ${activeDashboardFilter.statusPayment}`}
                   {activeDashboardFilter?.statusConfirm && `Status Konfirmasi: ${activeDashboardFilter.statusConfirm}`}
@@ -2291,17 +2310,23 @@ export default function DatabaseView({
             )}
 
             <select 
-              value={selectedStage}
+              value={
+                selectedStage === '2_admin' ? '2_confirm' : 
+                selectedStage === '3_sap' ? '3_sap_l1' : 
+                selectedStage
+              }
               onChange={(e) => setSelectedStage(e.target.value)}
               className="text-xs border border-slate-200 rounded-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-slate-700 cursor-pointer shadow-sm transition-all"
             >
               <option value="">Semua Tahap Proses</option>
               <option value="1_handover">1. Menunggu Serah Terima Berkas</option>
-              <option value="2_admin">2. Berkas di Admin / Menunggu Approval</option>
-              <option value="3_sap">3. Menunggu Approval (Sales Head / Kacab)</option>
-              <option value="4_invoice">4. Menunggu Cetak &amp; Kirim Invoice</option>
-              <option value="5_payment">5. Menunggu Pelunasan Backcharge</option>
-              <option value="6_done">6. Selesai (Lunas)</option>
+              <option value="2_confirm">2. Berkas di Admin</option>
+              <option value="3_sap_l1">3. Belum Approve SH / KACAB</option>
+              <option value="3_sap_rh">4. Belum Approve RH</option>
+              <option value="3_sap_dh">5. Belum Approve DH</option>
+              <option value="4_invoice">6. Menunggu Cetak &amp; Kirim Invoice</option>
+              <option value="5_payment">7. Menunggu Pelunasan Backcharge</option>
+              <option value="6_done">8. Selesai (Lunas)</option>
             </select>
 
             <select 
@@ -2588,6 +2613,15 @@ export default function DatabaseView({
                     const isOver30DaysUnpaid = isUnpaid && ageDays > 30;
                     const isOver7DaysUnpaid = isUnpaid && ageDays > 7;
 
+                    const transVal = Number(t.value) || 0;
+                    const isMaint = t.category === 'Maintenance';
+                    const isRegReq = isMaint ? (transVal > 7500000) : (transVal > 5000000);
+                    const isDivReq = transVal > 15000000;
+                    const isPendingL1 = !t.status_approval || t.status_approval === 'Belum Approval' || t.status_approval === 'Pending';
+                    const isL1Approved = t.status_approval === 'Disetujui';
+                    const isPendingRH = isL1Approved && isRegReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval');
+                    const isPendingDH = isL1Approved && (!isRegReq || t.regional_approval_status === 'Disetujui') && isDivReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval');
+
                     let handoverBadge = (
                       <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-slate-100 text-slate-600">
                         Pending
@@ -2754,7 +2788,29 @@ export default function DatabaseView({
                             </div>
                           </div>
                         </td>
-                        <td className="p-3">{handoverBadge}</td>
+                        <td className="p-3">
+                          <div className="flex flex-col gap-1 items-start">
+                            {handoverBadge}
+                            {isPendingRH && (
+                              <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full bg-orange-100 text-orange-800 border border-orange-200 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" title="Menunggu Approval Regional Head">
+                                <Clock className="w-2.5 h-2.5 text-orange-600 flex-shrink-0" />
+                                Belum Appr. RH
+                              </span>
+                            )}
+                            {isPendingDH && (
+                              <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full bg-rose-100 text-rose-800 border border-rose-200 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" title="Menunggu Approval Division Head">
+                                <Clock className="w-2.5 h-2.5 text-rose-600 flex-shrink-0" />
+                                Belum Appr. DH
+                              </span>
+                            )}
+                            {isPendingL1 && (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && (
+                              <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" title="Menunggu Approval Sales Head / Kacab">
+                                <Clock className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
+                                Belum Appr. SH/Kacab
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="p-3">{invoiceText}</td>
                         <td className="p-3">{paymentBadge}</td>
                         {canWrite && (

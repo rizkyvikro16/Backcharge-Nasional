@@ -524,14 +524,16 @@ export default function Dashboard({
       stage6DivisionApproveValue: number;
       stage7Invoice: number;
       stage7InvoiceValue: number;
+      stage8Lunas: number;
+      stage8LunasValue: number;
     }> = {
-      'Own Risk': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 },
-      'Maintenance': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 },
-      'Ekspedisi': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 },
-      'ETLE': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 },
-      'TPL': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 },
-      'Unclaimable Insurance': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 },
-      'Dokumen Kendaraan': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0 }
+      'Own Risk': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 },
+      'Maintenance': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 },
+      'Ekspedisi': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 },
+      'ETLE': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 },
+      'TPL': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 },
+      'Unclaimable Insurance': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 },
+      'Dokumen Kendaraan': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 }
     };
 
     filteredTransactions.forEach(t => {
@@ -606,6 +608,10 @@ export default function Dashboard({
       if (catPipelines[cat]) {
         catPipelines[cat].stage1Input++;
         catPipelines[cat].stage1InputValue += transVal;
+        if (stepPayment) {
+          catPipelines[cat].stage8Lunas++;
+          catPipelines[cat].stage8LunasValue += transVal;
+        }
         if (t.status_handover === 'Pending') {
           catPipelines[cat].stage2InAso++;
           catPipelines[cat].stage2InAsoValue += transVal;
@@ -2388,7 +2394,7 @@ export default function Dashboard({
               <Layers className="w-4 h-4 text-indigo-600" />
               Workflow Pipeline &amp; Bottleneck Analysis (Per Kategori)
             </h3>
-            <p className="text-[11px] text-slate-400">Analisis matriks hambatan proses secara real-time berdasarkan divisi penanggung jawab dan tenggat SLA (Tahap 1 - 7).</p>
+            <p className="text-[11px] text-slate-400">Analisis matriks hambatan proses (Tahap 1 - 6) serta total realisasi pelunasan per kategori (Tahap 7).</p>
           </div>
           
           {/* Controls */}
@@ -2445,6 +2451,20 @@ export default function Dashboard({
           let totalActiveBottleneckCells = 0;
           let totalPendingSlaTransactions = 0;
           let totalPendingSlaValue = 0;
+          let totalLunasTransactions = 0;
+          let totalLunasValue = 0;
+          let totalStage1Aso = 0;
+          let totalStage1AsoVal = 0;
+          let totalStage2Admin = 0;
+          let totalStage2AdminVal = 0;
+          let totalStage3L1 = 0;
+          let totalStage3L1Val = 0;
+          let totalStage4RH = 0;
+          let totalStage4RHVal = 0;
+          let totalStage5DH = 0;
+          let totalStage5DHVal = 0;
+          let totalStage6Inv = 0;
+          let totalStage6InvVal = 0;
 
           filteredCategories.forEach(cat => {
             const count = categoryStats[cat]?.count || 0;
@@ -2467,7 +2487,24 @@ export default function Dashboard({
               stage6DivisionApproveValue: 0,
               stage7Invoice: 0,
               stage7InvoiceValue: 0,
+              stage8Lunas: 0,
+              stage8LunasValue: 0,
             };
+
+            totalStage1Aso += (pipeline.stage2InAso || 0);
+            totalStage1AsoVal += (pipeline.stage2InAsoValue || 0);
+            totalStage2Admin += (pipeline.stage3AtAdmin || 0);
+            totalStage2AdminVal += (pipeline.stage3AtAdminValue || 0);
+            totalStage3L1 += (pipeline.stage4ApproveL1 || 0);
+            totalStage3L1Val += (pipeline.stage4ApproveL1Value || 0);
+            totalStage4RH += (pipeline.stage5RegionalApprove || 0);
+            totalStage4RHVal += (pipeline.stage5RegionalApproveValue || 0);
+            totalStage5DH += (pipeline.stage6DivisionApprove || 0);
+            totalStage5DHVal += (pipeline.stage6DivisionApproveValue || 0);
+            totalStage6Inv += (pipeline.stage7Invoice || 0);
+            totalStage6InvVal += (pipeline.stage7InvoiceValue || 0);
+            totalLunasTransactions += (pipeline.stage8Lunas || 0);
+            totalLunasValue += (pipeline.stage8LunasValue || 0);
 
             if (pipeline.stage2InAso > 0) totalActiveBottleneckCells++;
             if (pipeline.stage3AtAdmin > 0) totalActiveBottleneckCells++;
@@ -2496,11 +2533,12 @@ export default function Dashboard({
           return (
             <div className="space-y-4">
               {/* Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
                   <div className="space-y-0.5">
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Total Volume Terfilter</span>
                     <span className="text-sm font-black text-slate-900 block">{totalFilteredTransactions} Transaksi</span>
+                    <span className="text-[9px] text-slate-500 font-bold block">{formatRupiah(totalFilteredValue)}</span>
                   </div>
                   <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
                     <Layers className="w-4 h-4" />
@@ -2511,6 +2549,7 @@ export default function Dashboard({
                   <div className="space-y-0.5">
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Titik Hambatan Aktif</span>
                     <span className="text-sm font-black text-amber-600 block">{totalActiveBottleneckCells} Tahapan Terhenti</span>
+                    <span className="text-[9px] text-amber-600/80 font-bold block">Memerlukan Tindak Lanjut</span>
                   </div>
                   <div className="p-2 bg-amber-50 text-amber-600 rounded-xl">
                     <AlertTriangle className="w-4 h-4" />
@@ -2521,9 +2560,29 @@ export default function Dashboard({
                   <div className="space-y-0.5">
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Total Antrean Outstanding</span>
                     <span className="text-sm font-black text-rose-600 block">{totalPendingSlaTransactions} Pending</span>
+                    <span className="text-[9px] text-rose-600/90 font-bold block" title={`Total Nilai Outstanding: ${formatRupiah(totalPendingSlaValue)}`}>
+                      {totalPendingSlaTransactions > 0 ? 'Menunggu Penyelesaian' : 'Semua Antrean Selesai'}
+                    </span>
                   </div>
                   <div className="p-2 bg-rose-50 text-rose-600 rounded-xl">
                     <Clock className="w-4 h-4" />
+                  </div>
+                </div>
+
+                <div 
+                  onClick={() => onSelectDashboardFilter?.({ statusPayment: 'Lunas' })}
+                  className="bg-slate-50 hover:bg-emerald-50/40 border border-slate-200 hover:border-emerald-300 rounded-2xl p-3 flex items-center justify-between cursor-pointer transition-all active:scale-[0.99] group shadow-sm"
+                  title={`Klik untuk melihat transaksi lunas (${totalLunasTransactions} Transaksi - ${formatRupiah(totalLunasValue)})`}
+                >
+                  <div className="space-y-0.5">
+                    <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider block">Total Pelunasan (Tahap 7)</span>
+                    <span className="text-sm font-black text-emerald-700 block">{totalLunasTransactions} Lunas</span>
+                    <span className="text-[9px] text-emerald-600/90 font-bold block">
+                      {totalLunasTransactions > 0 ? 'Telah Berhasil Dilunasi' : 'Belum Ada Pelunasan'}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100 rounded-xl transition-all">
+                    <CheckCircle className="w-4 h-4" />
                   </div>
                 </div>
               </div>
@@ -2561,12 +2620,16 @@ export default function Dashboard({
                         <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">6. Blm Invoice</span>
                         <span className="inline-block bg-cyan-50 text-cyan-700 font-black text-[7px] px-1 py-0.2 rounded mt-0.5">ROLE: ADMIN</span>
                       </th>
+                      <th scope="col" className="px-3 py-2 text-center min-w-[115px] bg-emerald-50/40">
+                        <span className="block text-[9px] font-black text-emerald-800 uppercase tracking-wider">7. Total Pelunasan</span>
+                        <span className="inline-block bg-emerald-100 text-emerald-800 font-black text-[7px] px-1 py-0.2 rounded mt-0.5">STATUS: LUNAS</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {filteredCategories.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-xs font-bold text-slate-400">
+                        <td colSpan={8} className="px-4 py-8 text-center text-xs font-bold text-slate-400">
                           Tidak ada kategori backcharge yang sesuai dengan filter pencarian.
                         </td>
                       </tr>
@@ -2590,6 +2653,8 @@ export default function Dashboard({
                           stage6DivisionApproveValue: 0,
                           stage7Invoice: 0,
                           stage7InvoiceValue: 0,
+                          stage8Lunas: 0,
+                          stage8LunasValue: 0,
                         };
 
                         return (
@@ -2809,11 +2874,92 @@ export default function Dashboard({
                                 </div>
                               </div>
                             </td>
+
+                            {/* 7. Total Pelunasan (Flow 7 / Tahap 7) */}
+                            <td className="p-1 bg-emerald-50/15">
+                              <div 
+                                onClick={() => onSelectDashboardFilter?.({ category: cat, statusPayment: 'Lunas' })}
+                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
+                                  pipeline.stage8Lunas > 0 
+                                    ? 'bg-emerald-50 hover:bg-emerald-100/70 border border-emerald-200 hover:border-emerald-400 shadow-sm' 
+                                    : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
+                                }`}
+                                title={`Klik untuk menyaring kategori ${cat} yang sudah Lunas (${pipeline.stage8Lunas} Transaksi - ${formatRupiah(pipeline.stage8LunasValue || 0)})`}
+                              >
+                                <div className="flex justify-between items-center">
+                                  <span className="text-[8px] font-black text-emerald-600 uppercase font-sans">Total Pelunasan</span>
+                                  {pipeline.stage8Lunas > 0 && <CheckCircle className="w-2.5 h-2.5 text-emerald-600" />}
+                                </div>
+                                <div className="flex items-baseline justify-between mt-0.5">
+                                  <span className={`text-base font-black ${pipeline.stage8Lunas > 0 ? 'text-emerald-950' : 'text-slate-300 group-hover:text-slate-400'}`}>
+                                    {pipeline.stage8Lunas}
+                                  </span>
+                                  {pipeline.stage8Lunas > 0 && (
+                                    <span className="text-[7px] font-black bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded uppercase">
+                                      Lunas
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-1 pt-1 border-t border-emerald-100/80 flex items-center justify-between">
+                                  <span 
+                                    className={`text-[9px] font-extrabold truncate ${pipeline.stage8Lunas > 0 ? 'text-emerald-700' : 'text-slate-300 group-hover:text-slate-400'}`}
+                                    title={`Total Lunas: ${formatRupiah(pipeline.stage8LunasValue || 0)}`}
+                                  >
+                                    {pipeline.stage8Lunas > 0 ? 'Telah Lunas' : 'Belum Ada'}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
                           </tr>
                         );
                       })
                     )}
                   </tbody>
+                  <tfoot className="bg-slate-50 font-black border-t-2 border-slate-300">
+                    <tr className="divide-x divide-slate-200">
+                      <td className="px-3.5 py-3 text-slate-800 text-xs uppercase">
+                        <span className="block font-black text-slate-900">Total Seluruh Kategori</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold">
+                            {totalFilteredTransactions} Transaksi
+                          </span>
+                          <span className="text-[10px] font-extrabold text-slate-700 truncate">
+                            {formatRupiah(totalFilteredValue)}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-1.5 text-center bg-rose-50/20">
+                        <span className="text-sm font-black text-rose-950 block">{totalStage1Aso}</span>
+                        <span className="text-[8px] font-bold text-rose-700 block truncate">{formatRupiah(totalStage1AsoVal)}</span>
+                      </td>
+                      <td className="p-1.5 text-center bg-indigo-50/20">
+                        <span className="text-sm font-black text-indigo-950 block">{totalStage2Admin}</span>
+                        <span className="text-[8px] font-bold text-indigo-700 block truncate">{formatRupiah(totalStage2AdminVal)}</span>
+                      </td>
+                      <td className="p-1.5 text-center bg-amber-50/20">
+                        <span className="text-sm font-black text-amber-950 block">{totalStage3L1}</span>
+                        <span className="text-[8px] font-bold text-amber-700 block truncate">{formatRupiah(totalStage3L1Val)}</span>
+                      </td>
+                      <td className="p-1.5 text-center bg-orange-50/20">
+                        <span className="text-sm font-black text-orange-950 block">{totalStage4RH}</span>
+                        <span className="text-[8px] font-bold text-orange-700 block truncate">{formatRupiah(totalStage4RHVal)}</span>
+                      </td>
+                      <td className="p-1.5 text-center bg-rose-50/20">
+                        <span className="text-sm font-black text-rose-950 block">{totalStage5DH}</span>
+                        <span className="text-[8px] font-bold text-rose-700 block truncate">{formatRupiah(totalStage5DHVal)}</span>
+                      </td>
+                      <td className="p-1.5 text-center bg-cyan-50/20">
+                        <span className="text-sm font-black text-cyan-950 block">{totalStage6Inv}</span>
+                        <span className="text-[8px] font-bold text-cyan-700 block truncate">{formatRupiah(totalStage6InvVal)}</span>
+                      </td>
+                      <td className="p-1.5 text-center bg-emerald-100/50">
+                        <span className="text-sm font-black text-emerald-950 block">{totalLunasTransactions}</span>
+                        <span className="text-[8px] font-black text-emerald-800 block truncate" title={`Total Lunas: ${formatRupiah(totalLunasValue)}`}>
+                          {totalLunasTransactions > 0 ? 'Telah Lunas' : '-'}
+                        </span>
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
