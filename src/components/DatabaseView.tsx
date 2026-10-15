@@ -5,7 +5,7 @@ import {
   Loader2, Edit, Info, ChevronDown, CheckCircle2, XCircle, User, Clock,
   ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
 } from 'lucide-react';
-import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, isNationalOrAllBranches, hasRole, isRegionalHeadRole } from '../types';
+import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, getRoleAllowedBranches, isNationalOrAllBranches, hasRole, isRegionalHeadRole, unpackExtraFields } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
 import { getApiUrl } from '../lib/api';
 import * as XLSX from 'xlsx';
@@ -68,19 +68,17 @@ export default function DatabaseView({
   // Search & filter states
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
-  const isNasional = currentUser.branch === 'Nasional' || 
-    (currentUser.branch && currentUser.branch.includes(',')) || 
-    hasRole(currentUser.role, 'Administrator') || 
-    hasRole(currentUser.role, 'Division Head') || 
-    (isRegionalHeadRole(currentUser.role as string));
-  const userBranchList = currentUser.branch && currentUser.branch !== 'Nasional'
-    ? getUserBranches(currentUser.branch)
+  const isNasional = isNationalOrAllBranches(currentUser.branch, currentUser.role);
+  const userBranchList = !isNasional
+    ? getRoleAllowedBranches(currentUser.role, currentUser.branch)
     : null;
   const availableBranchOptions = userBranchList && userBranchList.length > 0
-    ? userBranchList
+    ? ALL_SYSTEM_BRANCHES.filter(b => userBranchList.some(ub => ub.toLowerCase() === b.toLowerCase()))
     : ALL_SYSTEM_BRANCHES;
   const showBranchFilter = isNasional || (userBranchList && userBranchList.length > 1);
-  const [selectedBranch, setSelectedBranch] = useState(isNasional || (currentUser.branch === 'Megabranch') ? '' : (currentUser.branch || ''));
+  const [selectedBranch, setSelectedBranch] = useState(
+    isNasional || (userBranchList && userBranchList.length > 1) ? '' : (userBranchList && userBranchList.length === 1 ? userBranchList[0] : (currentUser.branch || ''))
+  );
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [selectedStage, setSelectedStage] = useState('');
@@ -855,11 +853,11 @@ export default function DatabaseView({
             } else if (cleanTahap.startsWith('2') || cleanTahap.includes('berkas di admin')) {
               finalStatusHandover = 'Diserahkan ke Admin';
               finalStatusApproval = 'Belum Approval';
-            } else if (cleanTahap.includes('belum approve rh') || cleanTahap.includes('regional head') || cleanTahap.includes('appr. rh')) {
+            } else if (cleanTahap.startsWith('4') || cleanTahap.includes('belum approve rh') || cleanTahap.includes('regional head') || cleanTahap.includes('appr. rh')) {
               finalStatusHandover = 'Diterima Admin';
               finalStatusApproval = 'Disetujui';
               finalRegStatus = 'Belum Approval';
-            } else if (cleanTahap.includes('belum approve dh') || cleanTahap.includes('division head') || cleanTahap.includes('appr. dh')) {
+            } else if (cleanTahap.startsWith('5') || cleanTahap.includes('belum approve dh') || cleanTahap.includes('division head') || cleanTahap.includes('appr. dh')) {
               finalStatusHandover = 'Diterima Admin';
               finalStatusApproval = 'Disetujui';
               finalRegStatus = 'Disetujui';
@@ -867,17 +865,17 @@ export default function DatabaseView({
             } else if (cleanTahap.startsWith('3') || cleanTahap.includes('sales head') || cleanTahap.includes('menunggu approval') || cleanTahap.includes('kacab')) {
               finalStatusHandover = 'Diterima Admin';
               finalStatusApproval = 'Belum Approval';
-            } else if (cleanTahap.startsWith('4') || cleanTahap.startsWith('6') || cleanTahap.includes('cetak') || cleanTahap.includes('kirim invoice')) {
+            } else if (cleanTahap.startsWith('6') || cleanTahap.includes('cetak') || cleanTahap.includes('kirim invoice')) {
               finalStatusHandover = 'Diterima Admin';
               finalStatusApproval = 'Disetujui';
               finalRegStatus = 'Disetujui';
               finalDivStatus = 'Disetujui';
-            } else if (cleanTahap.startsWith('5') || cleanTahap.startsWith('7') || cleanTahap.includes('pelunasan') || cleanTahap.includes('menunggu pelunasan')) {
+            } else if (cleanTahap.startsWith('7') || cleanTahap.includes('pelunasan') || cleanTahap.includes('menunggu pelunasan')) {
               finalStatusHandover = 'Diterima Admin';
               finalStatusApproval = 'Disetujui';
               finalRegStatus = 'Disetujui';
               finalDivStatus = 'Disetujui';
-            } else if (cleanTahap.startsWith('6') || cleanTahap.startsWith('8') || cleanTahap.includes('selesai') || cleanTahap.includes('lunas')) {
+            } else if (cleanTahap.startsWith('8') || cleanTahap.includes('selesai') || cleanTahap.includes('lunas')) {
               finalStatusHandover = 'Diterima Admin';
               finalStatusApproval = 'Disetujui';
               finalRegStatus = 'Disetujui';
@@ -1307,7 +1305,7 @@ export default function DatabaseView({
       .then(res => res.json())
       .then(d => {
         if (d.success && Array.isArray(d.data)) {
-          setServerRows(d.data);
+          setServerRows(d.data.map(unpackExtraFields));
           setServerTotalCount(typeof d.pagination?.total === 'number' ? d.pagination.total : d.data.length);
         } else {
           setServerRows(null);
@@ -1377,10 +1375,14 @@ export default function DatabaseView({
       }
       const isAllBranch = !selectedBranch || isNationalOrAllBranches(selectedBranch);
       const selectedBranchList = selectedBranch ? getUserBranches(selectedBranch).map(b => b.toLowerCase()) : [];
-      const matchesBranch = isAllBranch || 
-        (Boolean(t.branch) && selectedBranchList.includes(t.branch.toLowerCase())) ||
-        (Boolean(t.branch) && t.branch.toLowerCase() === selectedBranch.toLowerCase()) || 
-        (selectedBranch.includes(',') && selectedBranch.split(',').map(s => s.trim().toLowerCase()).includes(t.branch ? t.branch.toLowerCase() : ''));
+      const matchesBranch = selectedBranch
+        ? (isAllBranch || 
+           (Boolean(t.branch) && selectedBranchList.includes(t.branch.toLowerCase())) ||
+           (Boolean(t.branch) && t.branch.toLowerCase() === selectedBranch.toLowerCase()) || 
+           (selectedBranch.includes(',') && selectedBranch.split(',').map(s => s.trim().toLowerCase()).includes(t.branch ? t.branch.toLowerCase() : '')))
+        : (userBranchList && userBranchList.length > 0
+            ? userBranchList.some(ub => ub.toLowerCase() === (t.branch || '').toLowerCase())
+            : true);
       const matchesPaymentStatus = !selectedPaymentStatus || t.status_payment === selectedPaymentStatus;
       const matchesSapStatus = !selectedSapStatus || t.status_sap === selectedSapStatus;
       
@@ -1423,7 +1425,7 @@ export default function DatabaseView({
 
       let matchesStage = true;
       if (selectedStage) {
-        const stepInvoice = t.no_invoice && t.no_invoice !== '-';
+        const stepInvoice = Boolean(t.no_invoice && typeof t.no_invoice === 'string' && t.no_invoice.trim() !== '' && t.no_invoice.trim() !== '-');
         const stepPayment = t.status_payment === 'Lunas';
 
         if (selectedStage === '1_handover') {
@@ -1460,7 +1462,7 @@ export default function DatabaseView({
             matchesStage = t.status_handover !== 'Pending' && !stepInvoice && !stepPayment && !isPendingL1 && !isPendingRH && !isPendingDH;
           }
         } else if (selectedStage === '5_payment') {
-          matchesStage = stepInvoice || stepPayment;
+          matchesStage = stepInvoice && !stepPayment;
         } else if (selectedStage === '6_done') {
           matchesStage = stepPayment;
         }
@@ -2302,7 +2304,15 @@ export default function DatabaseView({
                 onChange={(e) => setSelectedBranch(e.target.value)}
                 className="text-xs border border-slate-200 rounded-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-slate-700 cursor-pointer shadow-sm transition-all"
               >
-                <option value="">{currentUser.branch === 'Megabranch' ? 'ALL BSO (Megabranch)' : 'Semua Cabang'}</option>
+                <option value="">
+                  {isNasional 
+                    ? 'Semua Cabang (Nasional)' 
+                    : currentUser.branch === 'Megabranch' || hasRole(currentUser.role, 'ASO Megabranch') 
+                    ? 'ALL BSO (Megabranch)' 
+                    : isRegionalHeadRole(currentUser.role as string)
+                    ? `Semua Cabang Wilayah (${availableBranchOptions.length} Cabang)`
+                    : `Semua Cabang Otoritas (${availableBranchOptions.length} Cabang)`}
+                </option>
                 {availableBranchOptions.map(b => (
                   <option key={b} value={b}>{b}</option>
                 ))}

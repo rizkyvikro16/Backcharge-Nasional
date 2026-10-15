@@ -9,7 +9,7 @@ import {
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, isNationalOrAllBranches, BackchargeCategory, hasRole, isRegionalHeadRole } from '../types';
+import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, getRoleAllowedBranches, isNationalOrAllBranches, BackchargeCategory, hasRole, isRegionalHeadRole } from '../types';
 
 interface DashboardProps {
   transactions: Backcharge[];
@@ -55,20 +55,20 @@ export default function Dashboard({
   const userRole = currentUser?.role || 'ASO';
   const isAdmin = userRole === 'Admin' || userRole === 'Admin Head';
 
-  // Branch mapping - filtered according to user role / branch access
+  // Branch mapping - filtered strictly according to user role & authorized branches
   const userBranches = useMemo(() => {
-    return currentUser?.branch && currentUser?.branch !== 'Nasional'
-      ? getUserBranches(currentUser.branch)
-      : null;
+    if (!currentUser) return null;
+    if (isNationalOrAllBranches(currentUser.branch, currentUser.role)) return null;
+    const allowed = getRoleAllowedBranches(currentUser.role, currentUser.branch);
+    return allowed && allowed.length < ALL_SYSTEM_BRANCHES.length ? allowed : null;
   }, [currentUser]);
 
   const branchList = useMemo(() => {
-    const availableBranchOptionsVal = userBranches && userBranches.length > 0
-      ? (ALL_SYSTEM_BRANCHES.filter(b => userBranches.some(ub => ub.toLowerCase() === b.toLowerCase())).length > 0
-          ? ALL_SYSTEM_BRANCHES.filter(b => userBranches.some(ub => ub.toLowerCase() === b.toLowerCase()))
-          : userBranches)
-      : ALL_SYSTEM_BRANCHES;
-    return availableBranchOptionsVal;
+    if (userBranches && userBranches.length > 0) {
+      const filtered = ALL_SYSTEM_BRANCHES.filter(b => userBranches.some(ub => ub.toLowerCase() === b.toLowerCase()));
+      return filtered.length > 0 ? filtered : userBranches;
+    }
+    return ALL_SYSTEM_BRANCHES;
   }, [userBranches]);
 
   const availableBranchOptions = branchList;
@@ -105,13 +105,13 @@ export default function Dashboard({
   // Sync selected branch filter with user's primary branch on login
   React.useEffect(() => {
     if (currentUser) {
-      if (currentUser.branch && currentUser.branch !== 'Nasional') {
-        const branches = getUserBranches(currentUser.branch);
+      if (!isNationalOrAllBranches(currentUser.branch, currentUser.role)) {
+        const branches = getRoleAllowedBranches(currentUser.role, currentUser.branch);
         if (branches.length === 1) {
           // Default to their only branch if they only handle exactly 1 branch
           setSelectedBranchFilter(branches[0]);
         } else {
-          // If they handle multiple branches (e.g., Regional, Megabranch, or custom list), show consolidated data
+          // If they handle multiple branches (e.g., Regional, Megabranch, or custom list), show consolidated data across all their authorized branches
           setSelectedBranchFilter('');
         }
       } else {
@@ -1481,10 +1481,12 @@ export default function Dashboard({
               className="w-full bg-indigo-50/60 hover:bg-indigo-50 border border-indigo-200/80 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-indigo-950 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm"
             >
               <option value="">
-                {currentUser?.branch === 'Nasional' || !currentUser?.branch
+                {currentUser?.branch === 'Nasional' || !currentUser?.branch || isNationalOrAllBranches(currentUser?.branch, currentUser?.role)
                   ? 'Semua Cabang (Nasional)'
                   : currentUser?.branch === 'Megabranch' || hasRole(currentUser?.role, 'ASO Megabranch')
                   ? 'Semua BSO Megabranch (8 BSO)'
+                  : isRegionalHeadRole(currentUser?.role as string)
+                  ? `Semua Cabang Wilayah (${availableBranchOptions.length} Cabang)`
                   : availableBranchOptions.length === 1 
                     ? `Cabang ${availableBranchOptions[0]}`
                     : `Semua Cabang Otoritas (${availableBranchOptions.length} Cabang)`}

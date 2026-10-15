@@ -18,7 +18,7 @@ const INITIAL_PROFILES: Profile[] = [
   { id: '9', email: 'rbu.nas@company.id', full_name: 'Rudy Hartono (Division Head)', role: 'Division Head', branch: 'Nasional', created_at: new Date().toISOString() },
   { id: '10', email: 'rh.west@company.id', full_name: 'Herman Prasetyo (RH West)', role: 'Regional Head West', branch: 'Lampung, Medan, Padang, Palembang, Pekanbaru', created_at: new Date().toISOString() },
   { id: '11', email: 'aso.ptk@company.id', full_name: 'Eko Prasetyo (ASO Pontianak)', role: 'ASO Megabranch', branch: 'BSO Pontianak', created_at: new Date().toISOString() },
-  { id: '12', email: 'rh.central@company.id', full_name: 'Bambang S (RH Central)', role: 'Regional Head Central', branch: 'Bandung, BSO GSO & AFFCO, BSO Pontianak', created_at: new Date().toISOString() },
+  { id: '12', email: 'rh.central@company.id', full_name: 'Bambang S (RH Central)', role: 'Regional Head Central', branch: 'Bandung, BSO GSO & AFFCO, BSO Sudirman, BSO Sunter, BSO Pondok Pinang, BSO Banten, BSO Bekasi, BSO Daan Mogot, BSO Pontianak', created_at: new Date().toISOString() },
   { id: '13', email: 'rh.east@company.id', full_name: 'Agus K (RH East)', role: 'Regional Head East', branch: 'Bali, Balikpapan, Banjarmasin, Makassar, Malang, Manado, Semarang, Solo, Surabaya', created_at: new Date().toISOString() }
 ];
 

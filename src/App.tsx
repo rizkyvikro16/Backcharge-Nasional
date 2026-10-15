@@ -6,7 +6,7 @@ import {
   Download, FileSpreadsheet, RefreshCw, LogOut, Bell, BellOff, Smartphone, Volume2, Shield, Users, Landmark, UserCheck, X
 } from 'lucide-react';
 
-import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, getRoleAllowedBranches, isNationalOrAllBranches, hasRole, isRegionalHeadRole, ALL_SYSTEM_BRANCHES } from './types';
+import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, getRoleAllowedBranches, isNationalOrAllBranches, hasRole, isRegionalHeadRole, ALL_SYSTEM_BRANCHES, packExtraFields, unpackExtraFields } from './types';
 import { mockDb } from './supabaseClient';
 
 import AuthScreen from './components/AuthScreen';
@@ -26,176 +26,6 @@ import {
 } from './lib/browserNotification';
 
 import { getApiUrl } from './lib/api';
-
-// Helper functions to pack and unpack extra fields into/from no_bak text field as fallback for Supabase databases without schema updates
-function packExtraFields(tx: any): string {
-  let packed = tx.no_bak || '-';
-  // Remove any previous packed info from no_bak if any
-  if (packed.includes('||')) {
-    packed = packed.split('||')[0];
-  }
-  if (!packed) packed = '-';
-
-  if (tx.no_tilang && tx.no_tilang !== '-') packed += `||TILANG:${tx.no_tilang}`;
-  if (tx.tanggal) packed += `||TANGGAL:${tx.tanggal}`;
-  if (tx.tanggal_handover) packed += `||TANGGAL_HANDOVER:${tx.tanggal_handover}`;
-  if (tx.nama_bro && tx.nama_bro !== '-') packed += `||NAMA_BRO:${tx.nama_bro}`;
-  if (tx.alasan && tx.alasan !== '-') packed += `||ALASAN:${tx.alasan}`;
-  if (tx.upload_dok_pendukung) packed += `||DOK_PENDUKUNG:${tx.upload_dok_pendukung}`;
-  if (tx.status_approval) packed += `||APPROVAL:${tx.status_approval}`;
-  if (tx.approved_by) packed += `||APPROVED_BY:${tx.approved_by}`;
-  if (tx.approved_at) packed += `||APPROVED_AT:${tx.approved_at}`;
-  if (tx.approval_note) packed += `||APPROVAL_NOTE:${tx.approval_note}`;
-  
-  if (tx.approval_attachment_1_url) packed += `||APP_ATT1:${tx.approval_attachment_1_url}`;
-  if (tx.approval_attachment_2_url) packed += `||APP_ATT2:${tx.approval_attachment_2_url}`;
-  if (tx.approval_attachment_3_url) packed += `||APP_ATT3:${tx.approval_attachment_3_url}`;
-
-  if (tx.regional_approval_status) packed += `||REG_STATUS:${tx.regional_approval_status}`;
-  if (tx.regional_approved_by) packed += `||REG_BY:${tx.regional_approved_by}`;
-  if (tx.regional_approved_at) packed += `||REG_AT:${tx.regional_approved_at}`;
-  if (tx.regional_approval_note) packed += `||REG_NOTE:${tx.regional_approval_note}`;
-
-  if (tx.division_approval_status) packed += `||DIV_STATUS:${tx.division_approval_status}`;
-  if (tx.division_approved_by) packed += `||DIV_BY:${tx.division_approved_by}`;
-  if (tx.division_approved_at) packed += `||DIV_AT:${tx.division_approved_at}`;
-  if (tx.division_approval_note) packed += `||DIV_NOTE:${tx.division_approval_note}`;
-
-  return packed;
-}
-
-function unpackExtraFields(item: any): any {
-  // 1. Direct DB column values take highest priority
-  let no_bak = item.no_bak || '-';
-  let no_tilang = item.no_tilang || '-';
-  let tanggal = item.tanggal || null;
-  let tanggal_handover = item.tanggal_handover || null;
-  let nama_bro = item.nama_bro || item.bro_name || '-';
-  let alasan = item.alasan || item.dok_pendukung_alasan || '-';
-  let upload_dok_pendukung = item.upload_dok_pendukung || null;
-  let status_approval = item.status_approval || 'Belum Approval';
-  let approved_by = item.approved_by || null;
-  let approved_at = item.approved_at || null;
-  let approval_note = item.approval_note || null;
-
-  let approval_attachment_1_url = item.approval_attachment_1_url || null;
-  let approval_attachment_2_url = item.approval_attachment_2_url || null;
-  let approval_attachment_3_url = item.approval_attachment_3_url || null;
-
-  let regional_approval_status = item.regional_approval_status || 'Belum Approval';
-  let regional_approved_by = item.regional_approved_by || null;
-  let regional_approved_at = item.regional_approved_at || null;
-  let regional_approval_note = item.regional_approval_note || null;
-
-  let division_approval_status = item.division_approval_status || 'Belum Approval';
-  let division_approved_by = item.division_approved_by || null;
-  let division_approved_at = item.division_approved_at || null;
-  let division_approval_note = item.division_approval_note || null;
-
-  // 2. Fallback to packed fields inside no_bak ONLY if direct column value is missing/empty
-  if (no_bak && no_bak.includes('||')) {
-    const parts = no_bak.split('||');
-    no_bak = parts[0];
-    
-    parts.slice(1).forEach((part: string) => {
-      if (part.startsWith('TILANG:')) {
-        const val = part.substring(7);
-        if (!no_tilang || no_tilang === '-') no_tilang = val;
-      } else if (part.startsWith('TANGGAL:')) {
-        const val = part.substring(8);
-        if (!tanggal) tanggal = val;
-      } else if (part.startsWith('TANGGAL_HANDOVER:')) {
-        const val = part.substring(17);
-        if (!tanggal_handover) tanggal_handover = val;
-      } else if (part.startsWith('NAMA_BRO:')) {
-        const val = part.substring(9);
-        if (!nama_bro || nama_bro === '-') nama_bro = val;
-      } else if (part.startsWith('ALASAN:')) {
-        const val = part.substring(7);
-        if (!alasan || alasan === '-') alasan = val;
-      } else if (part.startsWith('DOK_PENDUKUNG:')) {
-        const val = part.substring(14);
-        if (!upload_dok_pendukung) upload_dok_pendukung = val;
-      } else if (part.startsWith('APPROVAL:')) {
-        const val = part.substring(9);
-        if (!item.status_approval || item.status_approval === 'Belum Approval') status_approval = val;
-      } else if (part.startsWith('APPROVED_BY:')) {
-        const val = part.substring(12);
-        if (!approved_by) approved_by = val;
-      } else if (part.startsWith('APPROVED_AT:')) {
-        const val = part.substring(12);
-        if (!approved_at) approved_at = val;
-      } else if (part.startsWith('APPROVAL_NOTE:')) {
-        const val = part.substring(14);
-        if (!approval_note) approval_note = val;
-      } else if (part.startsWith('APP_ATT1:')) {
-        const val = part.substring(9);
-        if (!approval_attachment_1_url) approval_attachment_1_url = val;
-      } else if (part.startsWith('APP_ATT2:')) {
-        const val = part.substring(9);
-        if (!approval_attachment_2_url) approval_attachment_2_url = val;
-      } else if (part.startsWith('APP_ATT3:')) {
-        const val = part.substring(9);
-        if (!approval_attachment_3_url) approval_attachment_3_url = val;
-      } else if (part.startsWith('REG_STATUS:')) {
-        const val = part.substring(11);
-        if (!item.regional_approval_status || item.regional_approval_status === 'Belum Approval') regional_approval_status = val;
-      } else if (part.startsWith('REG_BY:')) {
-        const val = part.substring(7);
-        if (!regional_approved_by) regional_approved_by = val;
-      } else if (part.startsWith('REG_AT:')) {
-        const val = part.substring(7);
-        if (!regional_approved_at) regional_approved_at = val;
-      } else if (part.startsWith('REG_NOTE:')) {
-        const val = part.substring(9);
-        if (!regional_approval_note) regional_approval_note = val;
-      } else if (part.startsWith('DIV_STATUS:')) {
-        const val = part.substring(11);
-        if (!item.division_approval_status || item.division_approval_status === 'Belum Approval') division_approval_status = val;
-      } else if (part.startsWith('DIV_BY:')) {
-        const val = part.substring(7);
-        if (!division_approved_by) division_approved_by = val;
-      } else if (part.startsWith('DIV_AT:')) {
-        const val = part.substring(7);
-        if (!division_approved_at) division_approved_at = val;
-      } else if (part.startsWith('DIV_NOTE:')) {
-        const val = part.substring(9);
-        if (!division_approval_note) division_approval_note = val;
-      }
-    });
-  }
-
-  const status_handover = item.status_handover || 'Pending';
-
-  return {
-    ...item,
-    status_handover,
-    no_bak,
-    no_tilang,
-    tanggal,
-    tanggal_handover,
-    bro_name: nama_bro,
-    nama_bro,
-    dok_pendukung_alasan: alasan,
-    alasan,
-    upload_dok_pendukung,
-    status_approval,
-    approved_by,
-    approved_at,
-    approval_note,
-    approval_attachment_1_url,
-    approval_attachment_2_url,
-    approval_attachment_3_url,
-    regional_approval_status,
-    regional_approved_by,
-    regional_approved_at,
-    regional_approval_note,
-    division_approval_status,
-    division_approved_by,
-    division_approved_at,
-    division_approval_note
-  };
-}
 
 export function cleanDbPayload(payload: any) {
   const DB_COLUMNS = [
@@ -1098,11 +928,13 @@ export default function App() {
     // 1. INSTANT LOCAL CACHE HYDRATION (0ms Load Experience)
     let loadedFromCache = false;
     try {
+      const cachedUser = localStorage.getItem('backcharge_cache_user');
       const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
       const cachedLogsStr = localStorage.getItem('backcharge_cache_logs');
       const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
       
-      if (cachedTxsStr) {
+      // Only hydrate cached transactions if the cache matches the active user (prevents branch leaks between roles/regions)
+      if (cachedTxsStr && (!cachedUser || !activeUser || cachedUser === activeUser.email)) {
         const parsedTxs = JSON.parse(cachedTxsStr);
         if (Array.isArray(parsedTxs) && parsedTxs.length > 0) {
           setTransactions(parsedTxs);
@@ -1340,7 +1172,7 @@ export default function App() {
         if (!restoredFromCache) {
           let bcs = mockDb.getBackcharges();
           if (activeUser && !isNationalOrAllBranches(activeUser.branch, activeUser.role)) {
-            const userBranches = getUserBranches(activeUser.branch);
+            const userBranches = getRoleAllowedBranches(activeUser.role, activeUser.branch);
             bcs = bcs.filter(t => userBranches.includes(t.branch));
           }
           const unpackedData = bcs.map(unpackExtraFields);
@@ -1370,7 +1202,7 @@ export default function App() {
     setTimeout(() => {
       let bcs = mockDb.getBackcharges();
       if (activeUser && !isNationalOrAllBranches(activeUser.branch, activeUser.role)) {
-        const userBranches = getUserBranches(activeUser.branch);
+        const userBranches = getRoleAllowedBranches(activeUser.role, activeUser.branch);
         bcs = bcs.filter(t => userBranches.includes(t.branch));
       }
       

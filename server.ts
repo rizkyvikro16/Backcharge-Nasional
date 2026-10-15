@@ -488,12 +488,35 @@ async function startServer() {
       const isNasionalRole = !userRole || 
         userRole === "Administrator" || 
         userRole === "Division Head" || 
+        userRole.includes("Administrator") ||
+        userRole.includes("Division Head") ||
         userBranch === "Nasional" || 
         userBranch === "Semua Cabang" ||
         userBranch.toLowerCase().includes("semua");
 
-      if (!isNasionalRole && userBranch) {
-        const branchList = userBranch.split(",").map(b => b.trim()).filter(Boolean);
+      if (!isNasionalRole) {
+        let branchList: string[] = [];
+        if (userBranch) {
+          const parts = userBranch.split(",").map(b => b.trim()).filter(Boolean);
+          parts.forEach(p => {
+            if (p.toLowerCase() === "megabranch" || p.toLowerCase() === "jakarta") {
+              branchList.push("BSO GSO & AFFCO", "BSO Sudirman", "BSO Sunter", "BSO Pondok Pinang", "BSO Banten", "BSO Bekasi", "BSO Daan Mogot", "BSO Pontianak");
+            } else {
+              branchList.push(p);
+            }
+          });
+        } else if (userRole) {
+          const rLower = userRole.toLowerCase();
+          if (rLower.includes("west")) {
+            branchList = ["Lampung", "Medan", "Padang", "Palembang", "Pekanbaru"];
+          } else if (rLower.includes("central")) {
+            branchList = ["Bandung", "BSO GSO & AFFCO", "BSO Sudirman", "BSO Sunter", "BSO Pondok Pinang", "BSO Banten", "BSO Bekasi", "BSO Daan Mogot", "BSO Pontianak"];
+          } else if (rLower.includes("east")) {
+            branchList = ["Bali", "Balikpapan", "Banjarmasin", "Makassar", "Malang", "Manado", "Semarang", "Solo", "Surabaya"];
+          }
+        }
+        branchList = Array.from(new Set(branchList));
+
         if (branchList.length === 1) {
           whereClauses.push("branch = ?");
           params.push(branchList[0]);
@@ -578,15 +601,15 @@ async function startServer() {
         } else if (stage === "2_admin" || stage === "2_confirm") {
           whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin')");
         } else if (stage === "3_sap_l1" || stage === "3_sap") {
-          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND (status_approval IS NULL OR status_approval = 'Belum Approval' OR status_approval = 'Pending') AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND status_payment != 'Lunas'");
+          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND (status_approval IS NULL OR status_approval = 'Belum Approval' OR status_approval = 'Pending') AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND (status_payment IS NULL OR status_payment != 'Lunas')");
         } else if (stage === "3_sap_rh") {
-          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND status_approval = 'Disetujui' AND ((category = 'Maintenance' AND CAST(value AS NUMERIC) > 7500000) OR (category != 'Maintenance' AND CAST(value AS NUMERIC) > 5000000)) AND (regional_approval_status IS NULL OR regional_approval_status = 'Belum Approval' OR regional_approval_status = '') AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND status_payment != 'Lunas'");
+          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND status_approval = 'Disetujui' AND ((category = 'Maintenance' AND CAST(value AS NUMERIC) > 7500000) OR (category != 'Maintenance' AND CAST(value AS NUMERIC) > 5000000)) AND (regional_approval_status IS NULL OR regional_approval_status = 'Belum Approval' OR regional_approval_status = '') AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND (status_payment IS NULL OR status_payment != 'Lunas')");
         } else if (stage === "3_sap_dh") {
-          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND status_approval = 'Disetujui' AND (regional_approval_status = 'Disetujui' OR ((category = 'Maintenance' AND CAST(value AS NUMERIC) <= 7500000) OR (category != 'Maintenance' AND CAST(value AS NUMERIC) <= 5000000))) AND CAST(value AS NUMERIC) > 15000000 AND (division_approval_status IS NULL OR division_approval_status = 'Belum Approval' OR division_approval_status = '') AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND status_payment != 'Lunas'");
+          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND status_approval = 'Disetujui' AND (regional_approval_status = 'Disetujui' OR ((category = 'Maintenance' AND CAST(value AS NUMERIC) <= 7500000) OR (category != 'Maintenance' AND CAST(value AS NUMERIC) <= 5000000))) AND CAST(value AS NUMERIC) > 15000000 AND (division_approval_status IS NULL OR division_approval_status = 'Belum Approval' OR division_approval_status = '') AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND (status_payment IS NULL OR status_payment != 'Lunas')");
         } else if (stage === "4_invoice") {
-          whereClauses.push("status_handover != 'Pending' AND status_sap != 'Not Bill' AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND status_payment != 'Lunas' AND status_approval = 'Disetujui' AND NOT (((category = 'Maintenance' AND CAST(value AS NUMERIC) > 7500000) OR (category != 'Maintenance' AND CAST(value AS NUMERIC) > 5000000)) AND (regional_approval_status IS NULL OR regional_approval_status = 'Belum Approval' OR regional_approval_status = '')) AND NOT (CAST(value AS NUMERIC) > 15000000 AND (division_approval_status IS NULL OR division_approval_status = 'Belum Approval' OR division_approval_status = ''))");
+          whereClauses.push("status_handover != 'Pending' AND status_sap != 'Not Bill' AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND (status_payment IS NULL OR status_payment != 'Lunas') AND status_approval = 'Disetujui' AND NOT (((category = 'Maintenance' AND CAST(value AS NUMERIC) > 7500000) OR (category != 'Maintenance' AND CAST(value AS NUMERIC) > 5000000)) AND (regional_approval_status IS NULL OR regional_approval_status = 'Belum Approval' OR regional_approval_status = '')) AND NOT (CAST(value AS NUMERIC) > 15000000 AND (division_approval_status IS NULL OR division_approval_status = 'Belum Approval' OR division_approval_status = ''))");
         } else if (stage === "5_payment") {
-          whereClauses.push("(no_invoice IS NOT NULL AND no_invoice != '-' AND no_invoice != '') OR status_payment = 'Lunas'");
+          whereClauses.push("(no_invoice IS NOT NULL AND no_invoice != '-' AND TRIM(no_invoice) != '') AND (status_payment IS NULL OR status_payment != 'Lunas')");
         } else if (stage === "6_done") {
           whereClauses.push("status_payment = 'Lunas'");
         }
@@ -661,11 +684,35 @@ async function startServer() {
       const isNasional = !userRole || 
         userRole === "Administrator" || 
         userRole === "Division Head" || 
+        String(userRole).includes("Administrator") ||
+        String(userRole).includes("Division Head") ||
         userBranch === "Nasional" || 
-        userBranch === "Semua Cabang";
+        userBranch === "Semua Cabang" ||
+        String(userBranch).toLowerCase().includes("semua");
 
-      if (!isNasional && userBranch) {
-        const bList = String(userBranch).split(",").map(b => b.trim()).filter(Boolean);
+      if (!isNasional) {
+        let bList: string[] = [];
+        if (userBranch) {
+          const parts = String(userBranch).split(",").map(b => b.trim()).filter(Boolean);
+          parts.forEach(p => {
+            if (p.toLowerCase() === "megabranch" || p.toLowerCase() === "jakarta") {
+              bList.push("BSO GSO & AFFCO", "BSO Sudirman", "BSO Sunter", "BSO Pondok Pinang", "BSO Banten", "BSO Bekasi", "BSO Daan Mogot", "BSO Pontianak");
+            } else {
+              bList.push(p);
+            }
+          });
+        } else if (userRole) {
+          const rLower = String(userRole).toLowerCase();
+          if (rLower.includes("west")) {
+            bList = ["Lampung", "Medan", "Padang", "Palembang", "Pekanbaru"];
+          } else if (rLower.includes("central")) {
+            bList = ["Bandung", "BSO GSO & AFFCO", "BSO Sudirman", "BSO Sunter", "BSO Pondok Pinang", "BSO Banten", "BSO Bekasi", "BSO Daan Mogot", "BSO Pontianak"];
+          } else if (rLower.includes("east")) {
+            bList = ["Bali", "Balikpapan", "Banjarmasin", "Makassar", "Malang", "Manado", "Semarang", "Solo", "Surabaya"];
+          }
+        }
+        bList = Array.from(new Set(bList));
+
         if (bList.length > 0) {
           const placeholders = bList.map(() => "?").join(",");
           whereClauses.push(`branch IN (${placeholders})`);
