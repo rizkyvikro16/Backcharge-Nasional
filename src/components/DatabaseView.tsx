@@ -482,7 +482,7 @@ export default function DatabaseView({
         [2, 'Kategori', 'Pilih dari Dropdown Kategori', 'Own Risk, Maintenance, Ekspedisi, ETLE, TPL, Unclaimable Insurance, Dokumen Kendaraan'],
         [3, 'Cabang', 'Pilih dari Dropdown Cabang', 'BSO Sunter, Bandung, Surabaya, dll.'],
         [4, 'Nama Customer', 'Nama PT / Customer penanggung', 'PT Mitra Bahagia Sejahtera'],
-        [5, 'No Polisi', 'Nomor polisi kendaraan terkait', 'B 1234 ABC'],
+        [5, 'No Polisi', 'Nomor polisi kendaraan terkait', 'B-1234-ABC'],
         [6, 'Nilai Backcharge', 'Nominal biaya dalam rupiah (angka saja)', '5000000'],
         [7, 'No BAK', 'Nomor Berita Acara Kerusakan (jika ada)', 'BAK/2026/09/001 (isi "-" jika tidak ada)'],
         [8, 'No SPK', 'Nomor Surat Perintah Kerja (jika ada)', 'SPK-12345 (isi "-" jika tidak ada)'],
@@ -1358,12 +1358,16 @@ export default function DatabaseView({
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       const searchLower = debouncedSearch.toLowerCase();
+      const cleanPlateSearch = searchLower.replace(/[-\s]/g, '');
+      const cleanTxPlate = (t.license_plate || '').toLowerCase().replace(/[-\s]/g, '');
       const matchesSearch = 
         !debouncedSearch ||
         t.id.toLowerCase().includes(searchLower) || 
         t.customer_name.toLowerCase().includes(searchLower) ||
         (t.license_plate || '').toLowerCase().includes(searchLower) ||
+        (cleanPlateSearch.length >= 3 && cleanTxPlate.includes(cleanPlateSearch)) ||
         t.no_bak.toLowerCase().includes(searchLower) ||
+        (t.no_spk || '').toLowerCase().includes(searchLower) ||
         t.no_invoice.toLowerCase().includes(searchLower);
 
       let matchesCategory = !selectedCategory || t.category === selectedCategory;
@@ -1427,6 +1431,12 @@ export default function DatabaseView({
       if (selectedStage) {
         const stepInvoice = Boolean(t.no_invoice && typeof t.no_invoice === 'string' && t.no_invoice.trim() !== '' && t.no_invoice.trim() !== '-');
         const stepPayment = t.status_payment === 'Lunas';
+        const isDocRejected = Boolean(
+          t.status_approval === 'Ditolak' || 
+          t.regional_approval_status === 'Ditolak' || 
+          t.division_approval_status === 'Ditolak' || 
+          t.status_confirm === 'Ditolak / Negosiasi Ulang'
+        );
 
         if (selectedStage === '1_handover') {
           matchesStage = t.status_handover === 'Pending';
@@ -1434,37 +1444,44 @@ export default function DatabaseView({
           matchesStage = t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin';
         } else if (selectedStage === '3_sap_l1' || selectedStage === '3_sap') {
           const isPendingL1 = !t.status_approval || t.status_approval === 'Belum Approval' || t.status_approval === 'Pending';
-          matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && isPendingL1 && !stepInvoice && !stepPayment;
+          matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && isPendingL1 && !stepInvoice && !stepPayment && !isDocRejected;
         } else if (selectedStage === '3_sap_rh') {
           const val = Number(t.value) || 0;
           const isMaintenance = t.category === 'Maintenance';
           const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
-          matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && t.status_approval === 'Disetujui' && isRegionalHeadReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval') && !stepInvoice && !stepPayment;
+          matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && t.status_approval === 'Disetujui' && isRegionalHeadReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval') && !stepInvoice && !stepPayment && !isDocRejected;
         } else if (selectedStage === '3_sap_dh') {
           const val = Number(t.value) || 0;
           const isMaintenance = t.category === 'Maintenance';
           const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
           const isDivisionHeadReq = val > 15000000;
           const isRegionalApproved = !isRegionalHeadReq || t.regional_approval_status === 'Disetujui';
-          matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && t.status_approval === 'Disetujui' && isRegionalApproved && isDivisionHeadReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval') && !stepInvoice && !stepPayment;
+          matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && t.status_approval === 'Disetujui' && isRegionalApproved && isDivisionHeadReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval') && !stepInvoice && !stepPayment && !isDocRejected;
         } else if (selectedStage === '4_invoice') {
           const isNotBill = t.status_sap === 'Not Bill';
-          if (isNotBill) {
+          if (isNotBill || isDocRejected) {
             matchesStage = false;
           } else {
             const val = Number(t.value) || 0;
             const isMaintenance = t.category === 'Maintenance';
             const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
             const isDivisionHeadReq = val > 15000000;
-            const isPendingL1 = !t.status_approval || t.status_approval === 'Belum Approval' || t.status_approval === 'Pending';
-            const isPendingRH = isRegionalHeadReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval');
-            const isPendingDH = isDivisionHeadReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval');
-            matchesStage = t.status_handover !== 'Pending' && !stepInvoice && !stepPayment && !isPendingL1 && !isPendingRH && !isPendingDH;
+            const isL1Approved = t.status_approval === 'Disetujui';
+            const isRegionalApproved = !isRegionalHeadReq || t.regional_approval_status === 'Disetujui';
+            const isDivisionApproved = !isDivisionHeadReq || t.division_approval_status === 'Disetujui';
+            matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && 
+              !stepInvoice && 
+              !stepPayment && 
+              isL1Approved && 
+              isRegionalApproved && 
+              isDivisionApproved;
           }
         } else if (selectedStage === '5_payment') {
-          matchesStage = stepInvoice && !stepPayment;
+          matchesStage = stepInvoice && !stepPayment && !isDocRejected;
         } else if (selectedStage === '6_done') {
           matchesStage = stepPayment;
+        } else if (selectedStage === 'rejected') {
+          matchesStage = isDocRejected;
         }
       }
 
@@ -1960,11 +1977,12 @@ export default function DatabaseView({
   };
 
   const formatRupiah = (num: number) => {
+    const safeNum = Number(num);
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
       currency: 'IDR',
       minimumFractionDigits: 0
-    }).format(num);
+    }).format(isNaN(safeNum) ? 0 : safeNum);
   };
 
   const formatPenginput = (createdBy?: string): string => {
@@ -2175,8 +2193,8 @@ export default function DatabaseView({
               type="text" 
               value={licensePlate}
               onChange={(e) => setLicensePlate(e.target.value)}
-              placeholder="B 1234 ABC" 
-              className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+              placeholder="B-1234-ABC" 
+              className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono uppercase"
             />
           </div>
 
@@ -2238,7 +2256,7 @@ export default function DatabaseView({
                   {activeAlertFilter === 'pending' && 'Jatuh Tempo 7 Hari'}
                   {activeAlertFilter === 'high_value' && 'Jatuh Tempo 30 Hari'}
                   {activeDashboardFilter?.category && `Kategori: ${activeDashboardFilter.category}`}
-                  {activeDashboardFilter?.stage && `Tahap: ${activeDashboardFilter.stage === '1_handover' ? 'Fisik di ASO' : activeDashboardFilter.stage === '2_confirm' || activeDashboardFilter.stage === '2_admin' ? 'Berkas di Admin' : activeDashboardFilter.stage === '3_sap_l1' || activeDashboardFilter.stage === '3_sap' ? 'Belum Approve SH / KACAB' : activeDashboardFilter.stage === '3_sap_rh' ? 'Belum Approve RH' : activeDashboardFilter.stage === '3_sap_dh' ? 'Belum Approve DH' : activeDashboardFilter.stage === '4_invoice' ? 'Belum Cetak Invoice' : activeDashboardFilter.stage === '5_payment' ? 'Menunggu Pelunasan' : 'Selesai (Lunas)'}`}
+                  {activeDashboardFilter?.stage && `Tahap: ${activeDashboardFilter.stage === '1_handover' ? 'Fisik di ASO' : activeDashboardFilter.stage === '2_confirm' || activeDashboardFilter.stage === '2_admin' ? 'Berkas di Admin' : activeDashboardFilter.stage === '3_sap_l1' || activeDashboardFilter.stage === '3_sap' ? 'Belum Approve SH / KACAB' : activeDashboardFilter.stage === '3_sap_rh' ? 'Belum Approve RH' : activeDashboardFilter.stage === '3_sap_dh' ? 'Belum Approve DH' : activeDashboardFilter.stage === '4_invoice' ? 'Belum Cetak Invoice' : activeDashboardFilter.stage === '5_payment' ? 'Menunggu Pelunasan' : activeDashboardFilter.stage === 'rejected' ? 'Dokumen Ditolak' : 'Selesai (Lunas)'}`}
                   {activeDashboardFilter?.branch && `Cabang: ${activeDashboardFilter.branch}`}
                   {activeDashboardFilter?.statusPayment && `Status Bayar: ${activeDashboardFilter.statusPayment}`}
                   {activeDashboardFilter?.statusConfirm && `Status Konfirmasi: ${activeDashboardFilter.statusConfirm}`}
@@ -2337,6 +2355,7 @@ export default function DatabaseView({
               <option value="4_invoice">6. Menunggu Cetak &amp; Kirim Invoice</option>
               <option value="5_payment">7. Menunggu Pelunasan Backcharge</option>
               <option value="6_done">8. Selesai (Lunas)</option>
+              <option value="rejected">❌ Dokumen Ditolak (Reject)</option>
             </select>
 
             <select 
@@ -2535,6 +2554,18 @@ export default function DatabaseView({
                       {sortBy === 'license_plate' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
                     </div>
                   </th>
+                  <th className="p-3 whitespace-nowrap cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('no_bak')}>
+                    <div className="flex items-center space-x-1">
+                      <span>No. BAK</span>
+                      {sortBy === 'no_bak' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                    </div>
+                  </th>
+                  <th className="p-3 whitespace-nowrap cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('no_spk')}>
+                    <div className="flex items-center space-x-1">
+                      <span>No. SPK</span>
+                      {sortBy === 'no_spk' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                    </div>
+                  </th>
                   <th className="p-3 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('value')}>
                     <div className="flex items-center space-x-1">
                       <span>Backcharge (Rp)</span>
@@ -2586,6 +2617,12 @@ export default function DatabaseView({
                         <div className="h-4 bg-slate-200/80 rounded w-20" />
                       </td>
                       <td className="p-3">
+                        <div className="h-4 bg-slate-200/80 rounded w-20" />
+                      </td>
+                      <td className="p-3">
+                        <div className="h-4 bg-slate-200/80 rounded w-20" />
+                      </td>
+                      <td className="p-3">
                         <div className="h-4 bg-slate-200/80 rounded w-24" />
                       </td>
                       <td className="p-3 text-center">
@@ -2632,6 +2669,34 @@ export default function DatabaseView({
                     const isPendingRH = isL1Approved && isRegReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval');
                     const isPendingDH = isL1Approved && (!isRegReq || t.regional_approval_status === 'Disetujui') && isDivReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval');
 
+                    const isDocRejected = Boolean(
+                      t.status_approval === 'Ditolak' || 
+                      t.regional_approval_status === 'Ditolak' || 
+                      t.division_approval_status === 'Ditolak' || 
+                      t.status_confirm === 'Ditolak / Negosiasi Ulang'
+                    );
+
+                    let rejectRoleLabel = '';
+                    let rejectNote = '';
+                    let rejectUser = '';
+
+                    if (t.status_approval === 'Ditolak') {
+                      rejectRoleLabel = 'SH / Kacab';
+                      rejectNote = t.approval_note || '';
+                      rejectUser = t.approved_by || '';
+                    } else if (t.regional_approval_status === 'Ditolak') {
+                      rejectRoleLabel = 'Regional Head';
+                      rejectNote = t.regional_approval_note || '';
+                      rejectUser = t.regional_approved_by || '';
+                    } else if (t.division_approval_status === 'Ditolak') {
+                      rejectRoleLabel = 'Division Head';
+                      rejectNote = t.division_approval_note || '';
+                      rejectUser = t.division_approved_by || '';
+                    } else if (t.status_confirm === 'Ditolak / Negosiasi Ulang') {
+                      rejectRoleLabel = 'Konfirmasi';
+                      rejectNote = t.dok_pendukung_alasan || t.alasan || '';
+                    }
+
                     let handoverBadge = (
                       <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-slate-100 text-slate-600">
                         Pending
@@ -2651,7 +2716,12 @@ export default function DatabaseView({
                       );
                     }
 
-                    const invoiceText = t.no_invoice && t.no_invoice !== '-' ? (
+                    const invoiceText = isDocRejected ? (
+                      <span className="text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 inline-flex items-center gap-1 shadow-2xs" title="Dokumen ditolak / dibatalkan, tidak diterbitkan invoice">
+                        <XCircle className="w-2.5 h-2.5 text-rose-500 flex-shrink-0" />
+                        Batal / Ditolak
+                      </span>
+                    ) : t.no_invoice && t.no_invoice !== '-' ? (
                       <span className="text-[10px] font-bold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
                         {t.no_invoice}
                       </span>
@@ -2687,10 +2757,11 @@ export default function DatabaseView({
                           {t.payment_date ? `Lunas (${t.payment_date})` : 'Lunas'}
                         </span>
                       );
-                    } else if (t.status_confirm === 'Ditolak / Negosiasi Ulang') {
+                    } else if (isDocRejected) {
                       paymentBadge = (
-                        <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-red-100 text-red-700">
-                          Backcharge tidak tertagih
+                        <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-rose-100 text-rose-700 border border-rose-200 inline-flex items-center gap-1">
+                          <XCircle className="w-2.5 h-2.5 text-rose-500" />
+                          Tidak Tertagih (Ditolak)
                         </span>
                       );
                     }
@@ -2704,11 +2775,13 @@ export default function DatabaseView({
                         className={`hover:bg-slate-50/70 cursor-pointer transition-all duration-150 border-b border-slate-100 ${
                           isSelected 
                             ? 'bg-blue-50/40 hover:bg-blue-50/60' 
-                            : isOver30DaysUnpaid 
-                              ? 'bg-rose-50/20 hover:bg-rose-50/40' 
-                              : isOver7DaysUnpaid
-                                ? 'bg-amber-50/20 hover:bg-amber-50/40'
-                                : ''
+                            : isDocRejected
+                              ? 'border-l-4 border-l-rose-500 bg-rose-50/30 hover:bg-rose-50/50'
+                              : isOver30DaysUnpaid 
+                                ? 'bg-rose-50/20 hover:bg-rose-50/40' 
+                                : isOver7DaysUnpaid
+                                  ? 'bg-amber-50/20 hover:bg-amber-50/40'
+                                  : ''
                         }`}
                       >
                         <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
@@ -2721,7 +2794,14 @@ export default function DatabaseView({
                         </td>
                         <td className="p-3 whitespace-nowrap">
                           <div className="flex items-center space-x-1.5 whitespace-nowrap">
-                            {isOver30DaysUnpaid ? (
+                            {isDocRejected ? (
+                              <span 
+                                title={`Dokumen Ditolak: ${rejectRoleLabel}${rejectNote ? ` - "${rejectNote}"` : ''}`}
+                                className="inline-flex items-center text-rose-600 flex-shrink-0"
+                              >
+                                <XCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                              </span>
+                            ) : isOver30DaysUnpaid ? (
                               <span 
                                 title={`PERINGATAN TINGGI: Belum Bayar > 30 Hari (${ageDays} Hari)`} 
                                 className="inline-flex items-center text-rose-600 animate-bounce"
@@ -2736,11 +2816,19 @@ export default function DatabaseView({
                                 <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
                               </span>
                             ) : null}
-                            <span className={`font-extrabold ${isOver30DaysUnpaid ? 'text-rose-700 font-mono' : isOver7DaysUnpaid ? 'text-amber-800 font-mono' : 'text-slate-950'}`}>
+                            <span className={`font-extrabold ${isDocRejected ? 'text-rose-700 font-mono' : isOver30DaysUnpaid ? 'text-rose-700 font-mono' : isOver7DaysUnpaid ? 'text-amber-800 font-mono' : 'text-slate-950'}`}>
                               {t.id}
                             </span>
                             <span className="text-slate-300">/</span>
                             <span className="text-[10px] text-slate-500 font-bold">{t.branch}</span>
+                            {isDocRejected && (
+                              <span 
+                                className="ml-1 px-1.5 py-0.2 text-[7.5px] font-black rounded bg-rose-600 text-white uppercase tracking-wider inline-flex items-center gap-0.5 shadow-2xs"
+                                title={`Dokumen Ditolak oleh ${rejectRoleLabel}`}
+                              >
+                                Ditolak
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="p-3 whitespace-nowrap text-slate-950 font-bold">
@@ -2757,6 +2845,20 @@ export default function DatabaseView({
                         <td className="p-3 font-mono text-[11px] font-bold text-slate-700 whitespace-nowrap" title={t.license_plate}>
                           {t.license_plate ? (
                             <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm uppercase">{t.license_plate}</span>
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
+                        </td>
+                        <td className="p-3 font-mono text-[11px] font-bold text-slate-700 whitespace-nowrap" title={t.no_bak}>
+                          {t.no_bak && t.no_bak !== '-' ? (
+                            <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">{t.no_bak}</span>
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
+                        </td>
+                        <td className="p-3 font-mono text-[11px] font-bold text-slate-700 whitespace-nowrap" title={t.no_spk}>
+                          {t.no_spk && t.no_spk !== '-' ? (
+                            <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">{t.no_spk}</span>
                           ) : (
                             <span className="text-slate-300">-</span>
                           )}
@@ -2801,23 +2903,46 @@ export default function DatabaseView({
                         <td className="p-3">
                           <div className="flex flex-col gap-1 items-start">
                             {handoverBadge}
-                            {isPendingRH && (
-                              <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full bg-orange-100 text-orange-800 border border-orange-200 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" title="Menunggu Approval Regional Head">
-                                <Clock className="w-2.5 h-2.5 text-orange-600 flex-shrink-0" />
-                                Belum Appr. RH
-                              </span>
-                            )}
-                            {isPendingDH && (
-                              <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full bg-rose-100 text-rose-800 border border-rose-200 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" title="Menunggu Approval Division Head">
-                                <Clock className="w-2.5 h-2.5 text-rose-600 flex-shrink-0" />
-                                Belum Appr. DH
-                              </span>
-                            )}
-                            {isPendingL1 && (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && (
-                              <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" title="Menunggu Approval Sales Head / Kacab">
-                                <Clock className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
-                                Belum Appr. SH/Kacab
-                              </span>
+                            {isDocRejected ? (
+                              <div className="flex flex-col gap-0.5 mt-0.5">
+                                <span 
+                                  className="px-2 py-0.5 text-[8.5px] font-black rounded-md bg-rose-100 text-rose-800 border border-rose-300 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" 
+                                  title={`Dokumen Ditolak oleh ${rejectRoleLabel}${rejectUser ? ` (${rejectUser})` : ''}${rejectNote ? `: "${rejectNote}"` : ''}`}
+                                >
+                                  <XCircle className="w-3 h-3 text-rose-600 flex-shrink-0" />
+                                  Ditolak ({rejectRoleLabel})
+                                </span>
+                                {rejectNote && (
+                                  <span 
+                                    className="text-[8px] font-semibold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200/80 truncate max-w-[140px] inline-flex items-center gap-1"
+                                    title={`Alasan Penolakan: ${rejectNote}`}
+                                  >
+                                    <span className="font-black text-[7.5px] uppercase tracking-wider text-rose-800">Alasan:</span>
+                                    <span className="truncate">{rejectNote}</span>
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <>
+                                {isPendingRH && (
+                                  <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full bg-orange-100 text-orange-800 border border-orange-200 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" title="Menunggu Approval Regional Head">
+                                    <Clock className="w-2.5 h-2.5 text-orange-600 flex-shrink-0" />
+                                    Belum Appr. RH
+                                  </span>
+                                )}
+                                {isPendingDH && (
+                                  <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full bg-rose-100 text-rose-800 border border-rose-200 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" title="Menunggu Approval Division Head">
+                                    <Clock className="w-2.5 h-2.5 text-rose-600 flex-shrink-0" />
+                                    Belum Appr. DH
+                                  </span>
+                                )}
+                                {isPendingL1 && (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && (
+                                  <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" title="Menunggu Approval Sales Head / Kacab">
+                                    <Clock className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
+                                    Belum Appr. SH/Kacab
+                                  </span>
+                                )}
+                              </>
                             )}
                           </div>
                         </td>
@@ -3179,8 +3304,8 @@ export default function DatabaseView({
                   value={editLicensePlate}
                   disabled={isBroOnly}
                   onChange={(e) => setEditLicensePlate(e.target.value)}
-                  placeholder="B 1234 ABC" 
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                  placeholder="B-1234-ABC" 
+                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold font-mono uppercase disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 />
               </div>
 

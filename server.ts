@@ -306,7 +306,14 @@ async function startServer() {
       const shortUrl = saveBase64ToDisk(base64);
       return res.status(200).json({ success: true, url: shortUrl });
     } catch (err: any) {
-      console.error("[UPLOAD-FILE API] Gagal mengonversi file:", err.message);
+      console.warn("[UPLOAD-FILE API] Apps Script error, fallback ke penyimpanan lokal:", err.message);
+      try {
+        const { base64 } = req.body || {};
+        if (base64 && typeof base64 === "string") {
+          const shortUrl = saveBase64ToDisk(base64);
+          return res.status(200).json({ success: true, url: shortUrl, fallback: true });
+        }
+      } catch (localErr) {}
       return res.status(500).json({ error: err.message });
     }
   });
@@ -543,8 +550,10 @@ async function startServer() {
       // 3. Search (Server-side multi-column LIKE)
       if (search) {
         const searchPattern = `%${search}%`;
-        whereClauses.push("(id LIKE ? OR customer_name LIKE ? OR license_plate LIKE ? OR no_bak LIKE ? OR no_invoice LIKE ? OR no_spk LIKE ? OR no_sap LIKE ? OR nama_bro LIKE ?)");
-        params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+        const searchWithDash = `%${search.replace(/\s+/g, '-')}%`;
+        const searchWithSpace = `%${search.replace(/-/g, ' ')}%`;
+        whereClauses.push("(id LIKE ? OR customer_name LIKE ? OR license_plate LIKE ? OR license_plate LIKE ? OR license_plate LIKE ? OR no_bak LIKE ? OR no_invoice LIKE ? OR no_spk LIKE ? OR no_sap LIKE ? OR nama_bro LIKE ?)");
+        params.push(searchPattern, searchPattern, searchPattern, searchWithDash, searchWithSpace, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
       }
 
       // 4. Category
@@ -601,17 +610,19 @@ async function startServer() {
         } else if (stage === "2_admin" || stage === "2_confirm") {
           whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin')");
         } else if (stage === "3_sap_l1" || stage === "3_sap") {
-          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND (status_approval IS NULL OR status_approval = 'Belum Approval' OR status_approval = 'Pending') AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND (status_payment IS NULL OR status_payment != 'Lunas')");
+          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND (status_approval IS NULL OR status_approval = 'Belum Approval' OR status_approval = 'Pending') AND status_approval != 'Ditolak' AND (status_confirm IS NULL OR status_confirm != 'Ditolak / Negosiasi Ulang') AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND (status_payment IS NULL OR status_payment != 'Lunas')");
         } else if (stage === "3_sap_rh") {
-          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND status_approval = 'Disetujui' AND ((category = 'Maintenance' AND CAST(value AS NUMERIC) > 7500000) OR (category != 'Maintenance' AND CAST(value AS NUMERIC) > 5000000)) AND (regional_approval_status IS NULL OR regional_approval_status = 'Belum Approval' OR regional_approval_status = '') AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND (status_payment IS NULL OR status_payment != 'Lunas')");
+          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND status_approval = 'Disetujui' AND ((category = 'Maintenance' AND CAST(value AS NUMERIC) > 7500000) OR (category != 'Maintenance' AND CAST(value AS NUMERIC) > 5000000)) AND (regional_approval_status IS NULL OR regional_approval_status = 'Belum Approval' OR regional_approval_status = '') AND regional_approval_status != 'Ditolak' AND (status_confirm IS NULL OR status_confirm != 'Ditolak / Negosiasi Ulang') AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND (status_payment IS NULL OR status_payment != 'Lunas')");
         } else if (stage === "3_sap_dh") {
-          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND status_approval = 'Disetujui' AND (regional_approval_status = 'Disetujui' OR ((category = 'Maintenance' AND CAST(value AS NUMERIC) <= 7500000) OR (category != 'Maintenance' AND CAST(value AS NUMERIC) <= 5000000))) AND CAST(value AS NUMERIC) > 15000000 AND (division_approval_status IS NULL OR division_approval_status = 'Belum Approval' OR division_approval_status = '') AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND (status_payment IS NULL OR status_payment != 'Lunas')");
+          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND status_approval = 'Disetujui' AND (regional_approval_status = 'Disetujui' OR ((category = 'Maintenance' AND CAST(value AS NUMERIC) <= 7500000) OR (category != 'Maintenance' AND CAST(value AS NUMERIC) <= 5000000))) AND CAST(value AS NUMERIC) > 15000000 AND (division_approval_status IS NULL OR division_approval_status = 'Belum Approval' OR division_approval_status = '') AND division_approval_status != 'Ditolak' AND (status_confirm IS NULL OR status_confirm != 'Ditolak / Negosiasi Ulang') AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND (status_payment IS NULL OR status_payment != 'Lunas')");
         } else if (stage === "4_invoice") {
-          whereClauses.push("status_handover != 'Pending' AND status_sap != 'Not Bill' AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND (status_payment IS NULL OR status_payment != 'Lunas') AND status_approval = 'Disetujui' AND NOT (((category = 'Maintenance' AND CAST(value AS NUMERIC) > 7500000) OR (category != 'Maintenance' AND CAST(value AS NUMERIC) > 5000000)) AND (regional_approval_status IS NULL OR regional_approval_status = 'Belum Approval' OR regional_approval_status = '')) AND NOT (CAST(value AS NUMERIC) > 15000000 AND (division_approval_status IS NULL OR division_approval_status = 'Belum Approval' OR division_approval_status = ''))");
+          whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND status_sap != 'Not Bill' AND (no_invoice IS NULL OR no_invoice = '-' OR no_invoice = '') AND (status_payment IS NULL OR status_payment != 'Lunas') AND status_approval = 'Disetujui' AND (status_confirm IS NULL OR status_confirm != 'Ditolak / Negosiasi Ulang') AND (regional_approval_status IS NULL OR regional_approval_status != 'Ditolak') AND (division_approval_status IS NULL OR division_approval_status != 'Ditolak') AND NOT (((category = 'Maintenance' AND CAST(value AS NUMERIC) > 7500000) OR (category != 'Maintenance' AND CAST(value AS NUMERIC) > 5000000)) AND (regional_approval_status IS NULL OR regional_approval_status = 'Belum Approval' OR regional_approval_status = '')) AND NOT (CAST(value AS NUMERIC) > 15000000 AND (division_approval_status IS NULL OR division_approval_status = 'Belum Approval' OR division_approval_status = ''))");
         } else if (stage === "5_payment") {
-          whereClauses.push("(no_invoice IS NOT NULL AND no_invoice != '-' AND TRIM(no_invoice) != '') AND (status_payment IS NULL OR status_payment != 'Lunas')");
+          whereClauses.push("(no_invoice IS NOT NULL AND no_invoice != '-' AND TRIM(no_invoice) != '') AND (status_payment IS NULL OR status_payment != 'Lunas') AND status_approval != 'Ditolak' AND (regional_approval_status IS NULL OR regional_approval_status != 'Ditolak') AND (division_approval_status IS NULL OR division_approval_status != 'Ditolak')");
         } else if (stage === "6_done") {
           whereClauses.push("status_payment = 'Lunas'");
+        } else if (stage === "rejected") {
+          whereClauses.push("(status_approval = 'Ditolak' OR regional_approval_status = 'Ditolak' OR division_approval_status = 'Ditolak' OR status_confirm = 'Ditolak / Negosiasi Ulang')");
         }
       }
 

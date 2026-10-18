@@ -596,9 +596,17 @@ export default function Dashboard({
         : (transVal > 5000000);
       const isDivisionHeadReq = transVal > 15000000;
 
+      const isDocRejected = Boolean(
+        t.status_approval === 'Ditolak' || 
+        t.regional_approval_status === 'Ditolak' || 
+        t.division_approval_status === 'Ditolak' || 
+        t.status_confirm === 'Ditolak / Negosiasi Ulang'
+      );
+
       const isPendingL1 = !t.status_approval || t.status_approval === 'Belum Approval' || t.status_approval === 'Pending';
       const isL1Approved = t.status_approval === 'Disetujui';
       const isRegionalApproved = !isRegionalHeadReq || t.regional_approval_status === 'Disetujui';
+      const isDivisionApproved = !isDivisionHeadReq || t.division_approval_status === 'Disetujui';
 
       const stepInvoice = t.no_invoice && t.no_invoice !== '-' && t.no_invoice !== '';
       const stepPayment = t.status_payment === 'Lunas';
@@ -615,8 +623,8 @@ export default function Dashboard({
         if (t.status_handover === 'Pending') {
           catPipelines[cat].stage2InAso++;
           catPipelines[cat].stage2InAsoValue += transVal;
-        } else if (stepInvoice || stepPayment || isNotBill) {
-          // Excluded from stage 4 to 7 bottleneck but counted in stage1Input
+        } else if (stepInvoice || stepPayment || isNotBill || isDocRejected) {
+          // Excluded from bottleneck stages 4 to 7
         } else if (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') {
           if (isPendingL1) {
             catPipelines[cat].stage4ApproveL1++;
@@ -627,13 +635,11 @@ export default function Dashboard({
           } else if (isL1Approved && isRegionalApproved && isDivisionHeadReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval')) {
             catPipelines[cat].stage6DivisionApprove++;
             catPipelines[cat].stage6DivisionApproveValue += transVal;
-          } else {
+          } else if (isL1Approved && isRegionalApproved && isDivisionApproved) {
+            // Stage 7: Belum Cetak Invoice (only when fully approved and not rejected)
             catPipelines[cat].stage7Invoice++;
             catPipelines[cat].stage7InvoiceValue += transVal;
           }
-        } else {
-          catPipelines[cat].stage7Invoice++;
-          catPipelines[cat].stage7InvoiceValue += transVal;
         }
       }
 
@@ -641,8 +647,8 @@ export default function Dashboard({
         s2InAso++;
       } else if (stepInvoice || stepPayment) {
         s8Payment++;
-      } else if (isNotBill) {
-        // Not Bill items do not count as outstanding invoice for Admin (stage 7)
+      } else if (isNotBill || isDocRejected) {
+        // Not Bill or Rejected items do not count as outstanding invoice for Admin (stage 7)
       } else if (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') {
         if (isPendingL1) {
           s4ApproveL1++;
@@ -650,11 +656,9 @@ export default function Dashboard({
           s5RegionalApprove++;
         } else if (isL1Approved && isRegionalApproved && isDivisionHeadReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval')) {
           s6DivisionApprove++;
-        } else {
+        } else if (isL1Approved && isRegionalApproved && isDivisionApproved) {
           s7Invoice++;
         }
-      } else {
-        s7Invoice++;
       }
     });
 
@@ -706,11 +710,12 @@ export default function Dashboard({
   }, [filteredTransactions, branchList, userBranches]);
 
   const formatRupiah = (num: number) => {
+    const safeNum = Number(num);
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
       currency: 'IDR',
       minimumFractionDigits: 0
-    }).format(num);
+    }).format(isNaN(safeNum) ? 0 : safeNum);
   };
 
 

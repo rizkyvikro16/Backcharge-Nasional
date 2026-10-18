@@ -410,11 +410,12 @@ export default function DetailModal({
   }, [transaction]);
 
   const formatRupiah = (num: number) => {
+    const safeNum = Number(num);
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
       currency: 'IDR',
       minimumFractionDigits: 0
-    }).format(num);
+    }).format(isNaN(safeNum) ? 0 : safeNum);
   };
 
   const formatDateOnly = (dateStr?: string | null) => {

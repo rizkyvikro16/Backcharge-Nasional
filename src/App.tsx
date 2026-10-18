@@ -1316,6 +1316,24 @@ export default function App() {
     setLoading(true);
 
     try {
+      // Check duplicate No. BAK if provided and not '-'
+      const cleanBak = (newTx.no_bak || '').trim().toLowerCase();
+      if (cleanBak && cleanBak !== '-') {
+        const existingBak = transactions.find(t => t.no_bak && t.no_bak.trim().toLowerCase() === cleanBak);
+        if (existingBak) {
+          throw new Error(`No. BAK "${newTx.no_bak}" sudah terdaftar pada data transaksi ${existingBak.id} (${existingBak.customer_name}). Penyimpanan dibatalkan untuk menghindari duplikasi data.`);
+        }
+      }
+
+      // Check duplicate No. SPK if provided and not '-'
+      const cleanSpk = (newTx.no_spk || '').trim().toLowerCase();
+      if (cleanSpk && cleanSpk !== '-') {
+        const existingSpk = transactions.find(t => t.no_spk && t.no_spk.trim().toLowerCase() === cleanSpk);
+        if (existingSpk) {
+          throw new Error(`No. SPK "${newTx.no_spk}" sudah terdaftar pada data transaksi ${existingSpk.id} (${existingSpk.customer_name}). Penyimpanan dibatalkan untuk menghindari duplikasi data.`);
+        }
+      }
+
       const newId = await generateNextTransactionId();
       const creatorEmail = currentUser.email;
 
