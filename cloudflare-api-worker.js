@@ -395,6 +395,31 @@ export default {
       );
     }
 
+    // 1c. Secure File Preview Proxy
+    if (pathname.startsWith("/api/files/secure/") && request.method === "GET") {
+      const fileId = pathname.replace("/api/files/secure/", "");
+      try {
+        const driveMediaUrl = `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`;
+        const gRes = await fetch(driveMediaUrl, {
+          redirect: "follow",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+          }
+        });
+        if (gRes.ok) {
+           return new Response(gRes.body, {
+             headers: {
+               "Content-Type": gRes.headers.get("content-type") || "application/octet-stream",
+               "Access-Control-Allow-Origin": "*",
+               "Content-Disposition": "inline"
+             }
+           });
+        }
+      } catch (e) {
+        return new Response(JSON.stringify({ success: false, error: "Gagal memuat pratinjau file." }), { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } });
+      }
+    }
+
     // 1b. Google Drive Upload Relay Endpoint
     if (pathname === "/api/upload-to-drive" && request.method === "POST") {
       try {
