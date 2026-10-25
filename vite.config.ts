@@ -83,6 +83,13 @@ export default defineConfig(() => {
       },
     },
     server: {
+      allowedHosts: [
+        'backcharge-assa.ai.studio',
+        'backcharge-nasional.pages.dev',
+        '.run.app',
+        'localhost',
+        '127.0.0.1'
+      ],
       hmr: false,
       watch: null,
     },

@@ -10,6 +10,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, getRoleAllowedBranches, isNationalOrAllBranches, BackchargeCategory, hasRole, isRegionalHeadRole } from '../types';
+import MultiSelect from './MultiSelect';
 
 interface DashboardProps {
   transactions: Backcharge[];
@@ -36,7 +37,7 @@ const getCategoryColorClass = (cat: BackchargeCategory) => {
 };
 
 const formatRatio = (val: number) => {
-  if (!val || isNaN(val) || val <= 0) return '0%';
+  if (!val || isNaN(val) || !Number.isFinite(val) || val <= 0) return '0%';
   if (val >= 100) return '100%';
   return val < 0.1 ? '<0.1%' : (val < 10 ? val.toFixed(1) : Math.round(val).toString()) + '%';
 };
@@ -76,7 +77,7 @@ export default function Dashboard({
   // Local/global settings
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
-  const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('');
+  const [selectedBranchFilters, setSelectedBranchFilters] = useState<string[]>([]);
   const [selectedPipelineCategory, setSelectedPipelineCategory] = useState<BackchargeCategory>('Own Risk');
 
   // Pipeline filter and view states
@@ -109,13 +110,13 @@ export default function Dashboard({
         const branches = getRoleAllowedBranches(currentUser.role, currentUser.branch);
         if (branches.length === 1) {
           // Default to their only branch if they only handle exactly 1 branch
-          setSelectedBranchFilter(branches[0]);
+          setSelectedBranchFilters([branches[0]]);
         } else {
           // If they handle multiple branches (e.g., Regional, Megabranch, or custom list), show consolidated data across all their authorized branches
-          setSelectedBranchFilter('');
+          setSelectedBranchFilters([]);
         }
       } else {
-        setSelectedBranchFilter('');
+        setSelectedBranchFilters([]);
       }
     }
   }, [currentUser]);
@@ -187,21 +188,15 @@ export default function Dashboard({
       if (endDate && transactionDate) {
         matchesEndDate = transactionDate <= endDate;
       }
-      if (selectedBranchFilter) {
-        const isAllSelected = isNationalOrAllBranches(selectedBranchFilter);
-        if (!isAllSelected) {
-          const allowedBranches = getUserBranches(selectedBranchFilter);
-          matchesBranch = allowedBranches.includes(t.branch) || Boolean(t.branch && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase());
-        } else {
-          matchesBranch = true;
-        }
+      if (selectedBranchFilters.length > 0) {
+        matchesBranch = selectedBranchFilters.some(sf => t.branch && t.branch.toLowerCase() === sf.toLowerCase());
       } else if (userBranches && userBranches.length > 0 && !isNationalOrAllBranches(currentUser?.branch, currentUser?.role)) {
         matchesBranch = userBranches.some(ub => ub.toLowerCase() === t.branch?.toLowerCase());
       }
       
       return matchesStartDate && matchesEndDate && matchesBranch;
     });
-  }, [transactions, startDate, endDate, selectedBranchFilter, userBranches]);
+  }, [transactions, startDate, endDate, selectedBranchFilters, userBranches, currentUser]);
 
   // 2. Trend Calculations relative to "Periode Lalu"
   const { activeCount, activeValue, priorCount, priorValue } = useMemo(() => {
@@ -227,9 +222,8 @@ export default function Dashboard({
         if (!transactionDate) return false;
         const matchesDate = transactionDate >= priorStartStr && transactionDate <= priorEndStr;
         let matchesBranch = true;
-        if (selectedBranchFilter) {
-          const allowedBranches = getUserBranches(selectedBranchFilter);
-          matchesBranch = allowedBranches.includes(t.branch) || Boolean(t.branch && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase());
+        if (selectedBranchFilters.length > 0) {
+          matchesBranch = selectedBranchFilters.some(sf => t.branch && t.branch.toLowerCase() === sf.toLowerCase());
         } else if (userBranches && userBranches.length > 0) {
           matchesBranch = userBranches.some(ub => ub.toLowerCase() === t.branch?.toLowerCase());
         }
@@ -250,9 +244,8 @@ export default function Dashboard({
         const d = new Date(transactionDate);
         const matchesDate = d >= sixtyDaysAgo && d < thirtyDaysAgo;
         let matchesBranch = true;
-        if (selectedBranchFilter) {
-          const allowedBranches = getUserBranches(selectedBranchFilter);
-          matchesBranch = allowedBranches.includes(t.branch) || Boolean(t.branch && t.branch.toLowerCase() === selectedBranchFilter.toLowerCase());
+        if (selectedBranchFilters.length > 0) {
+          matchesBranch = selectedBranchFilters.some(sf => t.branch && t.branch.toLowerCase() === sf.toLowerCase());
         } else if (userBranches && userBranches.length > 0) {
           matchesBranch = userBranches.some(ub => ub.toLowerCase() === t.branch?.toLowerCase());
         }
@@ -264,7 +257,7 @@ export default function Dashboard({
     }
 
     return { activeCount: actCount, activeValue: actValue, priorCount: pCount, priorValue: pValue };
-  }, [transactions, startDate, endDate, selectedBranchFilter, filteredTransactions, userBranches]);
+  }, [transactions, startDate, endDate, selectedBranchFilters, filteredTransactions, userBranches]);
 
   // 2B. Period Segmentation Calculation Helper: Cutoff vs Current Month
   const calculateKpiStats = (txList: Backcharge[]) => {
@@ -359,14 +352,14 @@ export default function Dashboard({
       }
     });
 
-    const cutoffLunasRatio = cutoffValue > 0 ? (cutoffLunasValue / cutoffValue) * 100 : 0;
-    const cutoffOsRatio = cutoffValue > 0 ? (cutoffOsValue / cutoffValue) * 100 : 0;
+    const cutoffLunasRatio = cutoffValue > 0 && !isNaN(cutoffLunasValue) ? Math.max(0, Math.min(100, (cutoffLunasValue / cutoffValue) * 100)) : 0;
+    const cutoffOsRatio = cutoffValue > 0 && !isNaN(cutoffOsValue) ? Math.max(0, Math.min(100, (cutoffOsValue / cutoffValue) * 100)) : 0;
 
-    const currentMonthLunasRatio = currentMonthValue > 0 ? (currentMonthLunasValue / currentMonthValue) * 100 : 0;
-    const currentMonthOsRatio = currentMonthValue > 0 ? (currentMonthOsValue / currentMonthValue) * 100 : 0;
+    const currentMonthLunasRatio = currentMonthValue > 0 && !isNaN(currentMonthLunasValue) ? Math.max(0, Math.min(100, (currentMonthLunasValue / currentMonthValue) * 100)) : 0;
+    const currentMonthOsRatio = currentMonthValue > 0 && !isNaN(currentMonthOsValue) ? Math.max(0, Math.min(100, (currentMonthOsValue / currentMonthValue) * 100)) : 0;
 
-    const grandLunasRatio = grandTotalValue > 0 ? (grandTotalLunasValue / grandTotalValue) * 100 : 0;
-    const grandOsRatio = grandTotalValue > 0 ? (grandTotalOsValue / grandTotalValue) * 100 : 0;
+    const grandLunasRatio = grandTotalValue > 0 && !isNaN(grandTotalLunasValue) ? Math.max(0, Math.min(100, (grandTotalLunasValue / grandTotalValue) * 100)) : 0;
+    const grandOsRatio = grandTotalValue > 0 && !isNaN(grandTotalOsValue) ? Math.max(0, Math.min(100, (grandTotalOsValue / grandTotalValue) * 100)) : 0;
 
     return {
       currentMonthLabel,
@@ -421,12 +414,15 @@ export default function Dashboard({
   const etleStats = useMemo(() => calculateKpiStats(etleTransactions), [etleTransactions]);
 
   const getPercentChange = (current: number, prior: number) => {
-    if (prior === 0) {
-      return current > 0 ? { percent: 100, isUp: true } : { percent: 0, isUp: true };
+    const safeCurrent = Number(current) || 0;
+    const safePrior = Number(prior) || 0;
+    if (safePrior === 0 || isNaN(safePrior) || isNaN(safeCurrent)) {
+      return safeCurrent > 0 ? { percent: 100, isUp: true } : { percent: 0, isUp: true };
     }
-    const diff = current - prior;
-    const pct = Math.round((diff / prior) * 100);
-    return { percent: Math.abs(pct), isUp: pct >= 0 };
+    const diff = safeCurrent - safePrior;
+    const pct = Math.round((diff / safePrior) * 100);
+    const safePct = isNaN(pct) || !Number.isFinite(pct) ? 0 : pct;
+    return { percent: Math.abs(safePct), isUp: safePct >= 0 };
   };
 
   const countChange = getPercentChange(activeCount, priorCount);
@@ -445,9 +441,9 @@ export default function Dashboard({
     return hasRole(currentUser?.role, 'ASO Megabranch') || 
       currentUser?.branch === 'Megabranch' || 
       (currentUser?.branch && currentUser.branch.includes('Megabranch')) ||
-      selectedBranchFilter === 'Megabranch' ||
-      MEGABRANCH_LIST.some(mb => mb.toLowerCase() === selectedBranchFilter.toLowerCase());
-  }, [currentUser, selectedBranchFilter]);
+      selectedBranchFilters.includes('Megabranch') ||
+      selectedBranchFilters.some(sf => MEGABRANCH_LIST.some(mb => mb.toLowerCase() === sf.toLowerCase()));
+  }, [currentUser, selectedBranchFilters]);
 
   // 3. Main stats calculation based on filtered subset (Memoized)
   const {
@@ -461,7 +457,8 @@ export default function Dashboard({
     stage1Input,
     stage2InAso,
     stage3AtAdmin,
-    stage4ApproveL1,
+    stage4ApproveSH,
+    stage4ApproveKacab,
     stage5RegionalApprove,
     stage6DivisionApprove,
     stage7Invoice,
@@ -484,10 +481,12 @@ export default function Dashboard({
     let rCount = 0;
     let rValue = 0;
 
-    // Pipeline stage counters (8 stages)
+    // Pipeline stage counters (9 stages)
     let s1Input = 0;
     let s2InAso = 0;
-    let s4ApproveL1 = 0;
+    let s3AtAdmin = 0;
+    let s4ApproveSH = 0;
+    let s4ApproveKacab = 0;
     let s5RegionalApprove = 0;
     let s6DivisionApprove = 0;
     let s7Invoice = 0;
@@ -516,24 +515,30 @@ export default function Dashboard({
       stage2InAsoValue: number;
       stage3AtAdmin: number;
       stage3AtAdminValue: number;
-      stage4ApproveL1: number;
-      stage4ApproveL1Value: number;
+      stage4ApproveSH: number;
+      stage4ApproveSHValue: number;
+      stage4ApproveKacab: number;
+      stage4ApproveKacabValue: number;
       stage5RegionalApprove: number;
       stage5RegionalApproveValue: number;
       stage6DivisionApprove: number;
       stage6DivisionApproveValue: number;
       stage7Invoice: number;
       stage7InvoiceValue: number;
+      stageSudahInvoiceBlmBayar: number;
+      stageSudahInvoiceBlmBayarValue: number;
       stage8Lunas: number;
       stage8LunasValue: number;
+      stageReject: number;
+      stageRejectValue: number;
     }> = {
-      'Own Risk': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 },
-      'Maintenance': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 },
-      'Ekspedisi': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 },
-      'ETLE': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 },
-      'TPL': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 },
-      'Unclaimable Insurance': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 },
-      'Dokumen Kendaraan': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveL1: 0, stage4ApproveL1Value: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stage8Lunas: 0, stage8LunasValue: 0 }
+      'Own Risk': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveSH: 0, stage4ApproveSHValue: 0, stage4ApproveKacab: 0, stage4ApproveKacabValue: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stageSudahInvoiceBlmBayar: 0, stageSudahInvoiceBlmBayarValue: 0, stage8Lunas: 0, stage8LunasValue: 0, stageReject: 0, stageRejectValue: 0 },
+      'Maintenance': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveSH: 0, stage4ApproveSHValue: 0, stage4ApproveKacab: 0, stage4ApproveKacabValue: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stageSudahInvoiceBlmBayar: 0, stageSudahInvoiceBlmBayarValue: 0, stage8Lunas: 0, stage8LunasValue: 0, stageReject: 0, stageRejectValue: 0 },
+      'Ekspedisi': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveSH: 0, stage4ApproveSHValue: 0, stage4ApproveKacab: 0, stage4ApproveKacabValue: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stageSudahInvoiceBlmBayar: 0, stageSudahInvoiceBlmBayarValue: 0, stage8Lunas: 0, stage8LunasValue: 0, stageReject: 0, stageRejectValue: 0 },
+      'ETLE': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveSH: 0, stage4ApproveSHValue: 0, stage4ApproveKacab: 0, stage4ApproveKacabValue: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stageSudahInvoiceBlmBayar: 0, stageSudahInvoiceBlmBayarValue: 0, stage8Lunas: 0, stage8LunasValue: 0, stageReject: 0, stageRejectValue: 0 },
+      'TPL': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveSH: 0, stage4ApproveSHValue: 0, stage4ApproveKacab: 0, stage4ApproveKacabValue: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stageSudahInvoiceBlmBayar: 0, stageSudahInvoiceBlmBayarValue: 0, stage8Lunas: 0, stage8LunasValue: 0, stageReject: 0, stageRejectValue: 0 },
+      'Unclaimable Insurance': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveSH: 0, stage4ApproveSHValue: 0, stage4ApproveKacab: 0, stage4ApproveKacabValue: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stageSudahInvoiceBlmBayar: 0, stageSudahInvoiceBlmBayarValue: 0, stage8Lunas: 0, stage8LunasValue: 0, stageReject: 0, stageRejectValue: 0 },
+      'Dokumen Kendaraan': { stage1Input: 0, stage1InputValue: 0, stage2InAso: 0, stage2InAsoValue: 0, stage3AtAdmin: 0, stage3AtAdminValue: 0, stage4ApproveSH: 0, stage4ApproveSHValue: 0, stage4ApproveKacab: 0, stage4ApproveKacabValue: 0, stage5RegionalApprove: 0, stage5RegionalApproveValue: 0, stage6DivisionApprove: 0, stage6DivisionApproveValue: 0, stage7Invoice: 0, stage7InvoiceValue: 0, stageSudahInvoiceBlmBayar: 0, stageSudahInvoiceBlmBayarValue: 0, stage8Lunas: 0, stage8LunasValue: 0, stageReject: 0, stageRejectValue: 0 }
     };
 
     filteredTransactions.forEach(t => {
@@ -608,68 +613,88 @@ export default function Dashboard({
       const isRegionalApproved = !isRegionalHeadReq || t.regional_approval_status === 'Disetujui';
       const isDivisionApproved = !isDivisionHeadReq || t.division_approval_status === 'Disetujui';
 
-      const stepInvoice = t.no_invoice && t.no_invoice !== '-' && t.no_invoice !== '';
+      const stepInvoice = Boolean(t.no_invoice && typeof t.no_invoice === 'string' && t.no_invoice.trim() !== '' && t.no_invoice.trim() !== '-');
       const stepPayment = t.status_payment === 'Lunas';
       const isNotBill = t.status_sap === 'Not Bill';
+      const isHandedOverAdmin = t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin';
 
       // Populate Category Pipeline (Counts & Values)
       if (catPipelines[cat]) {
         catPipelines[cat].stage1Input++;
         catPipelines[cat].stage1InputValue += transVal;
-        if (stepPayment) {
+
+        // Pipeline Classification (consistent with DatabaseView.tsx stages)
+        if (isDocRejected) {
+          catPipelines[cat].stageReject++;
+          catPipelines[cat].stageRejectValue += transVal;
+        } else if (stepPayment) {
           catPipelines[cat].stage8Lunas++;
           catPipelines[cat].stage8LunasValue += transVal;
-        }
-        if (t.status_handover === 'Pending') {
+        } else if (!isHandedOverAdmin) {
           catPipelines[cat].stage2InAso++;
           catPipelines[cat].stage2InAsoValue += transVal;
-        } else if (stepInvoice || stepPayment || isNotBill || isDocRejected) {
-          // Excluded from bottleneck stages 4 to 7
-        } else if (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') {
-          if (isPendingL1) {
-            catPipelines[cat].stage4ApproveL1++;
-            catPipelines[cat].stage4ApproveL1Value += transVal;
-          } else if (isL1Approved && isRegionalHeadReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval')) {
-            catPipelines[cat].stage5RegionalApprove++;
-            catPipelines[cat].stage5RegionalApproveValue += transVal;
-          } else if (isL1Approved && isRegionalApproved && isDivisionHeadReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval')) {
-            catPipelines[cat].stage6DivisionApprove++;
-            catPipelines[cat].stage6DivisionApproveValue += transVal;
-          } else if (isL1Approved && isRegionalApproved && isDivisionApproved) {
-            // Stage 7: Belum Cetak Invoice (only when fully approved and not rejected)
+        } else {
+          // Handed over, not rejected, not paid -> Berkas di Admin or Approval or Invoice stage
+          const isFullyApproved = (isL1Approved && isRegionalApproved && isDivisionApproved);
+          
+          if (!isFullyApproved) {
+            catPipelines[cat].stage3AtAdmin++;
+            catPipelines[cat].stage3AtAdminValue += transVal;
+
+            // Approval bottleneck breakdown
+            const isKacabCat = cat === 'Maintenance' || cat === 'TPL' || cat === 'Dokumen Kendaraan' || cat === 'Unclaimable Insurance';
+            if (isPendingL1) {
+              if (isKacabCat) {
+                catPipelines[cat].stage4ApproveKacab++;
+                catPipelines[cat].stage4ApproveKacabValue += transVal;
+              } else {
+                catPipelines[cat].stage4ApproveSH++;
+                catPipelines[cat].stage4ApproveSHValue += transVal;
+              }
+            } else if (isL1Approved && isRegionalHeadReq && !isRegionalApproved) {
+              catPipelines[cat].stage5RegionalApprove++;
+              catPipelines[cat].stage5RegionalApproveValue += transVal;
+            } else if (isL1Approved && isRegionalApproved && isDivisionHeadReq && !isDivisionApproved) {
+              catPipelines[cat].stage6DivisionApprove++;
+              catPipelines[cat].stage6DivisionApproveValue += transVal;
+            }
+          } else if (!stepInvoice) {
             catPipelines[cat].stage7Invoice++;
             catPipelines[cat].stage7InvoiceValue += transVal;
+          } else {
+            // Invoiced and not yet paid
+            catPipelines[cat].stageSudahInvoiceBlmBayar++;
+            catPipelines[cat].stageSudahInvoiceBlmBayarValue += transVal;
           }
         }
       }
 
-      if (t.status_handover === 'Pending') {
-        s2InAso++;
-      } else if (stepInvoice || stepPayment) {
+      if (isDocRejected) {
+        // Dokumen ditolak sudah tercatat di rCount / rValue dan stageReject
+      } else if (stepPayment) {
         s8Payment++;
-      } else if (isNotBill || isDocRejected) {
-        // Not Bill or Rejected items do not count as outstanding invoice for Admin (stage 7)
-      } else if (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') {
+      } else if (!isHandedOverAdmin) {
+        s2InAso++;
+      } else if (!(isL1Approved && isRegionalApproved && isDivisionApproved)) {
+        s3AtAdmin++;
+      } else if (!stepInvoice) {
+        s7Invoice++;
+      }
+
+      if (!stepInvoice && !stepPayment && !isNotBill && !isDocRejected && isHandedOverAdmin) {
+        const isKacabCat = t.category === 'Maintenance' || t.category === 'TPL' || t.category === 'Dokumen Kendaraan' || t.category === 'Unclaimable Insurance';
         if (isPendingL1) {
-          s4ApproveL1++;
-        } else if (isL1Approved && isRegionalHeadReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval')) {
+          if (isKacabCat) {
+            s4ApproveKacab++;
+          } else {
+            s4ApproveSH++;
+          }
+        } else if (isL1Approved && isRegionalHeadReq && !isRegionalApproved) {
           s5RegionalApprove++;
-        } else if (isL1Approved && isRegionalApproved && isDivisionHeadReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval')) {
+        } else if (isL1Approved && isRegionalApproved && isDivisionHeadReq && !isDivisionApproved) {
           s6DivisionApprove++;
-        } else if (isL1Approved && isRegionalApproved && isDivisionApproved) {
-          s7Invoice++;
         }
       }
-    });
-
-    // Stage 3: Berkas di Admin = Total Input ASO - Berkas di ASO (s2InAso)
-    const s3AtAdmin = s1Input - s2InAso;
-
-    // Calculate category s3AtAdmin (Berkas Admin = Total Input ASO - Berkas di ASO)
-    Object.keys(catPipelines).forEach(catKey => {
-      const k = catKey as BackchargeCategory;
-      catPipelines[k].stage3AtAdmin = catPipelines[k].stage1Input - catPipelines[k].stage2InAso;
-      catPipelines[k].stage3AtAdminValue = Math.max(0, catPipelines[k].stage1InputValue - catPipelines[k].stage2InAsoValue);
     });
 
     const nowMsVal = Date.now();
@@ -695,7 +720,8 @@ export default function Dashboard({
       stage1Input: s1Input,
       stage2InAso: s2InAso,
       stage3AtAdmin: s3AtAdmin,
-      stage4ApproveL1: s4ApproveL1,
+      stage4ApproveSH: s4ApproveSH,
+      stage4ApproveKacab: s4ApproveKacab,
       stage5RegionalApprove: s5RegionalApprove,
       stage6DivisionApprove: s6DivisionApprove,
       stage7Invoice: s7Invoice,
@@ -837,6 +863,44 @@ export default function Dashboard({
       .sort((a, b) => b.totalValue - a.totalValue)
       .slice(0, 5);
   })();
+
+  // Top 5 customers for Maintenance category
+  const maintenanceTopCustomers = useMemo(() => {
+    const map: Record<string, { name: string; cases: number; totalValue: number }> = {};
+    filteredTransactions.forEach(t => {
+      if (t.category === 'Maintenance') {
+        const name = t.customer_name || 'Umum / Unknown';
+        const val = Number(t.value) || 0;
+        if (!map[name]) {
+          map[name] = { name, cases: 0, totalValue: 0 };
+        }
+        map[name].cases++;
+        map[name].totalValue += val;
+      }
+    });
+    return Object.values(map)
+      .sort((a, b) => b.totalValue - a.totalValue)
+      .slice(0, 5);
+  }, [filteredTransactions]);
+
+  // Top 5 customers for ETLE category
+  const etleTopCustomers = useMemo(() => {
+    const map: Record<string, { name: string; cases: number; totalValue: number }> = {};
+    filteredTransactions.forEach(t => {
+      if (t.category === 'ETLE') {
+        const name = t.customer_name || 'Umum / Unknown';
+        const val = Number(t.value) || 0;
+        if (!map[name]) {
+          map[name] = { name, cases: 0, totalValue: 0 };
+        }
+        map[name].cases++;
+        map[name].totalValue += val;
+      }
+    });
+    return Object.values(map)
+      .sort((a, b) => b.totalValue - a.totalValue)
+      .slice(0, 5);
+  }, [filteredTransactions]);
 
   // Download filtered data in XLS Excel format
   const handleDownloadExcel = () => {
@@ -1130,15 +1194,15 @@ export default function Dashboard({
   const baseBranchStatsList = useMemo(() => {
     return Object.keys(branchStats)
       .filter(branch => {
-        if (selectedBranchFilter) {
-          return branch.toLowerCase() === selectedBranchFilter.toLowerCase();
+        if (selectedBranchFilters.length > 0) {
+          return selectedBranchFilters.some(sf => branch.toLowerCase() === sf.toLowerCase());
         }
         if (!userBranches || userBranches.length === 0) return true;
         return userBranches.some(ub => ub.toLowerCase() === branch.toLowerCase());
       })
       .map(branch => {
         const stats = branchStats[branch];
-        const ratio = stats.total > 0 ? Math.round((stats.resolved / stats.total) * 100) : 0;
+        const ratio = stats.total > 0 && !isNaN(stats.resolved) ? Math.max(0, Math.min(100, Math.round((stats.resolved / stats.total) * 100))) : 0;
         return {
           name: branch,
           totalCases: stats.total,
@@ -1148,7 +1212,7 @@ export default function Dashboard({
           ratio
         };
       });
-  }, [branchStats, selectedBranchFilter, userBranches]);
+  }, [branchStats, selectedBranchFilters, userBranches]);
 
   // Calculate Executive Branch KPIs (Memoized)
   const branchKPIs = useMemo(() => {
@@ -1205,7 +1269,7 @@ export default function Dashboard({
     const colors = [
       { bg: 'bg-blue-50 border-blue-200 text-blue-700', hoverBg: 'group-hover:bg-blue-100 group-hover:text-blue-800' },
       { bg: 'bg-purple-50 border-purple-200 text-purple-700', hoverBg: 'group-hover:bg-purple-100 group-hover:text-purple-800' },
-      { bg: 'bg-indigo-50 border-indigo-200 text-indigo-700', hoverBg: 'group-hover:bg-indigo-100 group-hover:text-indigo-800' },
+      { bg: 'bg-indigo-50 border-orange-200 text-indigo-700', hoverBg: 'group-hover:bg-indigo-100 group-hover:text-orange-800' },
       { bg: 'bg-rose-50 border-rose-200 text-rose-700', hoverBg: 'group-hover:bg-rose-100 group-hover:text-rose-800' },
       { bg: 'bg-amber-50 border-amber-200 text-amber-700', hoverBg: 'group-hover:bg-amber-100 group-hover:text-amber-800' },
       { bg: 'bg-teal-50 border-teal-200 text-teal-700', hoverBg: 'group-hover:bg-teal-100 group-hover:text-teal-800' },
@@ -1414,9 +1478,9 @@ export default function Dashboard({
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">Dashboard Pemantauan Progres Backcharge</h1>
             <p className="text-xs text-slate-500 font-medium mt-1 flex flex-wrap items-center gap-2">
               <span>PT ADI SARANA ARMADA TBK | Cabang: {currentUser?.branch || 'Pusat'}</span>
-              {selectedBranchFilter && (
+              {selectedBranchFilters.length > 0 && (
                 <span className="bg-indigo-600 text-white font-black px-2.5 py-0.5 rounded-full text-[10px] shadow-sm">
-                  Saringan Aktif: Cabang {selectedBranchFilter}
+                  Saringan Aktif: Cabang {selectedBranchFilters.join(', ')}
                 </span>
               )}
             </p>
@@ -1463,9 +1527,9 @@ export default function Dashboard({
             </label>
             <p className="text-[11px] text-slate-400">Saring ringkasan dashboard berdasarkan cabang otoritas &amp; rentang tanggal transaksi.</p>
           </div>
-          {(startDate || endDate || selectedBranchFilter) && (
+          {(startDate || endDate || selectedBranchFilters.length > 0) && (
             <button 
-              onClick={() => { setStartDate(''); setEndDate(''); setSelectedBranchFilter(''); }}
+              onClick={() => { setStartDate(''); setEndDate(''); setSelectedBranchFilters([]); }}
               className="text-xs font-extrabold text-red-500 hover:text-red-600 hover:underline transition-all cursor-pointer self-start sm:self-auto"
             >
               Reset Filter
@@ -1474,19 +1538,18 @@ export default function Dashboard({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-          {/* Branch Dropdown Filter */}
+          {/* Branch Multi-Select Filter */}
           <div>
             <span className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5 flex items-center gap-1">
               <Map className="w-3.5 h-3.5 text-indigo-600 inline" />
               Cabang Otoritas:
             </span>
-            <select
-              value={selectedBranchFilter}
-              onChange={(e) => setSelectedBranchFilter(e.target.value)}
-              className="w-full bg-indigo-50/60 hover:bg-indigo-50 border border-indigo-200/80 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-indigo-950 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm"
-            >
-              <option value="">
-                {currentUser?.branch === 'Nasional' || !currentUser?.branch || isNationalOrAllBranches(currentUser?.branch, currentUser?.role)
+            <MultiSelect
+              options={availableBranchOptions}
+              selected={selectedBranchFilters}
+              onChange={setSelectedBranchFilters}
+              placeholder={
+                currentUser?.branch === 'Nasional' || !currentUser?.branch || isNationalOrAllBranches(currentUser?.branch, currentUser?.role)
                   ? 'Semua Cabang (Nasional)'
                   : currentUser?.branch === 'Megabranch' || hasRole(currentUser?.role, 'ASO Megabranch')
                   ? 'Semua BSO Megabranch (8 BSO)'
@@ -1494,14 +1557,9 @@ export default function Dashboard({
                   ? `Semua Cabang Wilayah (${availableBranchOptions.length} Cabang)`
                   : availableBranchOptions.length === 1 
                     ? `Cabang ${availableBranchOptions[0]}`
-                    : `Semua Cabang Otoritas (${availableBranchOptions.length} Cabang)`}
-              </option>
-              {availableBranchOptions.map((b) => (
-                <option key={b} value={b}>
-                  {`Cabang ${b}`}
-                </option>
-              ))}
-            </select>
+                    : `Semua Cabang Otoritas (${availableBranchOptions.length} Cabang)`
+              }
+            />
           </div>
 
           <div>
@@ -1858,103 +1916,66 @@ export default function Dashboard({
             </div>
           </div>
 
-          {/* CARD 5: TOTAL NILAI TAGIHAN & OS (MAINTENANCE MASTER OVERVIEW) */}
-          <div 
-            onClick={() => onSelectDashboardFilter?.({ category: 'Maintenance', statusPayment: 'Belum Bayar' })}
-            className="bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-900 text-white rounded-2xl border border-indigo-500/30 shadow-md hover:shadow-xl hover:border-indigo-400/50 transition-all duration-200 p-4 flex flex-col justify-between col-span-1 md:col-span-2 lg:col-span-1 cursor-pointer active:scale-[0.99] group"
-            title="Klik untuk melihat rincian seluruh tagihan, pelunasan, dan total outstanding akumulasi Maintenance"
-          >
+          {/* CARD 5: TOP 5 CUSTOMER TERTINGGI (MAINTENANCE) */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 flex flex-col justify-between col-span-1 md:col-span-2 lg:col-span-1">
             <div>
               {/* Header: Icon + Title + Pill */}
-              <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
                 <div className="flex items-center space-x-2 min-w-0">
-                  <div className="p-1.5 bg-indigo-500/20 text-indigo-300 rounded-lg border border-indigo-400/20 group-hover:scale-105 transition-transform flex-shrink-0">
-                    <TrendingUp className="w-4 h-4" />
+                  <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-100 flex-shrink-0">
+                    <Award className="w-4 h-4" />
                   </div>
-                  <span className="text-[10.5px] font-extrabold tracking-wider uppercase text-indigo-200 truncate">
-                    TOTAL NILAI TAGIHAN &amp; OS
+                  <span className="text-[10.5px] font-extrabold tracking-wider uppercase text-slate-700 truncate">
+                    TOP 5 CUSTOMER TERTINGGI
                   </span>
                 </div>
-                <span className="text-[9px] font-extrabold text-indigo-200 bg-indigo-500/30 px-1.5 py-0.5 rounded-md border border-indigo-400/30 flex-shrink-0">
-                  Akumulasi
+                <span className="text-[9px] font-extrabold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded-md border border-indigo-100 flex-shrink-0">
+                  Maintenance
                 </span>
               </div>
 
-              {/* Main Primary Metric */}
-              <div className="py-2.5">
-                <div className="flex items-baseline space-x-1.5">
-                  <span className="text-xl sm:text-2xl font-black text-white tracking-tight truncate">
-                    {formatRupiah(maintenanceStats.grandTotalValue)}
-                  </span>
-                </div>
-                <p className="text-xs font-semibold text-indigo-200/80 mt-0.5 truncate">
-                  Total akumulasi tagihan Maintenance
-                </p>
-              </div>
-
-              {/* Semantic 2-Column Comparison Block (Dark Styled) */}
-              <div className="grid grid-cols-2 gap-1.5 my-1">
-                {/* LUNAS BLOCK */}
-                <div className="bg-emerald-950/60 border border-emerald-500/40 rounded-xl p-2 flex flex-col justify-between">
-                  <div className="flex items-center space-x-1 text-emerald-400">
-                    <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-400" />
-                    <span className="text-[9px] font-black tracking-wider uppercase">LUNAS</span>
-                  </div>
-                  <div className="mt-1">
-                    <div className="text-[11px] sm:text-xs font-black text-emerald-100 truncate">
-                      {formatRupiah(maintenanceStats.grandTotalLunasValue)}
+              {/* List of Top 5 Customers */}
+              <div className="mt-3 space-y-2">
+                {maintenanceTopCustomers.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">Belum ada data customer</p>
+                ) : (
+                  maintenanceTopCustomers.map((cust, cIdx) => (
+                    <div 
+                      key={cust.name}
+                      onClick={() => onSelectDashboardFilter?.({ category: 'Maintenance', customerName: cust.name })}
+                      className="bg-slate-50 hover:bg-slate-100 border border-slate-100 hover:border-orange-200 rounded-xl p-2.5 cursor-pointer transition-all flex items-center justify-between group active:scale-[0.99]"
+                      title={`Klik untuk melihat transaksi Maintenance dari ${cust.name}`}
+                    >
+                      <div className="flex items-center space-x-2.5 min-w-0">
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0 ${
+                          cIdx === 0 ? 'bg-amber-100 text-amber-800' : cIdx === 1 ? 'bg-slate-200 text-slate-700' : cIdx === 2 ? 'bg-amber-900 text-amber-100' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {cIdx + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate group-hover:text-indigo-700 transition-colors">
+                            {cust.name}
+                          </p>
+                          <p className="text-[10px] text-slate-400 font-medium">
+                            {cust.cases} Kasus Transaksi
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0 ml-2">
+                        <span className="text-xs font-black text-slate-900 block">
+                          {formatRupiah(cust.totalValue)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-[9.5px] font-semibold text-emerald-300/80 mt-0.5">
-                      {maintenanceStats.grandTotalLunasCount} Transaksi
-                    </div>
-                  </div>
-                </div>
-
-                {/* OS BLOCK */}
-                <div className="bg-amber-950/60 border border-amber-500/40 rounded-xl p-2 flex flex-col justify-between">
-                  <div className="flex items-center space-x-1 text-amber-400">
-                    <Clock className="w-3 h-3 flex-shrink-0 text-amber-400" />
-                    <span className="text-[9px] font-black tracking-wider uppercase">OS</span>
-                  </div>
-                  <div className="mt-1">
-                    <div className="text-[11px] sm:text-xs font-black text-amber-100 truncate">
-                      {formatRupiah(maintenanceStats.grandTotalOsValue)}
-                    </div>
-                    <div className="text-[9.5px] font-semibold text-amber-300/80 mt-0.5">
-                      {maintenanceStats.grandTotalOsCount} Transaksi
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Segmented Progress Bar */}
-              <div className="mt-2 space-y-1">
-                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden flex">
-                  <div 
-                    className="bg-emerald-400 h-full transition-all duration-500" 
-                    style={{ width: `${Math.max(maintenanceStats.grandLunasRatio > 0 ? 3 : 0, maintenanceStats.grandLunasRatio)}%` }} 
-                  />
-                  <div 
-                    className="bg-amber-400 h-full transition-all duration-500" 
-                    style={{ width: `${Math.max(maintenanceStats.grandOsRatio > 0 ? 3 : 0, maintenanceStats.grandOsRatio)}%` }} 
-                  />
-                </div>
-                <div className="flex items-center justify-between text-[8.5px] font-bold">
-                  <span className="text-emerald-300">Lunas {formatRatio(maintenanceStats.grandLunasRatio)}</span>
-                  <span className="text-amber-300">OS {formatRatio(maintenanceStats.grandOsRatio)}</span>
-                </div>
+                  ))
+                )}
               </div>
             </div>
 
             {/* Footer Period Info */}
-            <div className="mt-3 pt-2 border-t border-white/10 flex items-center justify-between text-[9.5px]">
-              <span className="text-indigo-200 font-semibold flex items-center gap-1 truncate">
-                <TrendingUp className="w-3 h-3 text-indigo-300 flex-shrink-0" />
-                Total {maintenanceStats.grandTotalCount} Kasus
-              </span>
-              <span className="text-[8.5px] font-extrabold bg-indigo-500/40 text-indigo-100 px-2 py-0.5 rounded-md border border-indigo-400/30 flex-shrink-0">
-                {formatRatio(maintenanceStats.grandLunasRatio)} Lunas
-              </span>
+            <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[9.5px] text-slate-500">
+              <span className="font-bold">Klik customer untuk filter data</span>
+              <span className="font-extrabold uppercase">Top 5</span>
             </div>
           </div>
         </div>
@@ -2290,103 +2311,66 @@ export default function Dashboard({
             </div>
           </div>
 
-          {/* CARD 5: TOTAL NILAI TAGIHAN & OS (ETLE MASTER OVERVIEW) */}
-          <div 
-            onClick={() => onSelectDashboardFilter?.({ category: 'ETLE', statusPayment: 'Belum Bayar' })}
-            className="bg-gradient-to-br from-slate-900 via-amber-950 to-slate-900 text-white rounded-2xl border border-amber-500/30 shadow-md hover:shadow-xl hover:border-amber-400/50 transition-all duration-200 p-4 flex flex-col justify-between col-span-1 md:col-span-2 lg:col-span-1 cursor-pointer active:scale-[0.99] group"
-            title="Klik untuk melihat rincian seluruh tagihan, pelunasan, dan total outstanding akumulasi ETLE"
-          >
+          {/* CARD 5: TOP 5 CUSTOMER TERTINGGI (ETLE) */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 flex flex-col justify-between col-span-1 md:col-span-2 lg:col-span-1">
             <div>
               {/* Header: Icon + Title + Pill */}
-              <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
                 <div className="flex items-center space-x-2 min-w-0">
-                  <div className="p-1.5 bg-amber-500/20 text-amber-300 rounded-lg border border-amber-400/20 group-hover:scale-105 transition-transform flex-shrink-0">
-                    <TrendingUp className="w-4 h-4" />
+                  <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg border border-amber-100 flex-shrink-0">
+                    <Award className="w-4 h-4" />
                   </div>
-                  <span className="text-[10.5px] font-extrabold tracking-wider uppercase text-amber-200 truncate">
-                    TOTAL NILAI TAGIHAN &amp; OS
+                  <span className="text-[10.5px] font-extrabold tracking-wider uppercase text-slate-700 truncate">
+                    TOP 5 CUSTOMER TERTINGGI
                   </span>
                 </div>
-                <span className="text-[9px] font-extrabold text-amber-200 bg-amber-500/30 px-1.5 py-0.5 rounded-md border border-amber-400/30 flex-shrink-0">
-                  Akumulasi
+                <span className="text-[9px] font-extrabold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-100 flex-shrink-0">
+                  ETLE
                 </span>
               </div>
 
-              {/* Main Primary Metric */}
-              <div className="py-2.5">
-                <div className="flex items-baseline space-x-1.5">
-                  <span className="text-xl sm:text-2xl font-black text-white tracking-tight truncate">
-                    {formatRupiah(etleStats.grandTotalValue)}
-                  </span>
-                </div>
-                <p className="text-xs font-semibold text-amber-200/80 mt-0.5 truncate">
-                  Total akumulasi tagihan ETLE
-                </p>
-              </div>
-
-              {/* Semantic 2-Column Comparison Block (Dark Styled) */}
-              <div className="grid grid-cols-2 gap-1.5 my-1">
-                {/* LUNAS BLOCK */}
-                <div className="bg-emerald-950/60 border border-emerald-500/40 rounded-xl p-2 flex flex-col justify-between">
-                  <div className="flex items-center space-x-1 text-emerald-400">
-                    <CheckCircle className="w-3 h-3 flex-shrink-0 text-emerald-400" />
-                    <span className="text-[9px] font-black tracking-wider uppercase">LUNAS</span>
-                  </div>
-                  <div className="mt-1">
-                    <div className="text-[11px] sm:text-xs font-black text-emerald-100 truncate">
-                      {formatRupiah(etleStats.grandTotalLunasValue)}
+              {/* List of Top 5 Customers */}
+              <div className="mt-3 space-y-2">
+                {etleTopCustomers.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">Belum ada data customer</p>
+                ) : (
+                  etleTopCustomers.map((cust, cIdx) => (
+                    <div 
+                      key={cust.name}
+                      onClick={() => onSelectDashboardFilter?.({ category: 'ETLE', customerName: cust.name })}
+                      className="bg-slate-50 hover:bg-slate-100 border border-slate-100 hover:border-amber-200 rounded-xl p-2.5 cursor-pointer transition-all flex items-center justify-between group active:scale-[0.99]"
+                      title={`Klik untuk melihat transaksi ETLE dari ${cust.name}`}
+                    >
+                      <div className="flex items-center space-x-2.5 min-w-0">
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0 ${
+                          cIdx === 0 ? 'bg-amber-100 text-amber-800' : cIdx === 1 ? 'bg-slate-200 text-slate-700' : cIdx === 2 ? 'bg-amber-900 text-amber-100' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {cIdx + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate group-hover:text-amber-700 transition-colors">
+                            {cust.name}
+                          </p>
+                          <p className="text-[10px] text-slate-400 font-medium">
+                            {cust.cases} Kasus Transaksi
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0 ml-2">
+                        <span className="text-xs font-black text-slate-900 block">
+                          {formatRupiah(cust.totalValue)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-[9.5px] font-semibold text-emerald-300/80 mt-0.5">
-                      {etleStats.grandTotalLunasCount} Transaksi
-                    </div>
-                  </div>
-                </div>
-
-                {/* OS BLOCK */}
-                <div className="bg-amber-950/60 border border-amber-500/40 rounded-xl p-2 flex flex-col justify-between">
-                  <div className="flex items-center space-x-1 text-amber-400">
-                    <Clock className="w-3 h-3 flex-shrink-0 text-amber-400" />
-                    <span className="text-[9px] font-black tracking-wider uppercase">OS</span>
-                  </div>
-                  <div className="mt-1">
-                    <div className="text-[11px] sm:text-xs font-black text-amber-100 truncate">
-                      {formatRupiah(etleStats.grandTotalOsValue)}
-                    </div>
-                    <div className="text-[9.5px] font-semibold text-amber-300/80 mt-0.5">
-                      {etleStats.grandTotalOsCount} Transaksi
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Segmented Progress Bar */}
-              <div className="mt-2 space-y-1">
-                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden flex">
-                  <div 
-                    className="bg-emerald-400 h-full transition-all duration-500" 
-                    style={{ width: `${Math.max(etleStats.grandLunasRatio > 0 ? 3 : 0, etleStats.grandLunasRatio)}%` }} 
-                  />
-                  <div 
-                    className="bg-amber-400 h-full transition-all duration-500" 
-                    style={{ width: `${Math.max(etleStats.grandOsRatio > 0 ? 3 : 0, etleStats.grandOsRatio)}%` }} 
-                  />
-                </div>
-                <div className="flex items-center justify-between text-[8.5px] font-bold">
-                  <span className="text-emerald-300">Lunas {formatRatio(etleStats.grandLunasRatio)}</span>
-                  <span className="text-amber-300">OS {formatRatio(etleStats.grandOsRatio)}</span>
-                </div>
+                  ))
+                )}
               </div>
             </div>
 
             {/* Footer Period Info */}
-            <div className="mt-3 pt-2 border-t border-white/10 flex items-center justify-between text-[9.5px]">
-              <span className="text-amber-200 font-semibold flex items-center gap-1 truncate">
-                <TrendingUp className="w-3 h-3 text-amber-300 flex-shrink-0" />
-                Total {etleStats.grandTotalCount} Kasus
-              </span>
-              <span className="text-[8.5px] font-extrabold bg-amber-500/40 text-amber-100 px-2 py-0.5 rounded-md border border-amber-400/30 flex-shrink-0">
-                {formatRatio(etleStats.grandLunasRatio)} Lunas
-              </span>
+            <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[9.5px] text-slate-500">
+              <span className="font-bold">Klik customer untuk filter data</span>
+              <span className="font-extrabold uppercase">Top 5</span>
             </div>
           </div>
         </div>
@@ -2452,6 +2436,16 @@ export default function Dashboard({
             return matchesSearch && matchesEmpty;
           });
 
+          const getPipelineFilter = (extra: Partial<DashboardFilter>): DashboardFilter => {
+            const isAllSelected = selectedBranchFilters.length === 0 || selectedBranchFilters.some(sf => isNationalOrAllBranches(sf));
+            return {
+              ...extra,
+              ...(startDate ? { startDate } : {}),
+              ...(endDate ? { endDate } : {}),
+              ...(!isAllSelected ? { branch: selectedBranchFilters.join(',') } : {})
+            };
+          };
+
           // Metrics calculations
           let totalFilteredTransactions = 0;
           let totalFilteredValue = 0;
@@ -2460,18 +2454,24 @@ export default function Dashboard({
           let totalPendingSlaValue = 0;
           let totalLunasTransactions = 0;
           let totalLunasValue = 0;
+          let totalRejectTransactions = 0;
+          let totalRejectValue = 0;
           let totalStage1Aso = 0;
           let totalStage1AsoVal = 0;
           let totalStage2Admin = 0;
           let totalStage2AdminVal = 0;
-          let totalStage3L1 = 0;
-          let totalStage3L1Val = 0;
+          let totalStage3SH = 0;
+          let totalStage3SHVal = 0;
+          let totalStage3Kacab = 0;
+          let totalStage3KacabVal = 0;
           let totalStage4RH = 0;
           let totalStage4RHVal = 0;
           let totalStage5DH = 0;
           let totalStage5DHVal = 0;
           let totalStage6Inv = 0;
           let totalStage6InvVal = 0;
+          let totalStageSudahInv = 0;
+          let totalStageSudahInvVal = 0;
 
           filteredCategories.forEach(cat => {
             const count = categoryStats[cat]?.count || 0;
@@ -2486,68 +2486,88 @@ export default function Dashboard({
               stage2InAsoValue: 0,
               stage3AtAdmin: 0,
               stage3AtAdminValue: 0,
-              stage4ApproveL1: 0,
-              stage4ApproveL1Value: 0,
+              stage4ApproveSH: 0,
+              stage4ApproveSHValue: 0,
+              stage4ApproveKacab: 0,
+              stage4ApproveKacabValue: 0,
               stage5RegionalApprove: 0,
               stage5RegionalApproveValue: 0,
               stage6DivisionApprove: 0,
               stage6DivisionApproveValue: 0,
               stage7Invoice: 0,
               stage7InvoiceValue: 0,
+              stageSudahInvoiceBlmBayar: 0,
+              stageSudahInvoiceBlmBayarValue: 0,
               stage8Lunas: 0,
               stage8LunasValue: 0,
+              stageReject: 0,
+              stageRejectValue: 0,
             };
 
             totalStage1Aso += (pipeline.stage2InAso || 0);
             totalStage1AsoVal += (pipeline.stage2InAsoValue || 0);
             totalStage2Admin += (pipeline.stage3AtAdmin || 0);
             totalStage2AdminVal += (pipeline.stage3AtAdminValue || 0);
-            totalStage3L1 += (pipeline.stage4ApproveL1 || 0);
-            totalStage3L1Val += (pipeline.stage4ApproveL1Value || 0);
+            totalStage3SH += (pipeline.stage4ApproveSH || 0);
+            totalStage3SHVal += (pipeline.stage4ApproveSHValue || 0);
+            totalStage3Kacab += (pipeline.stage4ApproveKacab || 0);
+            totalStage3KacabVal += (pipeline.stage4ApproveKacabValue || 0);
             totalStage4RH += (pipeline.stage5RegionalApprove || 0);
             totalStage4RHVal += (pipeline.stage5RegionalApproveValue || 0);
             totalStage5DH += (pipeline.stage6DivisionApprove || 0);
             totalStage5DHVal += (pipeline.stage6DivisionApproveValue || 0);
             totalStage6Inv += (pipeline.stage7Invoice || 0);
             totalStage6InvVal += (pipeline.stage7InvoiceValue || 0);
+            totalStageSudahInv += (pipeline.stageSudahInvoiceBlmBayar || 0);
+            totalStageSudahInvVal += (pipeline.stageSudahInvoiceBlmBayarValue || 0);
             totalLunasTransactions += (pipeline.stage8Lunas || 0);
             totalLunasValue += (pipeline.stage8LunasValue || 0);
+            totalRejectTransactions += (pipeline.stageReject || 0);
+            totalRejectValue += (pipeline.stageRejectValue || 0);
 
             if (pipeline.stage2InAso > 0) totalActiveBottleneckCells++;
             if (pipeline.stage3AtAdmin > 0) totalActiveBottleneckCells++;
-            if (pipeline.stage4ApproveL1 > 0) totalActiveBottleneckCells++;
+            if (pipeline.stage4ApproveSH > 0) totalActiveBottleneckCells++;
+            if (pipeline.stage4ApproveKacab > 0) totalActiveBottleneckCells++;
             if (pipeline.stage5RegionalApprove > 0) totalActiveBottleneckCells++;
             if (pipeline.stage6DivisionApprove > 0) totalActiveBottleneckCells++;
             if (pipeline.stage7Invoice > 0) totalActiveBottleneckCells++;
+            if (pipeline.stageSudahInvoiceBlmBayar > 0) totalActiveBottleneckCells++;
 
             totalPendingSlaTransactions += 
               (pipeline.stage2InAso || 0) +
-              (pipeline.stage3AtAdmin || 0) +
-              (pipeline.stage4ApproveL1 || 0) +
+              (pipeline.stage4ApproveSH || 0) +
+              (pipeline.stage4ApproveKacab || 0) +
               (pipeline.stage5RegionalApprove || 0) +
               (pipeline.stage6DivisionApprove || 0) +
-              (pipeline.stage7Invoice || 0);
+              (pipeline.stage7Invoice || 0) +
+              (pipeline.stageSudahInvoiceBlmBayar || 0);
 
             totalPendingSlaValue +=
               (pipeline.stage2InAsoValue || 0) +
-              (pipeline.stage3AtAdminValue || 0) +
-              (pipeline.stage4ApproveL1Value || 0) +
+              (pipeline.stage4ApproveSHValue || 0) +
+              (pipeline.stage4ApproveKacabValue || 0) +
               (pipeline.stage5RegionalApproveValue || 0) +
               (pipeline.stage6DivisionApproveValue || 0) +
-              (pipeline.stage7InvoiceValue || 0);
+              (pipeline.stage7InvoiceValue || 0) +
+              (pipeline.stageSudahInvoiceBlmBayarValue || 0);
           });
 
           return (
             <div className="space-y-4">
               {/* Summary Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
+                <div 
+                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({}))}
+                  className="bg-slate-50 hover:bg-indigo-50/40 border border-slate-200 hover:border-orange-300 rounded-2xl p-3 flex items-center justify-between cursor-pointer transition-all active:scale-[0.99] group shadow-sm"
+                  title={`Klik untuk melihat semua transaksi terfilter (${totalFilteredTransactions} Transaksi - ${formatRupiah(totalFilteredValue)})`}
+                >
                   <div className="space-y-0.5">
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Total Volume Terfilter</span>
                     <span className="text-sm font-black text-slate-900 block">{totalFilteredTransactions} Transaksi</span>
                     <span className="text-[9px] text-slate-500 font-bold block">{formatRupiah(totalFilteredValue)}</span>
                   </div>
-                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl group-hover:scale-105 transition-transform">
                     <Layers className="w-4 h-4" />
                   </div>
                 </div>
@@ -2577,12 +2597,12 @@ export default function Dashboard({
                 </div>
 
                 <div 
-                  onClick={() => onSelectDashboardFilter?.({ statusPayment: 'Lunas' })}
+                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ statusPayment: 'Lunas' }))}
                   className="bg-slate-50 hover:bg-emerald-50/40 border border-slate-200 hover:border-emerald-300 rounded-2xl p-3 flex items-center justify-between cursor-pointer transition-all active:scale-[0.99] group shadow-sm"
                   title={`Klik untuk melihat transaksi lunas (${totalLunasTransactions} Transaksi - ${formatRupiah(totalLunasValue)})`}
                 >
                   <div className="space-y-0.5">
-                    <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider block">Total Pelunasan (Tahap 7)</span>
+                    <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider block">Total Pelunasan</span>
                     <span className="text-sm font-black text-emerald-700 block">{totalLunasTransactions} Lunas</span>
                     <span className="text-[9px] text-emerald-600/90 font-bold block">
                       {totalLunasTransactions > 0 ? 'Telah Berhasil Dilunasi' : 'Belum Ada Pelunasan'}
@@ -2594,385 +2614,803 @@ export default function Dashboard({
                 </div>
               </div>
 
-              {/* Data Grid / Matrix Table */}
-              <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-sm">
-                <table className="min-w-full divide-y divide-slate-200 text-left border-collapse">
-                  <thead className="bg-slate-50/75 backdrop-blur-sm sticky top-0">
-                    <tr className="divide-x divide-slate-200/50">
-                      <th scope="col" className="px-3.5 py-3 text-left">
-                        <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">Kategori Backcharge</span>
-                        <span className="block text-[7.5px] text-slate-500 font-semibold mt-0.5">Kategori &amp; Volume</span>
-                      </th>
-                      <th scope="col" className="px-3 py-2 text-center min-w-[110px]">
-                        <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">1. Berkas ASO</span>
-                        <span className="inline-block bg-purple-50 text-purple-700 font-black text-[7px] px-1 py-0.2 rounded mt-0.5">ROLE: ASO</span>
-                      </th>
-                      <th scope="col" className="px-3 py-2 text-center min-w-[110px]">
-                        <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">2. Berkas Admin</span>
-                        <span className="inline-block bg-indigo-50 text-indigo-700 font-black text-[7px] px-1 py-0.2 rounded mt-0.5">ROLE: ADMIN</span>
-                      </th>
-                      <th scope="col" className="px-3 py-2 text-center min-w-[115px]">
-                        <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">3. Belum Appr. SH / KACAB</span>
-                        <span className="inline-block bg-amber-50 text-amber-700 font-black text-[7px] px-1 py-0.2 rounded mt-0.5">ROLE: SH / KACAB</span>
-                      </th>
-                      <th scope="col" className="px-3 py-2 text-center min-w-[115px]">
-                        <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">4. Belum Appr. RH</span>
-                        <span className="inline-block bg-orange-50 text-orange-700 font-black text-[7px] px-1 py-0.2 rounded mt-0.5">ROLE: REGIONAL HEAD</span>
-                      </th>
-                      <th scope="col" className="px-3 py-2 text-center min-w-[115px]">
-                        <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">5. Belum Appr. DH</span>
-                        <span className="inline-block bg-rose-50 text-rose-700 font-black text-[7px] px-1 py-0.2 rounded mt-0.5">ROLE: DIVISION HEAD</span>
-                      </th>
-                      <th scope="col" className="px-3 py-2 text-center min-w-[110px]">
-                        <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider">6. Blm Invoice</span>
-                        <span className="inline-block bg-cyan-50 text-cyan-700 font-black text-[7px] px-1 py-0.2 rounded mt-0.5">ROLE: ADMIN</span>
-                      </th>
-                      <th scope="col" className="px-3 py-2 text-center min-w-[115px] bg-emerald-50/40">
-                        <span className="block text-[9px] font-black text-emerald-800 uppercase tracking-wider">7. Total Pelunasan</span>
-                        <span className="inline-block bg-emerald-100 text-emerald-800 font-black text-[7px] px-1 py-0.2 rounded mt-0.5">STATUS: LUNAS</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {filteredCategories.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="px-4 py-8 text-center text-xs font-bold text-slate-400">
-                          Tidak ada kategori backcharge yang sesuai dengan filter pencarian.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredCategories.map((cat) => {
-                        const colors = getCategoryColorClass(cat);
-                        const count = categoryStats[cat]?.count || 0;
-                        const catValue = categoryStats[cat]?.value || 0;
-                        const pipeline = categoryPipelines[cat] || {
-                          stage1Input: 0,
-                          stage1InputValue: 0,
-                          stage2InAso: 0,
-                          stage2InAsoValue: 0,
-                          stage3AtAdmin: 0,
-                          stage3AtAdminValue: 0,
-                          stage4ApproveL1: 0,
-                          stage4ApproveL1Value: 0,
-                          stage5RegionalApprove: 0,
-                          stage5RegionalApproveValue: 0,
-                          stage6DivisionApprove: 0,
-                          stage6DivisionApproveValue: 0,
-                          stage7Invoice: 0,
-                          stage7InvoiceValue: 0,
-                          stage8Lunas: 0,
-                          stage8LunasValue: 0,
-                        };
+              {/* Data Grid / 4-Panel Workflow Pipeline Layout matching reference image */}
+              <div className="bg-[#F4F7F9] p-4 sm:p-5 rounded-3xl shadow-inner border border-slate-200/80">
+                <div className="overflow-x-auto pb-2">
+                  {filteredCategories.length === 0 ? (
+                    <div className="bg-white rounded-2xl border-2 border-dashed border-slate-300 p-8 text-center min-w-[700px]">
+                      <p className="text-xs font-bold text-slate-400">
+                        Tidak ada kategori backcharge yang sesuai dengan filter pencarian.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-stretch gap-2.5 sm:gap-3 min-w-[1400px]">
+                      {/* PANEL 0: KATEGORI BACKCHARGE (Left Panel) */}
+                      <div className="w-[230px] shrink-0 flex flex-col justify-between">
+                        {/* Header */}
+                        <div className="h-[58px] flex flex-col justify-center px-3.5 bg-slate-100/90 rounded-xl border border-slate-200/80">
+                          <span className="block text-[11px] font-black text-slate-800 uppercase tracking-wider">
+                            KATEGORI BACKCHARGE
+                          </span>
+                          <span className="block text-[8.5px] text-slate-500 font-semibold mt-0.5">
+                            Kategori &amp; Volume
+                          </span>
+                        </div>
 
-                        return (
-                          <tr key={cat} className="hover:bg-slate-50/30 divide-x divide-slate-100 transition-colors">
-                            {/* Category Header Cell */}
-                            <td className="px-3.5 py-3 whitespace-nowrap">
-                              <div className="flex items-center space-x-2.5">
-                                <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${colors.bg}`}></span>
-                                <div className="min-w-0">
-                                  <span className="block text-xs font-black text-slate-800 uppercase tracking-wide truncate">{cat}</span>
-                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                    <span className={`inline-block ${colors.lightBg} ${colors.text} px-1.5 py-0.2 rounded-full text-[9px] font-extrabold border ${colors.border}`}>
-                                      {count} Transaksi
+                        {/* Category Rows */}
+                        <div className="flex-1 flex flex-col justify-between py-1 divide-y divide-slate-200/50">
+                          {filteredCategories.map((cat) => {
+                            const colors = getCategoryColorClass(cat);
+                            const count = categoryStats[cat]?.count || 0;
+                            const catValue = categoryStats[cat]?.value || 0;
+
+                            return (
+                              <div
+                                key={cat}
+                                onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat }))}
+                                className="h-[76px] flex flex-col justify-center px-3.5 hover:bg-white/80 rounded-xl transition-all cursor-pointer group"
+                                title={`Klik untuk melihat semua data kategori ${cat}`}
+                              >
+                                <div className="flex items-center space-x-2">
+                                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${colors.bg}`}></span>
+                                  <span className="text-xs font-black text-slate-900 uppercase tracking-wide truncate group-hover:text-indigo-600 transition-colors">
+                                    {cat}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-1.5">
+                                  <span className={`inline-block ${colors.lightBg} ${colors.text} px-1.5 py-0.5 rounded-full text-[9px] font-extrabold border ${colors.border}`}>
+                                    {count} Transaksi
+                                  </span>
+                                  <span className="text-[10px] font-black text-slate-900 truncate">
+                                    {formatRupiah(catValue)}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Footer Total Kategori */}
+                        <div
+                          onClick={() => onSelectDashboardFilter?.(getPipelineFilter({}))}
+                          className="h-[76px] flex flex-col justify-center px-3.5 bg-slate-200/80 border border-slate-300 rounded-xl cursor-pointer hover:bg-slate-300/80 transition-colors"
+                          title="Klik untuk menyaring seluruh data yang terfilter"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-slate-800"></span>
+                            <span className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                              TOTAL SEMUA KATEGORI
+                            </span>
+                            <Layers className="w-3.5 h-3.5 text-slate-700" />
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1.5">
+                            <span className="inline-block bg-slate-800 text-white px-1.5 py-0.5 rounded-full text-[9px] font-extrabold">
+                              {totalFilteredTransactions} Transaksi
+                            </span>
+                            <span className="text-[10px] font-black text-slate-900 truncate">
+                              {formatRupiah(totalFilteredValue)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* PANEL 1: DOCUMENT FLOW & FINAL STATUS (6 Sub-columns in 1 border) */}
+                      <div className="flex-1 min-w-[720px] flex flex-col border-2 border-[#1A1D20] rounded-2xl shadow-md bg-white overflow-hidden">
+                        {/* Dark Header with centered badge and 6 sub-headers */}
+                        <div className="h-[58px] bg-[#1A1D20] text-white flex flex-col justify-between shrink-0">
+                          <div className="flex items-center justify-center pt-1.5 pb-0.5 px-3">
+                            <span className="inline-flex items-center gap-1.5 bg-[#2A2E33] border border-slate-600/80 text-white px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm">
+                              <span>📄</span> DOCUMENT FLOW &amp; FINAL STATUS
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-6 text-center divide-x divide-slate-800/80 pb-1 text-[8px] sm:text-[8.5px] font-black tracking-wider uppercase">
+                            <span className="text-rose-300">1. BERKAS ASO</span>
+                            <span className="text-orange-300">2. BERKAS ADMIN</span>
+                            <span className="text-teal-300">3. BLM INVOICE</span>
+                            <span className="text-blue-300">4. INV. BLUM BAYAR</span>
+                            <span className="text-emerald-400">5. REALISASI LUNAS</span>
+                            <span className="text-rose-400">6. REJECT DOKUMEN</span>
+                          </div>
+                        </div>
+
+                        {/* Rows */}
+                        <div className="flex-1 flex flex-col justify-between py-1 divide-y divide-slate-100">
+                          {filteredCategories.map((cat) => {
+                            const pipeline = categoryPipelines[cat] || {
+                              stage2InAso: 0,
+                              stage2InAsoValue: 0,
+                              stage3AtAdmin: 0,
+                              stage3AtAdminValue: 0,
+                              stage7Invoice: 0,
+                              stage7InvoiceValue: 0,
+                              stageSudahInvoiceBlmBayar: 0,
+                              stageSudahInvoiceBlmBayarValue: 0,
+                              stage8Lunas: 0,
+                              stage8LunasValue: 0,
+                              stageReject: 0,
+                              stageRejectValue: 0,
+                            };
+
+                            return (
+                              <div key={cat} className="h-[76px] grid grid-cols-6 gap-1.5 p-1.5">
+                                {/* 1. Berkas ASO */}
+                                <div
+                                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat, stage: '1_handover' }))}
+                                  className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                                    pipeline.stage2InAso > 0
+                                      ? 'bg-[#FFF0F3] border-[#FED7DE] hover:border-rose-300 shadow-2xs'
+                                      : 'bg-slate-50/60 border-slate-200/60 opacity-60 hover:opacity-100'
+                                  }`}
+                                  title={`Klik untuk menyaring kategori ${cat} fisik di ASO (${formatRupiah(pipeline.stage2InAsoValue || 0)})`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[7.5px] font-black text-rose-700 uppercase tracking-wider truncate">BERKAS ASO</span>
+                                    <Info className="w-2.5 h-2.5 text-rose-400 opacity-70 shrink-0" />
+                                  </div>
+                                  <div className="flex items-baseline justify-between mt-0.5">
+                                    <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-none">
+                                      {pipeline.stage2InAso}
                                     </span>
-                                    <span className="text-[10px] font-extrabold text-slate-600 truncate">
-                                      {formatRupiah(catValue)}
+                                    {pipeline.stage2InAso > 0 && (
+                                      <span className="text-[6.5px] font-black bg-[#FFE2E7] text-rose-800 px-1 py-0.2 rounded uppercase tracking-wider">
+                                        Pending
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-0.5 pt-0.5 border-t border-rose-200/60 flex items-center justify-between">
+                                    <span className="text-[8.5px] font-black text-slate-800 tracking-tight truncate">
+                                      {formatRupiah(pipeline.stage2InAsoValue || 0)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                 {/* 2. Berkas Admin */}
+                                <div
+                                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat, stage: '2_confirm' }))}
+                                  className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                                    pipeline.stage3AtAdmin > 0
+                                      ? 'bg-[#FFF7ED] border-orange-200 hover:border-orange-300 shadow-2xs'
+                                      : 'bg-slate-50/60 border-slate-200/60 opacity-60 hover:opacity-100'
+                                  }`}
+                                  title={`Klik untuk menyaring kategori ${cat} di Admin (${formatRupiah(pipeline.stage3AtAdminValue || 0)})`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[7.5px] font-black text-orange-700 uppercase tracking-wider truncate">BERKAS ADMIN</span>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0"></span>
+                                  </div>
+                                  <div className="flex items-baseline justify-between mt-0.5">
+                                    <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-none">
+                                      {pipeline.stage3AtAdmin}
+                                    </span>
+                                    {pipeline.stage3AtAdmin > 0 && (
+                                      <span className="text-[6.5px] font-black bg-orange-100 text-orange-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                        Proses
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-0.5 pt-0.5 border-t border-orange-200/60 flex items-center justify-between">
+                                    <span className="text-[8.5px] font-black text-slate-800 tracking-tight truncate">
+                                      {formatRupiah(pipeline.stage3AtAdminValue || 0)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* 3. Blm Invoice */}
+                                <div
+                                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat, stage: '4_invoice' }))}
+                                  className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                                    pipeline.stage7Invoice > 0
+                                      ? 'bg-[#E6F9F6] border-[#BEEFE8] hover:border-teal-300 shadow-2xs'
+                                      : 'bg-slate-50/60 border-slate-200/60 opacity-60 hover:opacity-100'
+                                  }`}
+                                  title={`Klik untuk menyaring kategori ${cat} Belum Cetak Invoice (${formatRupiah(pipeline.stage7InvoiceValue || 0)})`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[7.5px] font-black text-teal-700 uppercase tracking-wider truncate">BLM INVOICE</span>
+                                    <Info className="w-2.5 h-2.5 text-teal-400 opacity-70 shrink-0" />
+                                  </div>
+                                  <div className="flex items-baseline justify-between mt-0.5">
+                                    <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-none">
+                                      {pipeline.stage7Invoice}
+                                    </span>
+                                    {pipeline.stage7Invoice > 0 && (
+                                      <span className="text-[6.5px] font-black bg-[#CEF5EE] text-teal-800 px-1 py-0.2 rounded uppercase tracking-wider">
+                                        Proses
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-0.5 pt-0.5 border-t border-teal-200/60 flex items-center justify-between">
+                                    <span className="text-[8.5px] font-black text-slate-800 tracking-tight truncate">
+                                      {formatRupiah(pipeline.stage7InvoiceValue || 0)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* 4. INV. BLUM BAYAR */}
+                                <div
+                                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat, stage: '5_payment' }))}
+                                  className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                                    pipeline.stageSudahInvoiceBlmBayar > 0
+                                      ? 'bg-[#EFF6FF] border-[#BFDBFE] hover:border-blue-300 shadow-2xs'
+                                      : 'bg-slate-50/60 border-slate-200/60 opacity-60 hover:opacity-100'
+                                  }`}
+                                  title={`Klik untuk menyaring kategori ${cat} Sudah Invoice tapi Belum Bayar (${formatRupiah(pipeline.stageSudahInvoiceBlmBayarValue || 0)})`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[7.5px] font-black text-blue-700 uppercase tracking-wider truncate">INV B. BAYAR</span>
+                                    <Info className="w-2.5 h-2.5 text-blue-400 opacity-70 shrink-0" />
+                                  </div>
+                                  <div className="flex items-baseline justify-between mt-0.5">
+                                    <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-none">
+                                      {Number.isFinite(pipeline.stageSudahInvoiceBlmBayar) ? pipeline.stageSudahInvoiceBlmBayar : 0}
+                                    </span>
+                                    {pipeline.stageSudahInvoiceBlmBayar > 0 && (
+                                      <span className="text-[6.5px] font-black bg-[#DBEAFE] text-blue-800 px-1 py-0.2 rounded uppercase tracking-wider">
+                                        Pending
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-0.5 pt-0.5 border-t border-blue-200/60 flex items-center justify-between">
+                                    <span className="text-[8.5px] font-black text-slate-800 tracking-tight truncate">
+                                      {formatRupiah(Number.isFinite(pipeline.stageSudahInvoiceBlmBayarValue) ? pipeline.stageSudahInvoiceBlmBayarValue : 0)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* 5. Realisasi Lunas */}
+                                <div
+                                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat, statusPayment: 'Lunas' }))}
+                                  className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                                    pipeline.stage8Lunas > 0
+                                      ? 'bg-[#ECFDF5] border-[#A7F3D0] hover:border-emerald-300 shadow-2xs'
+                                      : 'bg-slate-50/60 border-slate-200/60 opacity-60 hover:opacity-100'
+                                  }`}
+                                  title={`Klik untuk menyaring kategori ${cat} yang sudah Lunas (${pipeline.stage8Lunas} Transaksi - ${formatRupiah(pipeline.stage8LunasValue || 0)})`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[7.5px] font-black text-emerald-800 uppercase tracking-wider truncate">LUNAS</span>
+                                    <CheckCircle className="w-2.5 h-2.5 text-emerald-500 opacity-70 shrink-0" />
+                                  </div>
+                                  <div className="flex items-baseline justify-between mt-0.5">
+                                    <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-none">
+                                      {pipeline.stage8Lunas}
+                                    </span>
+                                    <span className={`text-[6.5px] font-black px-1 py-0.2 rounded uppercase tracking-wider ${
+                                      pipeline.stage8Lunas > 0 ? 'bg-[#D1FAE5] text-emerald-900' : 'bg-slate-100 text-slate-500'
+                                    }`}>
+                                      {pipeline.stage8Lunas > 0 ? 'Lunas' : 'Nihil'}
+                                    </span>
+                                  </div>
+                                  <div className="mt-0.5 pt-0.5 border-t border-emerald-200/60 flex items-center justify-between">
+                                    <span className="text-[8.5px] font-black text-slate-800 tracking-tight truncate">
+                                      {pipeline.stage8Lunas > 0 ? formatRupiah(pipeline.stage8LunasValue || 0) : 'Rp 0'}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* 6. Reject Dokumen */}
+                                <div
+                                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat, stage: '6_reject' }))}
+                                  className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                                    pipeline.stageReject > 0
+                                      ? 'bg-[#FFF1F2] border-[#FECDD3] hover:border-rose-300 shadow-2xs'
+                                      : 'bg-slate-50/60 border-slate-200/60 opacity-60 hover:opacity-100'
+                                  }`}
+                                  title={`Klik untuk menyaring kategori ${cat} yang Dokumen Ditolak/Reject (${pipeline.stageReject} Transaksi - ${formatRupiah(pipeline.stageRejectValue || 0)})`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[7.5px] font-black text-rose-800 uppercase tracking-wider truncate">REJECT</span>
+                                    <AlertCircle className="w-2.5 h-2.5 text-rose-500 opacity-70 shrink-0" />
+                                  </div>
+                                  <div className="flex items-baseline justify-between mt-0.5">
+                                    <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-none">
+                                      {pipeline.stageReject}
+                                    </span>
+                                    <span className={`text-[6.5px] font-black px-1 py-0.2 rounded uppercase tracking-wider ${
+                                      pipeline.stageReject > 0 ? 'bg-rose-200 text-rose-900' : 'bg-slate-100 text-slate-500'
+                                    }`}>
+                                      {pipeline.stageReject > 0 ? 'Ditolak' : 'Nihil'}
+                                    </span>
+                                  </div>
+                                  <div className="mt-0.5 pt-0.5 border-t border-rose-200/60 flex items-center justify-between">
+                                    <span className="text-[8.5px] font-black text-slate-800 tracking-tight truncate">
+                                      {pipeline.stageReject > 0 ? formatRupiah(pipeline.stageRejectValue || 0) : 'Rp 0'}
                                     </span>
                                   </div>
                                 </div>
                               </div>
-                            </td>
-
-                            {/* 1. Berkas ASO (Flow 1) */}
-                            <td className="p-1">
-                              <div 
-                                onClick={() => onSelectDashboardFilter?.({ category: cat, stage: '1_handover' })}
-                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
-                                  pipeline.stage2InAso > 0 
-                                    ? 'bg-rose-50 hover:bg-rose-100/70 border border-rose-200 hover:border-rose-400 shadow-sm' 
-                                    : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
-                                }`}
-                                title={`Klik untuk menyaring kategori ${cat} fisik di ASO (${formatRupiah(pipeline.stage2InAsoValue || 0)})`}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <span className="text-[8px] font-black text-rose-500 uppercase">Berkas ASO</span>
-                                  {pipeline.stage2InAso > 0 && <AlertCircle className="w-2.5 h-2.5 text-rose-500 animate-pulse" />}
-                                </div>
-                                <div className="flex items-baseline justify-between mt-0.5">
-                                  <span className={`text-base font-black ${pipeline.stage2InAso > 0 ? 'text-rose-950' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                    {pipeline.stage2InAso}
-                                  </span>
-                                  {pipeline.stage2InAso > 0 && (
-                                    <span className="text-[7px] font-black bg-rose-100 text-rose-800 px-1 py-0.2 rounded uppercase">
-                                      Pending
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="mt-1 pt-1 border-t border-rose-100/80 flex items-center justify-between">
-                                  <span className={`text-[9px] font-extrabold truncate ${pipeline.stage2InAso > 0 ? 'text-rose-700' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                    {formatRupiah(pipeline.stage2InAsoValue || 0)}
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* 2. Berkas Admin (Flow 2) */}
-                            <td className="p-1">
-                              <div 
-                                onClick={() => onSelectDashboardFilter?.({ category: cat, stage: '2_confirm' })}
-                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
-                                  pipeline.stage3AtAdmin > 0 
-                                    ? 'bg-indigo-50/55 hover:bg-indigo-100/50 border border-indigo-200 hover:border-indigo-400 shadow-sm' 
-                                    : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
-                                }`}
-                                title={`Klik untuk menyaring kategori ${cat} di Admin (${formatRupiah(pipeline.stage3AtAdminValue || 0)})`}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <span className="text-[8px] font-black text-indigo-500 uppercase">Berkas Admin</span>
-                                  {pipeline.stage3AtAdmin > 0 && <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span>}
-                                </div>
-                                <div className="flex items-baseline justify-between mt-0.5">
-                                  <span className={`text-base font-black ${pipeline.stage3AtAdmin > 0 ? 'text-indigo-950' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                    {pipeline.stage3AtAdmin}
-                                  </span>
-                                  {pipeline.stage3AtAdmin > 0 && (
-                                    <span className="text-[7px] font-black bg-indigo-100 text-indigo-800 px-1 py-0.2 rounded uppercase">
-                                      Proses
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="mt-1 pt-1 border-t border-indigo-100/80 flex items-center justify-between">
-                                  <span className={`text-[9px] font-extrabold truncate ${pipeline.stage3AtAdmin > 0 ? 'text-indigo-700' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                    {formatRupiah(pipeline.stage3AtAdminValue || 0)}
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* 3. Belum Approve BM/Kacab (Flow 3) */}
-                            <td className="p-1">
-                              <div 
-                                onClick={() => onSelectDashboardFilter?.({ category: cat, stage: '3_sap_l1' })}
-                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
-                                  pipeline.stage4ApproveL1 > 0 
-                                    ? 'bg-amber-50 hover:bg-amber-100/50 border border-amber-200 hover:border-amber-400 shadow-sm' 
-                                    : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
-                                }`}
-                                title={`Klik untuk menyaring kategori ${cat} Belum Approve L1 (${formatRupiah(pipeline.stage4ApproveL1Value || 0)})`}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <span className="text-[8px] font-black text-amber-500 uppercase">Belum Appr. SH/Kacab</span>
-                                  {pipeline.stage4ApproveL1 > 0 && <Clock className="w-2.5 h-2.5 text-amber-500 animate-pulse" />}
-                                </div>
-                                <div className="flex items-baseline justify-between mt-0.5">
-                                  <span className={`text-base font-black ${pipeline.stage4ApproveL1 > 0 ? 'text-amber-950' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                    {pipeline.stage4ApproveL1}
-                                  </span>
-                                  {pipeline.stage4ApproveL1 > 0 && (
-                                    <span className="text-[7px] font-black bg-amber-100 text-amber-800 px-1 py-0.2 rounded uppercase">
-                                      Pending
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="mt-1 pt-1 border-t border-amber-100/80 flex items-center justify-between">
-                                  <span className={`text-[9px] font-extrabold truncate ${pipeline.stage4ApproveL1 > 0 ? 'text-amber-700' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                    {formatRupiah(pipeline.stage4ApproveL1Value || 0)}
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* 4. Belum Approve RH (Flow 4) */}
-                            <td className="p-1">
-                              <div 
-                                onClick={() => onSelectDashboardFilter?.({ category: cat, stage: '3_sap_rh' })}
-                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
-                                  pipeline.stage5RegionalApprove > 0 
-                                    ? 'bg-orange-50 hover:bg-orange-100/50 border border-orange-200 hover:border-orange-400 shadow-sm' 
-                                    : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
-                                }`}
-                                title={`Klik untuk menyaring kategori ${cat} Belum Approve Regional Head (${formatRupiah(pipeline.stage5RegionalApproveValue || 0)})`}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <span className="text-[8px] font-black text-orange-500 uppercase font-sans">Belum Appr. RH</span>
-                                  {pipeline.stage5RegionalApprove > 0 && <Clock className="w-2.5 h-2.5 text-orange-500 animate-pulse" />}
-                                </div>
-                                <div className="flex items-baseline justify-between mt-0.5">
-                                  <span className={`text-base font-black ${pipeline.stage5RegionalApprove > 0 ? 'text-orange-950' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                    {pipeline.stage5RegionalApprove}
-                                  </span>
-                                  {pipeline.stage5RegionalApprove > 0 && (
-                                    <span className="text-[7px] font-black bg-orange-100 text-orange-800 px-1 py-0.2 rounded uppercase">
-                                      Pending
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="mt-1 pt-1 border-t border-orange-100/80 flex items-center justify-between">
-                                  <span className={`text-[9px] font-extrabold truncate ${pipeline.stage5RegionalApprove > 0 ? 'text-orange-700' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                    {formatRupiah(pipeline.stage5RegionalApproveValue || 0)}
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* 5. Belum Approve DH (Flow 5) */}
-                            <td className="p-1">
-                              <div 
-                                onClick={() => onSelectDashboardFilter?.({ category: cat, stage: '3_sap_dh' })}
-                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
-                                  pipeline.stage6DivisionApprove > 0 
-                                    ? 'bg-rose-50 hover:bg-rose-100/50 border border-rose-200 hover:border-rose-400 shadow-sm' 
-                                    : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
-                                }`}
-                                title={`Klik untuk menyaring kategori ${cat} Belum Approve Division Head (${formatRupiah(pipeline.stage6DivisionApproveValue || 0)})`}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <span className="text-[8px] font-black text-rose-500 uppercase font-sans">Belum Appr. DH</span>
-                                  {pipeline.stage6DivisionApprove > 0 && <Clock className="w-2.5 h-2.5 text-rose-500 animate-pulse" />}
-                                </div>
-                                <div className="flex items-baseline justify-between mt-0.5">
-                                  <span className={`text-base font-black ${pipeline.stage6DivisionApprove > 0 ? 'text-rose-950' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                    {pipeline.stage6DivisionApprove}
-                                  </span>
-                                  {pipeline.stage6DivisionApprove > 0 && (
-                                    <span className="text-[7px] font-black bg-rose-100 text-rose-800 px-1 py-0.2 rounded uppercase">
-                                      Pending
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="mt-1 pt-1 border-t border-rose-100/80 flex items-center justify-between">
-                                  <span className={`text-[9px] font-extrabold truncate ${pipeline.stage6DivisionApprove > 0 ? 'text-rose-700' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                    {formatRupiah(pipeline.stage6DivisionApproveValue || 0)}
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* 6. Belum Cetak Invoice (Flow 6) */}
-                            <td className="p-1">
-                              <div 
-                                onClick={() => onSelectDashboardFilter?.({ category: cat, stage: '4_invoice' })}
-                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
-                                  pipeline.stage7Invoice > 0 
-                                    ? 'bg-cyan-50 hover:bg-cyan-100/50 border border-cyan-200 hover:border-cyan-400 shadow-sm' 
-                                    : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
-                                }`}
-                                title={`Klik untuk menyaring kategori ${cat} Belum Cetak Invoice (${formatRupiah(pipeline.stage7InvoiceValue || 0)})`}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <span className="text-[8px] font-black text-cyan-500 uppercase font-sans">Blm Invoice</span>
-                                  {pipeline.stage7Invoice > 0 && <AlertCircle className="w-2.5 h-2.5 text-cyan-500 animate-pulse" />}
-                                </div>
-                                <div className="flex items-baseline justify-between mt-0.5">
-                                  <span className={`text-base font-black ${pipeline.stage7Invoice > 0 ? 'text-cyan-950' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                    {pipeline.stage7Invoice}
-                                  </span>
-                                  {pipeline.stage7Invoice > 0 && (
-                                    <span className="text-[7px] font-black bg-cyan-100 text-cyan-800 px-1 py-0.2 rounded uppercase">
-                                      Pending
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="mt-1 pt-1 border-t border-cyan-100/80 flex items-center justify-between">
-                                  <span className={`text-[9px] font-extrabold truncate ${pipeline.stage7Invoice > 0 ? 'text-cyan-700' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                    {formatRupiah(pipeline.stage7InvoiceValue || 0)}
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* 7. Total Pelunasan (Flow 7 / Tahap 7) */}
-                            <td className="p-1 bg-emerald-50/15">
-                              <div 
-                                onClick={() => onSelectDashboardFilter?.({ category: cat, statusPayment: 'Lunas' })}
-                                className={`group h-full min-h-[64px] rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all ${
-                                  pipeline.stage8Lunas > 0 
-                                    ? 'bg-emerald-50 hover:bg-emerald-100/70 border border-emerald-200 hover:border-emerald-400 shadow-sm' 
-                                    : 'opacity-40 hover:opacity-100 hover:bg-slate-50 border border-transparent'
-                                }`}
-                                title={`Klik untuk menyaring kategori ${cat} yang sudah Lunas (${pipeline.stage8Lunas} Transaksi - ${formatRupiah(pipeline.stage8LunasValue || 0)})`}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <span className="text-[8px] font-black text-emerald-600 uppercase font-sans">Total Pelunasan</span>
-                                  {pipeline.stage8Lunas > 0 && <CheckCircle className="w-2.5 h-2.5 text-emerald-600" />}
-                                </div>
-                                <div className="flex items-baseline justify-between mt-0.5">
-                                  <span className={`text-base font-black ${pipeline.stage8Lunas > 0 ? 'text-emerald-950' : 'text-slate-300 group-hover:text-slate-400'}`}>
-                                    {pipeline.stage8Lunas}
-                                  </span>
-                                  {pipeline.stage8Lunas > 0 && (
-                                    <span className="text-[7px] font-black bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded uppercase">
-                                      Lunas
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="mt-1 pt-1 border-t border-emerald-100/80 flex items-center justify-between">
-                                  <span 
-                                    className={`text-[9px] font-extrabold truncate ${pipeline.stage8Lunas > 0 ? 'text-emerald-700' : 'text-slate-300 group-hover:text-slate-400'}`}
-                                    title={`Total Lunas: ${formatRupiah(pipeline.stage8LunasValue || 0)}`}
-                                  >
-                                    {pipeline.stage8Lunas > 0 ? 'Telah Lunas' : 'Belum Ada'}
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                  <tfoot className="bg-slate-50 font-black border-t-2 border-slate-300">
-                    <tr className="divide-x divide-slate-200">
-                      <td className="px-3.5 py-3 text-slate-800 text-xs uppercase">
-                        <span className="block font-black text-slate-900">Total Seluruh Kategori</span>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold">
-                            {totalFilteredTransactions} Transaksi
-                          </span>
-                          <span className="text-[10px] font-extrabold text-slate-700 truncate">
-                            {formatRupiah(totalFilteredValue)}
-                          </span>
+                            );
+                          })}
                         </div>
-                      </td>
-                      <td className="p-1.5 text-center bg-rose-50/20">
-                        <span className="text-sm font-black text-rose-950 block">{totalStage1Aso}</span>
-                        <span className="text-[8px] font-bold text-rose-700 block truncate">{formatRupiah(totalStage1AsoVal)}</span>
-                      </td>
-                      <td className="p-1.5 text-center bg-indigo-50/20">
-                        <span className="text-sm font-black text-indigo-950 block">{totalStage2Admin}</span>
-                        <span className="text-[8px] font-bold text-indigo-700 block truncate">{formatRupiah(totalStage2AdminVal)}</span>
-                      </td>
-                      <td className="p-1.5 text-center bg-amber-50/20">
-                        <span className="text-sm font-black text-amber-950 block">{totalStage3L1}</span>
-                        <span className="text-[8px] font-bold text-amber-700 block truncate">{formatRupiah(totalStage3L1Val)}</span>
-                      </td>
-                      <td className="p-1.5 text-center bg-orange-50/20">
-                        <span className="text-sm font-black text-orange-950 block">{totalStage4RH}</span>
-                        <span className="text-[8px] font-bold text-orange-700 block truncate">{formatRupiah(totalStage4RHVal)}</span>
-                      </td>
-                      <td className="p-1.5 text-center bg-rose-50/20">
-                        <span className="text-sm font-black text-rose-950 block">{totalStage5DH}</span>
-                        <span className="text-[8px] font-bold text-rose-700 block truncate">{formatRupiah(totalStage5DHVal)}</span>
-                      </td>
-                      <td className="p-1.5 text-center bg-cyan-50/20">
-                        <span className="text-sm font-black text-cyan-950 block">{totalStage6Inv}</span>
-                        <span className="text-[8px] font-bold text-cyan-700 block truncate">{formatRupiah(totalStage6InvVal)}</span>
-                      </td>
-                      <td className="p-1.5 text-center bg-emerald-100/50">
-                        <span className="text-sm font-black text-emerald-950 block">{totalLunasTransactions}</span>
-                        <span className="text-[8px] font-black text-emerald-800 block truncate" title={`Total Lunas: ${formatRupiah(totalLunasValue)}`}>
-                          {totalLunasTransactions > 0 ? 'Telah Lunas' : '-'}
-                        </span>
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
+
+                        {/* Footer Totals */}
+                        <div className="h-[76px] grid grid-cols-6 gap-1.5 p-1.5 bg-slate-50/90 border-t-2 border-slate-200 shrink-0">
+                          {/* Total ASO */}
+                          <div
+                            onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ stage: '1_handover' }))}
+                            className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                              totalStage1Aso > 0
+                                ? 'bg-rose-100/80 border-rose-300 hover:border-rose-400 shadow-2xs'
+                                : 'bg-slate-50/60 border-slate-200/60 opacity-60'
+                            }`}
+                            title={`Klik untuk menyaring seluruh Berkas ASO (${formatRupiah(totalStage1AsoVal)})`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[7.5px] font-black text-rose-800 uppercase tracking-wider truncate">TOTAL ASO</span>
+                              <Info className="w-2.5 h-2.5 text-rose-500 opacity-80 shrink-0" />
+                            </div>
+                            <div className="flex items-baseline justify-between mt-0.5">
+                              <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-none">
+                                {totalStage1Aso}
+                              </span>
+                              {totalStage1Aso > 0 && (
+                                <span className="text-[6.5px] font-black bg-rose-200 text-rose-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                  Pending
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 pt-0.5 border-t border-rose-200 flex items-center justify-between">
+                              <span className="text-[8.5px] font-black text-slate-900 tracking-tight truncate">
+                                {formatRupiah(totalStage1AsoVal)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Total Admin */}
+                          <div
+                            onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ stage: '2_confirm' }))}
+                            className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                              totalStage2Admin > 0
+                                ? 'bg-orange-100/80 border-orange-300 hover:border-orange-400 shadow-2xs'
+                                : 'bg-slate-50/60 border-slate-200/60 opacity-60'
+                            }`}
+                            title={`Klik untuk menyaring seluruh Berkas Admin (${formatRupiah(totalStage2AdminVal)})`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[7.5px] font-black text-orange-800 uppercase tracking-wider truncate">TOTAL ADMIN</span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-orange-600 shrink-0"></span>
+                            </div>
+                            <div className="flex items-baseline justify-between mt-0.5">
+                              <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-none">
+                                {totalStage2Admin}
+                              </span>
+                              {totalStage2Admin > 0 && (
+                                <span className="text-[6.5px] font-black bg-orange-200 text-indigo-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                  Proses
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 pt-0.5 border-t border-orange-200 flex items-center justify-between">
+                              <span className="text-[8.5px] font-black text-slate-900 tracking-tight truncate">
+                                {formatRupiah(totalStage2AdminVal)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Total Blm Inv */}
+                          <div
+                            onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ stage: '4_invoice' }))}
+                            className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                              totalStage6Inv > 0
+                                ? 'bg-teal-100/80 border-teal-300 hover:border-teal-400 shadow-2xs'
+                                : 'bg-slate-50/60 border-slate-200/60 opacity-60'
+                            }`}
+                            title={`Klik untuk menyaring seluruh Belum Invoice (${formatRupiah(totalStage6InvVal)})`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[7.5px] font-black text-teal-800 uppercase tracking-wider truncate">TOTAL BLM INV</span>
+                              <Info className="w-2.5 h-2.5 text-teal-500 opacity-80 shrink-0" />
+                            </div>
+                            <div className="flex items-baseline justify-between mt-0.5">
+                              <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-none">
+                                {totalStage6Inv}
+                              </span>
+                              {totalStage6Inv > 0 && (
+                                <span className="text-[6.5px] font-black bg-teal-200 text-teal-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                  Proses
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 pt-0.5 border-t border-teal-200 flex items-center justify-between">
+                              <span className="text-[8.5px] font-black text-slate-900 tracking-tight truncate">
+                                {formatRupiah(totalStage6InvVal)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Total Inv B. Bayar */}
+                          <div
+                            onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ stage: '5_payment' }))}
+                            className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                              totalStageSudahInv > 0
+                                ? 'bg-blue-100/80 border-blue-300 hover:border-blue-400 shadow-2xs'
+                                : 'bg-slate-50/60 border-slate-200/60 opacity-60'
+                            }`}
+                            title={`Klik untuk menyaring seluruh Belum Lunas Backcharge (${formatRupiah(totalStageSudahInvVal)})`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[7.5px] font-black text-blue-800 uppercase tracking-wider truncate">TOTAL B. BAYAR</span>
+                              <Info className="w-2.5 h-2.5 text-blue-500 opacity-80 shrink-0" />
+                            </div>
+                            <div className="flex items-baseline justify-between mt-0.5">
+                              <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-none">
+                                {totalStageSudahInv}
+                              </span>
+                              {totalStageSudahInv > 0 && (
+                                <span className="text-[6.5px] font-black bg-blue-200 text-blue-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                  Pending
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 pt-0.5 border-t border-blue-200 flex items-center justify-between">
+                              <span className="text-[8.5px] font-black text-slate-900 tracking-tight truncate">
+                                {formatRupiah(totalStageSudahInvVal)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Total Lunas */}
+                          <div
+                            onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ statusPayment: 'Lunas' }))}
+                            className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                              totalLunasTransactions > 0
+                                ? 'bg-emerald-100/80 border-emerald-300 hover:border-emerald-400 shadow-2xs'
+                                : 'bg-slate-50/60 border-slate-200/60 opacity-60'
+                            }`}
+                            title={`Klik untuk menyaring seluruh Transaksi Lunas (${formatRupiah(totalLunasValue)})`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[7.5px] font-black text-emerald-800 uppercase tracking-wider truncate">TOTAL LUNAS</span>
+                              <CheckCircle className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                            </div>
+                            <div className="flex items-baseline justify-between mt-0.5">
+                              <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-none">
+                                {totalLunasTransactions}
+                              </span>
+                              {totalLunasTransactions > 0 && (
+                                <span className="text-[6.5px] font-black bg-emerald-200 text-emerald-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                  Lunas
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 pt-0.5 border-t border-emerald-200 flex items-center justify-between">
+                              <span className="text-[8.5px] font-black text-slate-900 tracking-tight truncate">
+                                {formatRupiah(totalLunasValue)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Total Reject */}
+                          <div
+                            onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ stage: '6_reject' }))}
+                            className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                              totalRejectTransactions > 0
+                                ? 'bg-rose-100/80 border-rose-300 hover:border-rose-400 shadow-2xs'
+                                : 'bg-slate-50/60 border-slate-200/60 opacity-60'
+                            }`}
+                            title={`Klik untuk menyaring seluruh Transaksi Dokumen Ditolak/Reject (${formatRupiah(totalRejectValue)})`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[7.5px] font-black text-rose-800 uppercase tracking-wider truncate">TOTAL REJECT</span>
+                              <AlertCircle className="w-2.5 h-2.5 text-rose-600 shrink-0" />
+                            </div>
+                            <div className="flex items-baseline justify-between mt-0.5">
+                              <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-none">
+                                {totalRejectTransactions}
+                              </span>
+                              {totalRejectTransactions > 0 && (
+                                <span className="text-[6.5px] font-black bg-rose-200 text-rose-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                  Ditolak
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 pt-0.5 border-t border-rose-200 flex items-center justify-between">
+                              <span className="text-[8.5px] font-black text-slate-900 tracking-tight truncate">
+                                {formatRupiah(totalRejectValue)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* PANEL 2: APPROVAL (4 Sub-columns) */}
+                      <div className="flex-1 min-w-[460px] flex flex-col border-2 border-[#1A1D20] rounded-2xl shadow-md bg-white overflow-hidden">
+                        {/* Dark Header with centered badge and 4 sub-headers */}
+                        <div className="h-[58px] bg-[#1A1D20] text-white flex flex-col justify-between shrink-0">
+                          <div className="flex items-center justify-center pt-1.5 pb-0.5 px-3">
+                            <span className="inline-flex items-center gap-1.5 bg-[#2A2E33] border border-slate-600/80 text-orange-300 px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm">
+                              <span>☑️</span> APPROVAL FLOW BERJENJANG ATAS BERKAS DI ADMIN
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-4 text-center divide-x divide-slate-800/80 pb-1 text-[8.5px] font-black tracking-wider uppercase">
+                            <span className="text-orange-300">2.1 BELUM APPR. SH</span>
+                            <span className="text-orange-300">2.2 BELUM APPR. KACAB</span>
+                            <span className="text-orange-300">2.3 BELUM APPR. RH</span>
+                            <span className="text-orange-300">2.4 BELUM APPR. DH</span>
+                          </div>
+                        </div>
+
+                        {/* Rows */}
+                        <div className="flex-1 flex flex-col justify-between py-1 divide-y divide-slate-100">
+                          {filteredCategories.map((cat) => {
+                            const pipeline = categoryPipelines[cat] || {
+                              stage4ApproveSH: 0,
+                              stage4ApproveSHValue: 0,
+                              stage4ApproveKacab: 0,
+                              stage4ApproveKacabValue: 0,
+                              stage5RegionalApprove: 0,
+                              stage5RegionalApproveValue: 0,
+                              stage6DivisionApprove: 0,
+                              stage6DivisionApproveValue: 0,
+                            };
+
+                            return (
+                              <div key={cat} className="h-[76px] grid grid-cols-4 gap-1.5 p-1.5">
+                                 {/* 1. Belum Appr. SH */}
+                                <div
+                                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat, stage: '3_sap_sh' }))}
+                                  className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                                    pipeline.stage4ApproveSH > 0
+                                      ? 'bg-[#FFF7ED] border-orange-200 hover:border-orange-300 shadow-2xs'
+                                      : 'bg-slate-50/60 border-slate-200/60 opacity-60 hover:opacity-100'
+                                  }`}
+                                  title={`Klik untuk menyaring kategori ${cat} Belum Approve SH (${formatRupiah(pipeline.stage4ApproveSHValue || 0)})`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[8px] font-black text-orange-700 uppercase tracking-wider">BELUM APPR. SH</span>
+                                    <Info className="w-2.5 h-2.5 text-orange-400 opacity-70" />
+                                  </div>
+                                  <div className="flex items-baseline justify-between mt-0.5">
+                                    <span className="text-base font-black text-slate-900 tracking-tight leading-none">
+                                      {pipeline.stage4ApproveSH}
+                                    </span>
+                                    {pipeline.stage4ApproveSH > 0 && (
+                                      <span className="text-[7px] font-black bg-orange-100 text-orange-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                        Pending
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-0.5 pt-0.5 border-t border-orange-200/60 flex items-center justify-between">
+                                    <span className="text-[9px] font-black text-slate-800 tracking-tight truncate">
+                                      {formatRupiah(pipeline.stage4ApproveSHValue || 0)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* 2. Belum Appr. Kacab */}
+                                <div
+                                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat, stage: '3_sap_kacab' }))}
+                                  className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                                    pipeline.stage4ApproveKacab > 0
+                                      ? 'bg-[#FFF7ED] border-orange-200 hover:border-orange-300 shadow-2xs'
+                                      : 'bg-slate-50/60 border-slate-200/60 opacity-60 hover:opacity-100'
+                                  }`}
+                                  title={`Klik untuk menyaring kategori ${cat} Belum Approve Kacab (${formatRupiah(pipeline.stage4ApproveKacabValue || 0)})`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[8px] font-black text-orange-700 uppercase tracking-wider">BELUM APPR. KACAB</span>
+                                    <Info className="w-2.5 h-2.5 text-orange-400 opacity-70" />
+                                  </div>
+                                  <div className="flex items-baseline justify-between mt-0.5">
+                                    <span className="text-base font-black text-slate-900 tracking-tight leading-none">
+                                      {pipeline.stage4ApproveKacab}
+                                    </span>
+                                    {pipeline.stage4ApproveKacab > 0 && (
+                                      <span className="text-[7px] font-black bg-orange-100 text-orange-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                        Pending
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-0.5 pt-0.5 border-t border-orange-200/60 flex items-center justify-between">
+                                    <span className="text-[9px] font-black text-slate-800 tracking-tight truncate">
+                                      {formatRupiah(pipeline.stage4ApproveKacabValue || 0)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* 3. Belum Appr. RH */}
+                                <div
+                                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat, stage: '3_sap_rh' }))}
+                                  className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                                    pipeline.stage5RegionalApprove > 0
+                                      ? 'bg-[#FFF7ED] border-orange-200 hover:border-orange-300 shadow-2xs'
+                                      : 'bg-slate-50/60 border-slate-200/60 opacity-60 hover:opacity-100'
+                                  }`}
+                                  title={`Klik untuk menyaring kategori ${cat} Belum Approve Regional Head (${formatRupiah(pipeline.stage5RegionalApproveValue || 0)})`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[8px] font-black text-orange-700 uppercase tracking-wider">BELUM APPR. RH</span>
+                                    <Info className="w-2.5 h-2.5 text-orange-400 opacity-70" />
+                                  </div>
+                                  <div className="flex items-baseline justify-between mt-0.5">
+                                    <span className="text-base font-black text-slate-900 tracking-tight leading-none">
+                                      {pipeline.stage5RegionalApprove}
+                                    </span>
+                                    {pipeline.stage5RegionalApprove > 0 && (
+                                      <span className="text-[7px] font-black bg-orange-100 text-orange-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                        Pending
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-0.5 pt-0.5 border-t border-orange-200/60 flex items-center justify-between">
+                                    <span className="text-[9px] font-black text-slate-800 tracking-tight truncate">
+                                      {formatRupiah(pipeline.stage5RegionalApproveValue || 0)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* 4. Belum Appr. DH */}
+                                <div
+                                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat, stage: '3_sap_dh' }))}
+                                  className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                                    pipeline.stage6DivisionApprove > 0
+                                      ? 'bg-[#FFF7ED] border-orange-200 hover:border-orange-300 shadow-2xs'
+                                      : 'bg-slate-50/60 border-slate-200/60 opacity-60 hover:opacity-100'
+                                  }`}
+                                  title={`Klik untuk menyaring kategori ${cat} Belum Approve Division Head (${formatRupiah(pipeline.stage6DivisionApproveValue || 0)})`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[8px] font-black text-orange-700 uppercase tracking-wider">BELUM APPR. DH</span>
+                                    <Info className="w-2.5 h-2.5 text-orange-400 opacity-70" />
+                                  </div>
+                                  <div className="flex items-baseline justify-between mt-0.5">
+                                    <span className="text-base font-black text-slate-900 tracking-tight leading-none">
+                                      {pipeline.stage6DivisionApprove}
+                                    </span>
+                                    {pipeline.stage6DivisionApprove > 0 && (
+                                      <span className="text-[7px] font-black bg-orange-100 text-orange-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                        Pending
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-0.5 pt-0.5 border-t border-orange-200/60 flex items-center justify-between">
+                                    <span className="text-[9px] font-black text-slate-800 tracking-tight truncate">
+                                      {formatRupiah(pipeline.stage6DivisionApproveValue || 0)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Footer Totals */}
+                        <div className="h-[76px] grid grid-cols-4 gap-1.5 p-1.5 bg-slate-50/90 border-t-2 border-slate-200 shrink-0">
+                          {/* Total SH */}
+                          <div
+                            onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ stage: '3_sap_sh' }))}
+                            className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                              totalStage3SH > 0
+                                ? 'bg-orange-100/80 border-orange-300 hover:border-orange-400 shadow-2xs'
+                                : 'bg-slate-50/60 border-slate-200/60 opacity-60'
+                            }`}
+                            title={`Klik untuk menyaring seluruh Belum Approve SH (${formatRupiah(totalStage3SHVal)})`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[8px] font-black text-orange-800 uppercase tracking-wider">TOTAL SH</span>
+                              <Info className="w-2.5 h-2.5 text-indigo-600 opacity-80" />
+                            </div>
+                            <div className="flex items-baseline justify-between mt-0.5">
+                              <span className="text-base font-black text-slate-900 tracking-tight leading-none">
+                                {totalStage3SH}
+                              </span>
+                              {totalStage3SH > 0 && (
+                                <span className="text-[7px] font-black bg-orange-200 text-indigo-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                  Pending
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 pt-0.5 border-t border-orange-200 flex items-center justify-between">
+                              <span className="text-[9px] font-black text-slate-900 tracking-tight truncate">
+                                {formatRupiah(totalStage3SHVal)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Total Kacab */}
+                          <div
+                            onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ stage: '3_sap_kacab' }))}
+                            className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                              totalStage3Kacab > 0
+                                ? 'bg-orange-100/80 border-orange-300 hover:border-orange-400 shadow-2xs'
+                                : 'bg-slate-50/60 border-slate-200/60 opacity-60'
+                            }`}
+                            title={`Klik untuk menyaring seluruh Belum Approve KACAB (${formatRupiah(totalStage3KacabVal)})`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[8px] font-black text-orange-800 uppercase tracking-wider">TOTAL KACAB</span>
+                              <Info className="w-2.5 h-2.5 text-indigo-600 opacity-80" />
+                            </div>
+                            <div className="flex items-baseline justify-between mt-0.5">
+                              <span className="text-base font-black text-slate-900 tracking-tight leading-none">
+                                {totalStage3Kacab}
+                              </span>
+                              {totalStage3Kacab > 0 && (
+                                <span className="text-[7px] font-black bg-orange-200 text-indigo-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                  Pending
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 pt-0.5 border-t border-orange-200 flex items-center justify-between">
+                              <span className="text-[9px] font-black text-slate-900 tracking-tight truncate">
+                                {formatRupiah(totalStage3KacabVal)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Total RH */}
+                          <div
+                            onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ stage: '3_sap_rh' }))}
+                            className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                              totalStage4RH > 0
+                                ? 'bg-orange-100/80 border-orange-300 hover:border-orange-400 shadow-2xs'
+                                : 'bg-slate-50/60 border-slate-200/60 opacity-60'
+                            }`}
+                            title={`Klik untuk menyaring seluruh Belum Approve RH (${formatRupiah(totalStage4RHVal)})`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[8px] font-black text-orange-800 uppercase tracking-wider">TOTAL RH</span>
+                              <Info className="w-2.5 h-2.5 text-indigo-600 opacity-80" />
+                            </div>
+                            <div className="flex items-baseline justify-between mt-0.5">
+                              <span className="text-base font-black text-slate-900 tracking-tight leading-none">
+                                {totalStage4RH}
+                              </span>
+                              {totalStage4RH > 0 && (
+                                <span className="text-[7px] font-black bg-orange-200 text-indigo-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                  Pending
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 pt-0.5 border-t border-orange-200 flex items-center justify-between">
+                              <span className="text-[9px] font-black text-slate-900 tracking-tight truncate">
+                                {formatRupiah(totalStage4RHVal)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Total DH */}
+                          <div
+                            onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ stage: '3_sap_dh' }))}
+                            className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
+                              totalStage5DH > 0
+                                ? 'bg-orange-100/80 border-orange-300 hover:border-orange-400 shadow-2xs'
+                                : 'bg-slate-50/60 border-slate-200/60 opacity-60'
+                            }`}
+                            title={`Klik untuk menyaring seluruh Belum Approve DH (${formatRupiah(totalStage5DHVal)})`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[8px] font-black text-orange-800 uppercase tracking-wider">TOTAL DH</span>
+                              <Info className="w-2.5 h-2.5 text-indigo-600 opacity-80" />
+                            </div>
+                            <div className="flex items-baseline justify-between mt-0.5">
+                              <span className="text-base font-black text-slate-900 tracking-tight leading-none">
+                                {totalStage5DH}
+                              </span>
+                              {totalStage5DH > 0 && (
+                                <span className="text-[7px] font-black bg-orange-200 text-indigo-900 px-1 py-0.2 rounded uppercase tracking-wider">
+                                  Pending
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 pt-0.5 border-t border-orange-200 flex items-center justify-between">
+                              <span className="text-[9px] font-black text-slate-900 tracking-tight truncate">
+                                {formatRupiah(totalStage5DHVal)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })()}
-      </div>
+          </div>
+        );
+      })()}
+    </div>
 
       {/* 4. DISTRIBUSI KATEGORI & regional BREAKDOWN GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -3123,8 +3561,8 @@ export default function Dashboard({
                     
                     const absoluteMaxCases = Math.max(...baseBranchStatsList.map(x => x.totalCases), 1);
                     const absoluteMaxValue = Math.max(...baseBranchStatsList.map(x => x.totalValue), 1);
-                    const casesPercentage = Math.min(100, Math.round((b.totalCases / absoluteMaxCases) * 100));
-                    const valuePercentage = Math.min(100, Math.round((b.totalValue / absoluteMaxValue) * 100));
+                    const casesPercentage = absoluteMaxCases > 0 && !isNaN(b.totalCases) ? Math.min(100, Math.max(0, Math.round((b.totalCases / absoluteMaxCases) * 100))) : 0;
+                    const valuePercentage = absoluteMaxValue > 0 && !isNaN(b.totalValue) ? Math.min(100, Math.max(0, Math.round((b.totalValue / absoluteMaxValue) * 100))) : 0;
 
                     let ratioTheme = {
                       barBg: 'bg-rose-500',

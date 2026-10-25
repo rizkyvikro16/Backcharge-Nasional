@@ -1,21 +1,46 @@
-import { getApiUrl } from "./api";
+import { getApiUrl, getAuthHeaders } from "./api";
 
 // In-memory cache for resolved data URLs to prevent duplicate network fetches
 const resolvedUrlCache = new Map<string, string>();
 const pendingPromises = new Map<string, Promise<string>>();
 
 /**
+ * Ekstraksi ID File Google Drive secara ketat menggunakan regex
+ */
+export const extractDriveId = (url: string | null | undefined): string | null => {
+  if (!url) return null;
+  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : url;
+};
+
+/**
+ * Mengonversi URL mentah Google Drive menjadi endpoint secure proxy backend
+ */
+export const toSecureProxyUrl = (url: string | null | undefined): string => {
+  if (!url) return "";
+  if (url.startsWith("data:") || url.startsWith("blob:")) return url;
+
+  if (url.includes("drive.google.com") || url.includes("/d/")) {
+    const driveId = extractDriveId(url);
+    if (driveId && driveId !== url) {
+      return `/api/files/secure/${driveId}`;
+    }
+  }
+
+  return url;
+};
+
+/**
  * Dynamically resolves a file URL.
- * If url is base64 (data:...) or external (http...), returns as-is.
- * If url is relative (/uploads/...), fetches /api/file-data?path=...
- * to retrieve the data URL (data:image/jpeg;base64,...).
- * This completely bypasses iframe/cookie check 302 redirects in AI Studio.
+ * - Base64 (data:...) and Blob (blob:...) are used directly.
+ * - Google Drive links (drive.google.com) are intercepted and resolved through secure proxy /api/files/secure/:fileId
+ * - Relative paths (/uploads/... or /api/files/secure/...) are authenticated with the backcharge session token.
  */
 export async function resolveFileUrl(url: string | null | undefined): Promise<string> {
   if (!url || typeof url !== "string") return "";
 
-  // Base64, blob, or external web URLs can be used directly
-  if (url.startsWith("data:") || url.startsWith("blob:") || url.startsWith("http://") || url.startsWith("https://")) {
+  // Base64 or blob URLs can be used directly in memory
+  if (url.startsWith("data:") || url.startsWith("blob:")) {
     return url;
   }
 
@@ -24,107 +49,62 @@ export async function resolveFileUrl(url: string | null | undefined): Promise<st
     return resolvedUrlCache.get(url)!;
   }
 
-  // Deduplicate in-flight requests
-  if (pendingPromises.has(url)) {
-    return pendingPromises.get(url)!;
-  }
+  // Extract Google Drive ID if present and convert to backend secure proxy URL
+  let targetUrl = toSecureProxyUrl(url);
 
-  const fetchPromise = (async () => {
-    try {
-      const apiUrl = getApiUrl(`/api/file-data?path=${encodeURIComponent(url)}`);
-      const res = await fetch(apiUrl);
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) {
-          resolvedUrlCache.set(url, json.data);
-          return json.data as string;
-        }
-      }
-    } catch (err) {
-      console.warn("[FileResolver] Failed to resolve file data:", url, err);
+  const token = localStorage.getItem("backcharge_auth_token") || localStorage.getItem("bc_auth_token") || "";
+
+  // Build authenticated proxy URL
+  let finalUrl = targetUrl;
+  if (targetUrl.startsWith("/api/") || targetUrl.startsWith("/uploads/") || !targetUrl.startsWith("http")) {
+    const cleanPath = targetUrl.startsWith("/") ? targetUrl : `/${targetUrl}`;
+    finalUrl = getApiUrl(`${cleanPath}${cleanPath.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`);
+  } else if (targetUrl.includes("/api/files/secure/") || targetUrl.includes("/api/files/")) {
+    finalUrl = `${targetUrl}${targetUrl.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+  } else if (targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) {
+    if (!targetUrl.includes("drive.google.com")) {
+      finalUrl = targetUrl;
     }
-
-    const fallback = getApiUrl(url);
-    resolvedUrlCache.set(url, fallback);
-    return fallback;
-  })();
-
-  pendingPromises.set(url, fetchPromise);
-  try {
-    const result = await fetchPromise;
-    return result;
-  } finally {
-    pendingPromises.delete(url);
   }
+
+  resolvedUrlCache.set(url, finalUrl);
+  return finalUrl;
 }
 
 /**
  * Opens a resolved file or image URL safely in a new browser window/tab.
+ * Uses programmatic anchor navigation without document.write to completely avoid
+ * Chrome "This page has been blocked by Chrome" errors in sandboxed iframes.
  */
 export async function openFileInNewTab(url: string, title?: string): Promise<void> {
   if (!url) return;
-  const resolved = await resolveFileUrl(url);
 
-  if (resolved.startsWith("data:")) {
-    const isPdf = resolved.startsWith("data:application/pdf");
-    const newWin = window.open("", "_blank");
-    if (newWin) {
-      newWin.document.write(`
-        <!DOCTYPE html>
-        <html lang="id">
-          <head>
-            <meta charset="utf-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <title>${title || "Pratinjau Dokumen"}</title>
-            <style>
-              body {
-                margin: 0;
-                padding: 0;
-                background-color: #0f172a;
-                color: #ffffff;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                min-height: 100vh;
-                font-family: system-ui, -apple-system, sans-serif;
-              }
-              .container {
-                max-width: 95vw;
-                max-height: 95vh;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-              }
-              img {
-                max-width: 100%;
-                max-height: 92vh;
-                object-fit: contain;
-                border-radius: 8px;
-                box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);
-              }
-              iframe {
-                width: 90vw;
-                height: 90vh;
-                border: none;
-                border-radius: 8px;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              ${
-                isPdf
-                  ? `<iframe src="${resolved}" title="${title || "PDF Viewer"}"></iframe>`
-                  : `<img src="${resolved}" alt="${title || "Gambar Dokumen"}" />`
-              }
-            </div>
-          </body>
-        </html>
-      `);
-      newWin.document.close();
+  try {
+    // 1. Data URLs or existing Blob URLs
+    if (url.startsWith("data:") || url.startsWith("blob:")) {
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
     }
-  } else {
-    window.open(resolved, "_blank");
+
+    // 2. Resolve authenticated secure proxy URL
+    const resolved = await resolveFileUrl(url);
+    const targetUrl = resolved.startsWith("http") ? resolved : getApiUrl(resolved);
+
+    // 3. Open directly in new tab cleanly
+    const a = document.createElement("a");
+    a.href = targetUrl;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch (err) {
+    console.error("[openFileInNewTab] Gagal membuka berkas di tab baru:", err);
   }
 }

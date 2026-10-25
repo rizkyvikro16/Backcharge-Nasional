@@ -22,5 +22,43 @@ export const getApiUrl = (path: string): string => {
   return `${BASE_URL}${cleanPath}`;
 };
 
+// Helper untuk token otentikasi resmi dari server
+export const getAuthToken = (): string => {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("backcharge_auth_token") || "";
+  }
+  return "";
+};
 
+export const setAuthToken = (token: string): void => {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("backcharge_auth_token", token);
+  }
+};
+
+export const clearAuthToken = (): void => {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("backcharge_auth_token");
+    localStorage.removeItem("backcharge_session_profile");
+  }
+};
+
+export const getAuthHeaders = (extraHeaders: Record<string, string> = {}, includeContentType = true): Record<string, string> => {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    ...extraHeaders
+  };
+  if (includeContentType && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+    headers["x-auth-token"] = token;
+  }
+  const dbKey = typeof window !== "undefined" ? localStorage.getItem("DATABASE_SECRET_KEY") : null;
+  if (dbKey) {
+    headers["X-Database-Key"] = dbKey;
+  }
+  return headers;
+};
 

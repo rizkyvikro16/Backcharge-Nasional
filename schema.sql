@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS public.backcharges (
     no_bak TEXT DEFAULT '-',
     no_spk TEXT DEFAULT '-',
     no_sap TEXT DEFAULT '-',
+    no_cmd TEXT DEFAULT '-',
     customer_name TEXT NOT NULL,
     license_plate TEXT DEFAULT '-',
     value NUMERIC(15, 2) NOT NULL DEFAULT 0,

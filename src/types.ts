@@ -158,12 +158,13 @@ export interface Backcharge {
   no_spk: string;
   no_sap: string;
   no_tilang?: string;
+  no_cmd?: string;
   customer_name: string;
   license_plate: string;
   value: number;
   status_sap: string; // 'N/A' | 'Bill' | 'Not Bill'
   status_confirm: string; // 'Belum Konfirmasi' | 'Telah Dikonfirmasi' | 'Ditolak / Negosiasi Ulang'
-  status_handover: string; // 'Pending' | 'Diserahkan ke Admin' | 'Diterima Admin'
+  status_handover: string; // 'Pending' | 'Diterima Admin'
   status_approval?: string; // 'Belum Approval' | 'Disetujui' | 'Ditolak'
   approved_by?: string | null;
   approved_at?: string | null;
@@ -182,6 +183,7 @@ export interface Backcharge {
   division_approved_at?: string | null;
   division_approval_note?: string | null;
   no_invoice: string;
+  tanggal_invoice?: string | null;
   status_payment: string; // 'Belum Bayar' | 'Lunas'
   payment_date?: string | null;
   created_by: string; // Email of creator
@@ -231,6 +233,8 @@ export interface DashboardFilter {
   startDate?: string;
   endDate?: string;
   alert?: 'due' | 'pending' | 'high_value' | '';
+  customerName?: string;
+  statusSap?: string;
 }
 
 export interface ContactInquiry {
@@ -284,6 +288,7 @@ export function packExtraFields(tx: any): string {
   if (tx.division_approved_by) packed += `||DIV_BY:${tx.division_approved_by}`;
   if (tx.division_approved_at) packed += `||DIV_AT:${tx.division_approved_at}`;
   if (tx.division_approval_note) packed += `||DIV_NOTE:${tx.division_approval_note}`;
+  if (tx.tanggal_invoice) packed += `||TGL_INV:${tx.tanggal_invoice}`;
 
   return packed;
 }
@@ -315,6 +320,7 @@ export function unpackExtraFields(item: any): any {
   let division_approved_by = item.division_approved_by || null;
   let division_approved_at = item.division_approved_at || null;
   let division_approval_note = item.division_approval_note || null;
+  let tanggal_invoice = item.tanggal_invoice || null;
 
   if (no_bak && no_bak.includes('||')) {
     const parts = no_bak.split('||');
@@ -384,6 +390,9 @@ export function unpackExtraFields(item: any): any {
       } else if (part.startsWith('DIV_NOTE:')) {
         const val = part.substring(9);
         if (!division_approval_note) division_approval_note = val;
+      } else if (part.startsWith('TGL_INV:')) {
+        const val = part.substring(8);
+        if (!tanggal_invoice) tanggal_invoice = val;
       }
     });
   }
@@ -397,6 +406,7 @@ export function unpackExtraFields(item: any): any {
     no_tilang,
     tanggal,
     tanggal_handover,
+    tanggal_invoice,
     bro_name: nama_bro,
     nama_bro,
     dok_pendukung_alasan: alasan,

@@ -6,9 +6,10 @@ import {
 } from 'lucide-react';
 import { Backcharge, Profile, isRegionalHeadRole, hasRole } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
-import { getApiUrl } from '../lib/api';
-import { resolveFileUrl, openFileInNewTab } from '../lib/fileResolver';
+import { getApiUrl, getAuthHeaders } from '../lib/api';
+import { resolveFileUrl, openFileInNewTab, extractDriveId, toSecureProxyUrl } from '../lib/fileResolver';
 import { ResolvedImage } from './ResolvedImage';
+import { PdfViewer } from './PdfViewer';
 
 interface DetailModalProps {
   transaction: Backcharge;
@@ -20,19 +21,18 @@ interface DetailModalProps {
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-const getDrivePreviewUrl = (url: string): string => {
+const getSecureProxyUrl = (url: string): string => {
   if (!url) return '';
-  if (url.includes('drive.google.com')) {
-    const fileIdMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-    if (fileIdMatch && fileIdMatch[1]) {
-      return `https://drive.google.com/file/d/${fileIdMatch[1]}/preview`;
-    }
-    const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (idMatch && idMatch[1]) {
-      return `https://drive.google.com/file/d/${idMatch[1]}/preview`;
-    }
+  let target = toSecureProxyUrl(url);
+  const token = localStorage.getItem('backcharge_auth_token') || localStorage.getItem('bc_auth_token') || '';
+  if (target.startsWith('/api/') || target.startsWith('/uploads/') || !target.startsWith('http')) {
+    const clean = target.startsWith('/') ? target : `/${target}`;
+    return getApiUrl(`${clean}${clean.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`);
   }
-  return url;
+  if (target.includes('/api/files/secure/') || target.includes('/api/files/')) {
+    return `${target}${target.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+  }
+  return target;
 };
 
 // Resilient component to safely load and render images & PDFs from local disk, API, or data URLs
@@ -47,12 +47,15 @@ function SafeLightboxContent({
 }) {
   const [dataUrl, setDataUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isImageReady, setIsImageReady] = useState<boolean>(false);
   const [hasError, setHasError] = useState<boolean>(false);
   const [isPdf, setIsPdf] = useState<boolean>(false);
 
   useEffect(() => {
     let isMounted = true;
+    let localBlobUrl: string | null = null;
     setIsLoading(true);
+    setIsImageReady(false);
     setHasError(false);
 
     if (!url) {
@@ -61,83 +64,176 @@ function SafeLightboxContent({
       return;
     }
 
-    // 1. Direct Data URLs (instant memory load)
-    if (url.startsWith('data:')) {
+    // 1. Data URLs or existing Blob URLs can be used immediately
+    if (url.startsWith('data:') || url.startsWith('blob:')) {
       setDataUrl(url);
-      setIsPdf(url.startsWith('data:application/pdf'));
+      setIsPdf(url.startsWith('data:application/pdf') || url.toLowerCase().includes('.pdf'));
       setIsLoading(false);
+      setHasError(false);
       return;
     }
 
-    // 2. Direct Web URLs (Google Drive etc.)
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      setDataUrl(url);
-      setIsPdf(/\.pdf($|\?)/i.test(url));
-      setIsLoading(false);
-      return;
+    // 2. Extract Google Drive file ID if present and convert to backend secure proxy URL
+    const targetUrl = toSecureProxyUrl(url);
+    const driveId = extractDriveId(url);
+
+    // 3. Prepare Authentication Headers with backcharge_auth_token
+    const token = localStorage.getItem('backcharge_auth_token') || localStorage.getItem('bc_auth_token') || '';
+    const headers: Record<string, string> = {
+      Accept: 'image/*, application/pdf, */*'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      headers['x-auth-token'] = token;
+    }
+    const dbKey = typeof window !== 'undefined' ? localStorage.getItem('DATABASE_SECRET_KEY') : null;
+    if (dbKey) {
+      headers['X-Database-Key'] = dbKey;
     }
 
-    // 3. Local server file paths (/uploads/... or /api/...)
-    const fetchFileData = async () => {
-      try {
-        const queryUrl = getApiUrl(`/api/file-data?path=${encodeURIComponent(url)}`);
-        const res = await fetch(queryUrl);
-        if (res.ok) {
-          const json = await res.json();
-          if (json.data && isMounted) {
-            setDataUrl(json.data);
-            setIsPdf(json.mimeType === 'application/pdf' || url.toLowerCase().endsWith('.pdf'));
-            setIsLoading(false);
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn("API file-data fetch notice:", err);
-      }
+    // 4. Resolve absolute API URL
+    const fetchUrl = targetUrl.startsWith('http') ? targetUrl : getApiUrl(targetUrl);
 
+    // 5. Asynchronous fetch -> blob -> URL.createObjectURL
+    const fetchResource = async () => {
       try {
-        // Fallback: fetch binary file directly via /api/files/
-        const filename = url.split('/').pop() || '';
-        const streamUrl = getApiUrl(`/api/files/${encodeURIComponent(filename)}`);
-        const res = await fetch(streamUrl);
-        if (res.ok) {
-          const blob = await res.blob();
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            if (isMounted) {
-              const resUrl = reader.result as string;
-              setDataUrl(resUrl);
-              setIsPdf(blob.type === 'application/pdf' || url.toLowerCase().endsWith('.pdf'));
-              setIsLoading(false);
+        const response = await fetch(fetchUrl, {
+          method: 'GET',
+          headers,
+          credentials: 'include'
+        });
+
+        // 1. Validasi status respons: wajib 200 OK
+        if (response.status !== 200 || !response.ok) {
+          let errDetail = "";
+          try {
+            const errJson = await response.json();
+            errDetail = errJson.error || errJson.message || JSON.stringify(errJson);
+          } catch {
+            try {
+              errDetail = await response.text();
+            } catch {
+              errDetail = `HTTP ${response.status} ${response.statusText}`;
             }
-          };
-          reader.readAsDataURL(blob);
+          }
+          console.error(`[SafeLightboxContent] Gagal memuat berkas dari ${fetchUrl} (Status ${response.status}):`, errDetail);
+
+          // Coba fallback ke /api/file-data jika ini file Google Drive
+          if (driveId && driveId !== url) {
+            try {
+              const fallbackRes = await fetch(getApiUrl(`/api/file-data?driveId=${encodeURIComponent(driveId)}`), {
+                headers,
+                credentials: 'include'
+              });
+              if (fallbackRes.status === 200 && fallbackRes.ok) {
+                const json = await fallbackRes.json();
+                if (json.data && isMounted) {
+                  setDataUrl(json.data);
+                  setIsPdf(json.mimeType === 'application/pdf' || json.data.startsWith('data:application/pdf'));
+                  setIsLoading(false);
+                  setHasError(false);
+                  return;
+                }
+              } else {
+                console.error(`[SafeLightboxContent] Fallback /api/file-data juga gagal (Status ${fallbackRes.status})`);
+              }
+            } catch (fallbackErr) {
+              console.error("[SafeLightboxContent] Fallback error:", fallbackErr);
+            }
+          }
+
+          if (isMounted) {
+            setHasError(true);
+            setIsLoading(false);
+          }
           return;
         }
-      } catch (streamErr) {
-        console.warn("Direct file stream fetch notice:", streamErr);
-      }
 
-      if (isMounted) {
-        setDataUrl(getApiUrl(url));
-        setIsPdf(url.toLowerCase().endsWith('.pdf'));
-        setIsLoading(false);
+        // 2. Pastikan Content-Type bukan JSON error atau HTML
+        const contentType = (response.headers.get("content-type") || "").toLowerCase();
+        if (contentType.includes("application/json")) {
+          const json = await response.json();
+          console.error(`[SafeLightboxContent] Menerima payload JSON dari ${fetchUrl}:`, json);
+          if (isMounted) {
+            setHasError(true);
+            setIsLoading(false);
+          }
+          return;
+        }
+
+        if (contentType.includes("text/html")) {
+          console.error(`[SafeLightboxContent] Menerima dokumen HTML dari ${fetchUrl}. Rute mungkin tidak ditemukan.`);
+          if (isMounted) {
+            setHasError(true);
+            setIsLoading(false);
+          }
+          return;
+        }
+
+        // 3. Konversi ke Blob murni
+        const blob = await response.blob();
+        if (blob.size === 0) {
+          console.error(`[SafeLightboxContent] Blob kosong (0 bytes) dari ${fetchUrl}`);
+          if (isMounted) {
+            setHasError(true);
+            setIsLoading(false);
+          }
+          return;
+        }
+
+        // Deteksi apakah berkas adalah dokumen PDF secara ketat (pastikan bukan file gambar jpg/png)
+        const isImageUrl = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(url) || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(title);
+        let isPdfType = !isImageUrl && (
+                        blob.type === 'application/pdf' || 
+                        contentType.includes('application/pdf') ||
+                        url.toLowerCase().endsWith('.pdf') || 
+                        title.toLowerCase().endsWith('.pdf')
+                      );
+
+        if (!isImageUrl && !isPdfType && blob.size >= 4) {
+          try {
+            const headBytes = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+            if (headBytes[0] === 0x25 && headBytes[1] === 0x50 && headBytes[2] === 0x44 && headBytes[3] === 0x46) {
+              isPdfType = true;
+            }
+          } catch {}
+        }
+
+        const objUrl = URL.createObjectURL(blob);
+        localBlobUrl = objUrl;
+
+        if (isMounted) {
+          setDataUrl(objUrl);
+          setIsPdf(isPdfType);
+          setIsLoading(false);
+          setHasError(false);
+        }
+      } catch (err: any) {
+        console.error(`[SafeLightboxContent] Exception saat fetch berkas dari ${fetchUrl}:`, err?.message || err);
+        if (isMounted) {
+          setHasError(true);
+          setIsLoading(false);
+        }
       }
     };
 
-    fetchFileData();
+    fetchResource();
 
+    // 6. Memory cleanup
     return () => {
       isMounted = false;
+      if (localBlobUrl) {
+        URL.revokeObjectURL(localBlobUrl);
+      }
     };
-  }, [url]);
+  }, [url, title]);
 
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center p-12 bg-slate-900/90 rounded-2xl border border-slate-800 text-slate-300 shadow-2xl animate-in zoom-in-95">
         <Loader2 className="w-9 h-9 animate-spin text-blue-500 mb-3" />
-        <p className="text-xs font-bold text-slate-200">Memuat berkas foto & dokumen...</p>
-        <span className="text-[10px] text-slate-400 mt-1 font-mono truncate max-w-xs">{url}</span>
+        <p className="text-xs font-bold text-slate-200">Memuat berkas aman...</p>
+        <span className="text-[10px] text-slate-400 mt-1 font-mono truncate max-w-xs">{title}</span>
       </div>
     );
   }
@@ -149,7 +245,7 @@ function SafeLightboxContent({
           <AlertCircle className="w-6 h-6" />
         </div>
         <h4 className="text-sm font-bold text-slate-200 mb-1">Pratinjau Langsung Tidak Tersedia</h4>
-        <p className="text-[11px] text-slate-400 mb-4">Berkas tersimpan aman di server.</p>
+        <p className="text-[11px] text-slate-400 mb-4">Berkas tersimpan privat dan aman di Cloud Server ASSA.</p>
         <div className="flex items-center space-x-2">
           <button
             type="button"
@@ -159,39 +255,49 @@ function SafeLightboxContent({
             <Download className="w-3.5 h-3.5" />
             <span>Unduh Berkas</span>
           </button>
-          <a
-            href={getApiUrl(url)}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => openFileInNewTab(url, title)}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all cursor-pointer flex items-center space-x-1.5"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             <span>Buka di Tab Baru</span>
-          </a>
+          </button>
         </div>
       </div>
     );
   }
 
-  if (isPdf) {
-    return (
-      <iframe 
-        src={dataUrl} 
-        className="w-full max-w-4xl h-[75vh] rounded-xl border border-slate-800 bg-white shadow-2xl" 
-        title="PDF Document Viewer"
-      />
-    );
-  }
-
   return (
-    <img 
-      src={dataUrl} 
-      alt={title} 
-      loading="eager"
-      decoding="async"
-      className="max-w-full max-h-[75vh] object-contain rounded-xl border border-slate-800 shadow-2xl animate-in zoom-in-95 duration-200" 
-      onError={() => setHasError(true)}
-    />
+    <div className="flex flex-col items-center justify-center w-full max-w-4xl space-y-2">
+      {isPdf ? (
+        <PdfViewer 
+          data={dataUrl} 
+          title={title || "Dokumen PDF"}
+        />
+      ) : (
+        <div className="relative flex items-center justify-center w-full min-h-[250px]">
+          {!isImageReady && (
+            <div className="flex flex-col items-center justify-center p-12 bg-slate-900/90 rounded-2xl border border-slate-800 text-slate-300 shadow-2xl animate-pulse min-h-[250px] w-full select-none">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-400 mb-3" />
+              <p className="text-xs font-bold text-slate-200">Menyiapkan tampilan gambar...</p>
+            </div>
+          )}
+          <img 
+            src={dataUrl} 
+            alt={title} 
+            loading="eager"
+            decoding="async"
+            onLoad={() => setIsImageReady(true)}
+            className={`max-w-full max-h-[75vh] object-contain rounded-xl border border-slate-800 shadow-2xl animate-in zoom-in-95 duration-200 transition-opacity ${isImageReady ? "opacity-100 block" : "opacity-0 hidden"}`} 
+            onError={() => {
+              setHasError(true);
+              setIsImageReady(true);
+            }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -353,13 +459,16 @@ export default function DetailModal({
         ext = '.png';
       } else if (fileUrl.startsWith('data:image/webp')) {
         ext = '.webp';
-      } else if (fileUrl.startsWith('data:application/pdf')) {
-        ext = '.pdf';
-      } else if (fileUrl.toLowerCase().includes('.pdf')) {
+      } else if (fileUrl.startsWith('data:application/pdf') || fileUrl.toLowerCase().includes('.pdf') || docName.toLowerCase().includes('bak') || docName.toLowerCase().includes('dokumen') || docName.toLowerCase().includes('berkas') || docName.toLowerCase().includes('spk')) {
         ext = '.pdf';
       } else if (fileUrl.toLowerCase().includes('.jpg') || fileUrl.toLowerCase().includes('.jpeg')) {
         ext = '.jpg';
+      } else {
+        // Default dokumen menjadi PDF jika bukan foto eksplisit
+        ext = '.pdf';
       }
+    } else {
+      ext = '.pdf';
     }
 
     return `${baseName}${ext}`;
@@ -488,7 +597,7 @@ export default function DetailModal({
     const val = t.value || 0;
     
     const step1 = true;
-    const stepHandover = t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin';
+    const stepHandover = t.status_handover === 'Diterima Admin' || t.status_handover === 'Diserahkan ke Admin';
     const stepSap = kat === 'Own Risk' ? (t.status_sap !== 'N/A' && t.status_sap !== '' && t.status_sap !== undefined) : true;
     const stepApproval = t.status_approval === 'Disetujui';
 
@@ -502,7 +611,7 @@ export default function DetailModal({
     const stepInvoice = t.no_invoice && t.no_invoice !== '-';
     const stepPayment = t.status_payment === 'Lunas';
 
-    const approvalPic = (kat === 'Maintenance' || kat === 'TPL' || kat === 'Unclaimable Insurance' || kat === 'Dokumen Kendaraan') ? 'Kacab' : 'Sales Head';
+    const approvalPic = (kat === 'Maintenance' || kat === 'TPL' || kat === 'Dokumen Kendaraan' || kat === 'Unclaimable Insurance') ? 'Kacab' : 'Sales Head';
 
     let stepsArr: Array<{ label: string; pic: string; completed: boolean; active: boolean }> = [];
 
@@ -773,20 +882,18 @@ export default function DetailModal({
     return canvas.toDataURL('image/png');
   };
 
-  // File download helper (handles Base64, Google Drive, and mock document rendering without corruption)
-  const downloadFile = (fileData: string | null | undefined, defaultName: string, title?: string) => {
+  // File download helper (mengunduh berkas asli dari Google Drive / proxy / server secara autentik)
+  const downloadFile = async (fileData: string | null | undefined, defaultName: string, title?: string) => {
     if (!fileData) {
       if (addToast) {
         addToast("Tidak ada file lampiran!", "error");
-      } else {
-        alert("Tidak ada file lampiran!");
       }
       return;
     }
     
     let fileName = defaultName;
 
-    // 1. Check if it's base64 data URL
+    // 1. Data URLs (Base64)
     if (fileData.startsWith('data:')) {
       if (fileData.startsWith('data:image/jpeg') && !fileName.endsWith('.jpg') && !fileName.endsWith('.jpeg')) {
         fileName = fileName.replace(/\.[^/.]+$/, "") + ".jpg";
@@ -805,45 +912,10 @@ export default function DetailModal({
       return;
     }
 
-    // 1b. Check if it's relative server URL (/uploads/...)
-    if (fileData.startsWith('/uploads/') || fileData.includes('/uploads/')) {
-      const triggerDownload = (href: string) => {
-        const link = document.createElement('a');
-        link.href = href;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      };
-
-      fetch(getApiUrl(`/api/file-data?path=${encodeURIComponent(fileData)}`))
-        .then(res => res.json())
-        .then(json => {
-          if (json.data) {
-            triggerDownload(json.data);
-          } else {
-            triggerDownload(getApiUrl(fileData));
-          }
-        })
-        .catch(() => {
-          triggerDownload(getApiUrl(fileData));
-        });
-      return;
-    }
-
-    // 2. If it's a web link or Google Drive URL
-    if (fileData.startsWith('http://') || fileData.startsWith('https://')) {
-      let downloadUrl = fileData;
-      if (fileData.includes('drive.google.com')) {
-        const fileIdMatch = fileData.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || fileData.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-        if (fileIdMatch && fileIdMatch[1]) {
-          downloadUrl = `https://drive.google.com/uc?export=download&id=${fileIdMatch[1]}`;
-        }
-      }
-      
+    // 2. Blob URLs
+    if (fileData.startsWith('blob:')) {
       const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.target = '_blank';
+      link.href = fileData;
       link.download = fileName;
       document.body.appendChild(link);
       link.click();
@@ -851,7 +923,71 @@ export default function DetailModal({
       return;
     }
 
-    // 3. For mock / placeholder identifiers, render a high-res 1200x1600 official document PNG
+    // 3. Unduh berkas asli (Google Drive, Secure Proxy /api/files/secure/, atau /uploads/)
+    const isMock = fileData.startsWith('MOCK_');
+    if (!isMock) {
+      if (addToast) addToast("Mengunduh berkas fisik asli...", "info");
+
+      try {
+        const proxyPath = toSecureProxyUrl(fileData);
+        const token = localStorage.getItem('backcharge_auth_token') || localStorage.getItem('bc_auth_token') || '';
+        const fetchUrl = proxyPath.startsWith('http') ? proxyPath : getApiUrl(proxyPath);
+
+        const headers: Record<string, string> = {
+          Accept: '*/*'
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+          headers['x-auth-token'] = token;
+        }
+
+        const res = await fetch(fetchUrl, { headers, credentials: 'include' });
+        if (res.ok) {
+          const blob = await res.blob();
+          const disp = res.headers.get('content-disposition') || '';
+          const dispMatch = disp.match(/filename="?([^";]+)"?/i);
+          if (dispMatch && dispMatch[1]) {
+            fileName = dispMatch[1];
+          } else {
+            if (blob.type === 'application/pdf' && !fileName.toLowerCase().endsWith('.pdf')) {
+              fileName = fileName.replace(/\.[^/.]+$/, '') + '.pdf';
+            } else if (blob.type === 'image/jpeg' && !fileName.toLowerCase().endsWith('.jpg') && !fileName.toLowerCase().endsWith('.jpeg')) {
+              fileName = fileName.replace(/\.[^/.]+$/, '') + '.jpg';
+            } else if (blob.type === 'image/png' && !fileName.toLowerCase().endsWith('.png')) {
+              fileName = fileName.replace(/\.[^/.]+$/, '') + '.png';
+            }
+          }
+
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+          if (addToast) addToast("Berkas asli berhasil diunduh!", "success");
+          return;
+        }
+      } catch (fetchErr) {
+        console.warn("[downloadFile] Fetch blob error, beralih ke browser download link:", fetchErr);
+      }
+
+      // Fallback: Akses download endpoint langsung dengan parameter download=1
+      const token = localStorage.getItem('backcharge_auth_token') || localStorage.getItem('bc_auth_token') || '';
+      const proxyPath = toSecureProxyUrl(fileData);
+      const cleanPath = proxyPath.startsWith('/') ? proxyPath : `/${proxyPath}`;
+      const downloadUrl = getApiUrl(`${cleanPath}${cleanPath.includes('?') ? '&' : '?'}download=1&token=${encodeURIComponent(token)}`);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+
+    // 4. Khusus dokumen simulasi mock (hanya jika data URL memang diawali MOCK_)
     const canvasDataUrl = generateMockDocumentCanvas(fileData, title || defaultName);
     if (canvasDataUrl) {
       if (!fileName.endsWith('.png')) {
@@ -906,10 +1042,10 @@ export default function DetailModal({
         let logMsg = `Mengupload file lampiran baru: ${description}`;
 
         if (fieldName === 'file_handover_aso_sales_url') {
-          updates.status_handover = 'Diserahkan ke Admin';
+          updates.status_handover = 'Diterima Admin';
           updates.file_handover_sales_admin_url = shortUrl;
           updates.tanggal_handover = transaction.tanggal_handover || new Date().toLocaleString('id-ID');
-          logMsg = `ASO mengunggah Foto Bukti Serah Terima ASO ke Admin dan menyerahkan fisik berkas Backcharge lengkap ke departemen Admin`;
+          logMsg = `ASO mengunggah Foto Bukti Serah Terima ASO ke Admin dan berkas Backcharge diterima Admin`;
         }
 
         onUpdateStatus(
@@ -959,7 +1095,11 @@ export default function DetailModal({
     setActionLoading(true);
     onUpdateStatus(
       transaction.id,
-      { no_invoice: modalInvoiceNo.trim(), status_handover: 'Diterima Admin' },
+      { 
+        no_invoice: modalInvoiceNo.trim(), 
+        tanggal_invoice: new Date().toISOString().split('T')[0],
+        status_handover: 'Diterima Admin' 
+      },
       `Admin menerbitkan Invoice No: ${modalInvoiceNo.trim()} dan mengonfirmasi berkas lengkap`
     );
     setActionLoading(false);
@@ -982,8 +1122,11 @@ export default function DetailModal({
     setActionLoading(true);
     onUpdateStatus(
       transaction.id,
-      { file_handover_sales_admin_url: localHandoverSalesAdminFile },
-      `Sales/Admin mengunggah Foto Bukti Serah Terima Sales ke Admin`
+      { 
+        file_handover_sales_admin_url: localHandoverSalesAdminFile,
+        status_handover: 'Diterima Admin'
+      },
+      `Sales/Admin mengunggah Foto Bukti Serah Terima dan berkas diterima Admin`
     );
     setActionLoading(false);
     setShowActionForm(null);
@@ -1007,7 +1150,7 @@ export default function DetailModal({
 
   const handleApprovalSubmit = () => {
     let roleTitle = currentUser.role;
-    if (transaction.category === 'Maintenance' || transaction.category === 'TPL') {
+    if (['Maintenance', 'TPL', 'Dokumen Kendaraan', 'Unclaimable Insurance'].includes(transaction.category)) {
       roleTitle = 'Kepala Cabang';
     } else if (['Own Risk', 'Ekspedisi', 'ETLE', 'Unclaimable Insurance', 'Dokumen Kendaraan'].includes(transaction.category)) {
       roleTitle = 'Sales Head';
@@ -1091,15 +1234,17 @@ export default function DetailModal({
   const isDivisionHeadView = hasRole(currentUser.role, 'Division Head');
 
   const expectedApproverLabel = 
-    (transaction.category === 'Maintenance' || transaction.category === 'TPL') ? 'Kepala Cabang (Kacab)' : 'Sales Head (SH)';
+    (['Maintenance', 'TPL', 'Dokumen Kendaraan', 'Unclaimable Insurance'].includes(transaction.category)) ? 'Kepala Cabang (Kacab)' : 'Sales Head (SH)';
 
   const isMaintenance = transaction.category === 'Maintenance';
+  const isEkspedisi = transaction.category === 'Ekspedisi';
+  const isKacabCat = isMaintenance || transaction.category === 'TPL' || transaction.category === 'Dokumen Kendaraan' || transaction.category === 'Unclaimable Insurance';
   const isTPL = transaction.category === 'TPL';
   const isOtherCat = transaction.category === 'Own Risk' || transaction.category === 'Ekspedisi' || transaction.category === 'ETLE' || transaction.category === 'Unclaimable Insurance' || transaction.category === 'Dokumen Kendaraan';
 
   const isAuthorizedApprover = 
     hasRole(currentUser.role, 'Administrator') ||
-    (isKacabRole && (isMaintenance || isTPL)) ||
+    (isKacabRole && (isKacabCat)) ||
     (isSalesHeadRole && isOtherCat) ||
     (isRegionalHeadView && ((isMaintenance && txValue > 7500000) || (!isMaintenance && txValue > 5000000))) ||
     (isDivisionHeadView && txValue > 15000000);
@@ -1123,7 +1268,7 @@ export default function DetailModal({
     (!isDivisionHeadReq || transaction.division_approval_status === 'Disetujui');
 
   const showBlockSAP = isSuperAdmin || (isSalesHeadUser && transaction.category === 'Own Risk');
-  const showBlockApprovalL1 = isSuperAdmin || ((isKacabUser && (isMaintenance || isTPL)) || (isSalesHeadUser && isOtherCat));
+  const showBlockApprovalL1 = isSuperAdmin || ((isKacabUser && (isKacabCat)) || (isSalesHeadUser && isOtherCat));
   const showBlockRegionalApproval = isSuperAdmin || (isRegionalHeadUser && isRegionalHeadReq);
   const showBlockDivisionApproval = isSuperAdmin || (isDivisionHeadUser && txValue > 15000000);
   const showBlockInvoice = isSuperAdmin || (isAdminUser && isFullyApproved);
@@ -1217,7 +1362,7 @@ export default function DetailModal({
                   <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-extrabold text-slate-800">
-                        {isMaintenance || isTPL ? '1. Approval Kacab' : '1. Approval Sales Head'}
+                        {isKacabCat ? '1. Approval Kacab' : '1. Approval Sales Head'}
                       </span>
                       <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold ${
                         transaction.status_approval === 'Disetujui'
@@ -1229,7 +1374,7 @@ export default function DetailModal({
                         {transaction.status_approval === 'Disetujui' ? '✅ Disetujui' : transaction.status_approval === 'Ditolak' ? '❌ Ditolak' : '⏳ Belum'}
                       </span>
                     </div>
-                    <p className="text-[9px] text-slate-500 font-bold">Wewenang: {isMaintenance || isTPL ? 'Kepala Cabang (Kacab)' : 'Sales Head (SH)'}</p>
+                    <p className="text-[9px] text-slate-500 font-bold">Wewenang: {isKacabCat ? 'Kepala Cabang (Kacab)' : 'Sales Head (SH)'}</p>
                     {transaction.approved_by && (
                       <p className="text-[9px] text-slate-600">Oleh: <strong className="text-slate-700">{transaction.approved_by}</strong> {transaction.approved_at ? `(${transaction.approved_at})` : ''}</p>
                     )}
@@ -1392,6 +1537,12 @@ export default function DetailModal({
                   <div>
                     <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Nomor SPK</span>
                     <span className="font-bold text-slate-700 block mt-0.5">{transaction.no_spk}</span>
+                  </div>
+                )}
+                {transaction.no_cmd && transaction.no_cmd !== '-' && (
+                  <div>
+                    <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Nomor CMD</span>
+                    <span className="font-bold text-slate-700 block mt-0.5">{transaction.no_cmd}</span>
                   </div>
                 )}
               </div>
@@ -2039,10 +2190,10 @@ export default function DetailModal({
                                                 const fileNameToUpload = getFormattedFileName(docName, transaction, file.name);
                                                 const driveUrl = await uploadFileToDrive(file, fileNameToUpload, googleToken);
                                                 item.setter(driveUrl);
-                                                if (addToast) addToast("Dokumen berhasil diunggah ke Google Drive!", "success");
+                                                if (addToast) addToast("Dokumen berhasil diunggah dan diamankan di Cloud!", "success");
                                               } catch (err: any) {
-                                                console.error("Gagal mengunggah ke Google Drive:", err);
-                                                if (addToast) { addToast("File diamankan ke penyimpanan lokal.", "info"); }
+                                                console.error("Gagal mengunggah berkas:", err);
+                                                if (addToast) { addToast("File diamankan ke penyimpanan server lokal.", "info"); }
                                                 const reader = new FileReader();
                                                 reader.onloadend = () => {
                                                   item.setter(reader.result as string);
@@ -2168,22 +2319,46 @@ export default function DetailModal({
                             {(transaction.approval_attachment_1_url || transaction.approval_attachment_2_url || transaction.approval_attachment_3_url) && (
                               <div className="flex flex-wrap gap-1.5 pt-1">
                                 {transaction.approval_attachment_1_url && (
-                                  <a href={transaction.approval_attachment_1_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() => setLightboxFile({
+                                      url: transaction.approval_attachment_1_url!,
+                                      title: 'Lampiran 1 (Level 1)',
+                                      docName: 'Lampiran_1'
+                                    })}
+                                    className="inline-flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold cursor-pointer transition-colors shadow-xs"
+                                  >
                                     <FileText className="w-3 h-3" />
                                     <span>Lampiran 1</span>
-                                  </a>
+                                  </button>
                                 )}
                                 {transaction.approval_attachment_2_url && (
-                                  <a href={transaction.approval_attachment_2_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() => setLightboxFile({
+                                      url: transaction.approval_attachment_2_url!,
+                                      title: 'Lampiran 2 (Level 1)',
+                                      docName: 'Lampiran_2'
+                                    })}
+                                    className="inline-flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold cursor-pointer transition-colors shadow-xs"
+                                  >
                                     <FileText className="w-3 h-3" />
                                     <span>Lampiran 2</span>
-                                  </a>
+                                  </button>
                                 )}
                                 {transaction.approval_attachment_3_url && (
-                                  <a href={transaction.approval_attachment_3_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() => setLightboxFile({
+                                      url: transaction.approval_attachment_3_url!,
+                                      title: 'Lampiran 3 (Level 1)',
+                                      docName: 'Lampiran_3'
+                                    })}
+                                    className="inline-flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold cursor-pointer transition-colors shadow-xs"
+                                  >
                                     <FileText className="w-3 h-3" />
                                     <span>Lampiran 3</span>
-                                  </a>
+                                  </button>
                                 )}
                               </div>
                             )}
@@ -2285,22 +2460,46 @@ export default function DetailModal({
                             {(transaction.approval_attachment_1_url || transaction.approval_attachment_2_url || transaction.approval_attachment_3_url) && (
                               <div className="flex flex-wrap gap-1.5 pt-1">
                                 {transaction.approval_attachment_1_url && (
-                                  <a href={transaction.approval_attachment_1_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() => setLightboxFile({
+                                      url: transaction.approval_attachment_1_url!,
+                                      title: 'Lampiran 1 (Level 1)',
+                                      docName: 'Lampiran_1'
+                                    })}
+                                    className="inline-flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold cursor-pointer transition-colors shadow-xs"
+                                  >
                                     <FileText className="w-3 h-3" />
                                     <span>Lampiran 1</span>
-                                  </a>
+                                  </button>
                                 )}
                                 {transaction.approval_attachment_2_url && (
-                                  <a href={transaction.approval_attachment_2_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() => setLightboxFile({
+                                      url: transaction.approval_attachment_2_url!,
+                                      title: 'Lampiran 2 (Level 1)',
+                                      docName: 'Lampiran_2'
+                                    })}
+                                    className="inline-flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold cursor-pointer transition-colors shadow-xs"
+                                  >
                                     <FileText className="w-3 h-3" />
                                     <span>Lampiran 2</span>
-                                  </a>
+                                  </button>
                                 )}
                                 {transaction.approval_attachment_3_url && (
-                                  <a href={transaction.approval_attachment_3_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-1 px-2 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() => setLightboxFile({
+                                      url: transaction.approval_attachment_3_url!,
+                                      title: 'Lampiran 3 (Level 1)',
+                                      docName: 'Lampiran_3'
+                                    })}
+                                    className="inline-flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded text-[9px] font-bold cursor-pointer transition-colors shadow-xs"
+                                  >
                                     <FileText className="w-3 h-3" />
                                     <span>Lampiran 3</span>
-                                  </a>
+                                  </button>
                                 )}
                               </div>
                             )}
@@ -2474,7 +2673,7 @@ export default function DetailModal({
 
                 {/* NO ACTIONABLE AUTHORITY MESSAGE */}
                 {!(isSales || isBro || isAdminView) &&
-                 !((isKacabRole && (transaction.category === 'Maintenance' || transaction.category === 'TPL')) ||
+                 !((isKacabRole && (['Maintenance', 'TPL', 'Dokumen Kendaraan', 'Unclaimable Insurance'].includes(transaction.category))) ||
                    (isSalesHeadRole && (transaction.category === 'Own Risk' || transaction.category === 'Ekspedisi' || transaction.category === 'ETLE' || transaction.category === 'Unclaimable Insurance' || transaction.category === 'Dokumen Kendaraan')) ||
                    hasRole(currentUser.role, 'Administrator')) &&
                  !isAdminView && (
@@ -2574,30 +2773,21 @@ export default function DetailModal({
                       {uploadingSalesAdmin && (
                         <div className="flex items-center space-x-1.5 text-[9px] font-bold text-blue-600 font-sans">
                           <Loader2 className="w-3 h-3 animate-spin" />
-                          <span>Mengunggah foto bukti ke Google Drive...</span>
+                          <span>Mengamankan foto bukti ke Cloud Storage...</span>
                         </div>
                       )}
 
                       {localHandoverSalesAdminFileName && (
                         <div className="flex items-center space-x-1.5 text-[8px] text-slate-500 font-sans">
                           <span className="font-mono truncate flex-grow max-w-[200px]">{localHandoverSalesAdminFileName}</span>
-                          {localHandoverSalesAdminFile?.startsWith('https://drive.google.com') && (
-                            <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black uppercase">Google Drive</span>
-                          )}
+                          <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black uppercase">Cloud Secure</span>
                         </div>
                       )}
                     </div>
 
                     {localHandoverSalesAdminFile && (
                       <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 p-2 flex flex-col items-center justify-center max-h-32">
-                        {localHandoverSalesAdminFile.startsWith('data:') || localHandoverSalesAdminFile.startsWith('/uploads/') ? (
-                          <ResolvedImage src={localHandoverSalesAdminFile} alt="Preview serah terima" loading="lazy" decoding="async" className="object-contain max-h-28" />
-                        ) : (
-                          <div className="text-center py-2 text-[10px] text-emerald-600 font-bold flex flex-col items-center">
-                            <Cloud className="w-6 h-6 mb-1 text-emerald-500" />
-                            <span>Berkas Aman Terunggah ke Google Drive</span>
-                          </div>
-                        )}
+                        <ResolvedImage src={localHandoverSalesAdminFile} alt="Preview serah terima" loading="lazy" decoding="async" className="object-contain max-h-28" />
                       </div>
                     )}
 
@@ -2698,15 +2888,13 @@ export default function DetailModal({
                         {uploadingBak && (
                           <div className="flex items-center space-x-1.5 text-[9px] font-bold text-blue-600 font-sans">
                             <Loader2 className="w-3 h-3 animate-spin" />
-                            <span>Mengunggah file ke Google Drive...</span>
+                            <span>Mengamankan file ke Cloud Storage...</span>
                           </div>
                         )}
                         {localFileBakName && (
                           <div className="flex items-center space-x-1 text-[8px] text-slate-500 font-sans">
                             <span className="font-mono truncate flex-grow max-w-[200px]">{localFileBakName}</span>
-                            {localFileBak?.startsWith('https://drive.google.com') && (
-                              <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black">Google Drive</span>
-                            )}
+                            <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black">Cloud Secure</span>
                           </div>
                         )}
                       </div>
@@ -2733,7 +2921,7 @@ export default function DetailModal({
                                     const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
                                     setLocalUploadDokPendukung(driveUrl);
                                   } catch (err) {
-                                    console.error("Gagal mengunggah ke Drive:", err);
+                                    console.error("Gagal mengunggah berkas:", err);
                                     const reader = new FileReader();
                                     reader.onloadend = () => setLocalUploadDokPendukung(reader.result as string);
                                     reader.readAsDataURL(file);
@@ -2762,15 +2950,13 @@ export default function DetailModal({
                         {uploadingDokPendukung && (
                           <div className="flex items-center space-x-1.5 text-[9px] font-bold text-blue-600 font-sans">
                             <Loader2 className="w-3 h-3 animate-spin" />
-                            <span>Mengunggah file ke Google Drive...</span>
+                            <span>Mengamankan file ke Cloud Storage...</span>
                           </div>
                         )}
                         {localUploadDokPendukungName && (
                           <div className="flex items-center space-x-1 text-[8px] text-slate-500 font-sans">
                             <span className="font-mono truncate flex-grow max-w-[200px]">{localUploadDokPendukungName}</span>
-                            {localUploadDokPendukung?.startsWith('https://drive.google.com') && (
-                              <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black">Google Drive</span>
-                            )}
+                            <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black">Cloud Secure</span>
                           </div>
                         )}
                       </div>
@@ -2810,10 +2996,10 @@ export default function DetailModal({
                                   try {
                                     const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
                                     setLocalHandoverSalesAdminFile(driveUrl);
-                                  if (addToast) addToast("Dokumen berhasil diunggah ke Google Drive!", "success");
+                                    if (addToast) addToast("Dokumen berhasil diamankan di Cloud!", "success");
                                   } catch (err: any) {
-                                    console.error("Gagal mengunggah ke Google Drive:", err);
-                                    if (addToast) { addToast("File diamankan ke penyimpanan lokal.", "info"); }
+                                    console.error("Gagal mengunggah berkas:", err);
+                                    if (addToast) { addToast("File diamankan ke penyimpanan server lokal.", "info"); }
                                     const reader = new FileReader();
                                     reader.onloadend = () => {
                                       setLocalHandoverSalesAdminFile(reader.result as string);
@@ -2847,30 +3033,21 @@ export default function DetailModal({
                         {uploadingSalesAdmin && (
                           <div className="flex items-center space-x-1.5 text-[9px] font-bold text-blue-600 font-sans">
                             <Loader2 className="w-3 h-3 animate-spin" />
-                            <span>Mengunggah foto bukti ke Google Drive...</span>
+                            <span>Mengamankan foto bukti ke Cloud Storage...</span>
                           </div>
                         )}
 
                         {localHandoverSalesAdminFileName && (
                           <div className="flex items-center space-x-1.5 text-[8px] text-slate-500 font-sans">
                             <span className="font-mono truncate flex-grow max-w-[200px]">{localHandoverSalesAdminFileName}</span>
-                            {localHandoverSalesAdminFile?.startsWith('https://drive.google.com') && (
-                              <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black uppercase">Google Drive</span>
-                            )}
+                            <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black uppercase">Cloud Secure</span>
                           </div>
                         )}
                       </div>
 
                       {localHandoverSalesAdminFile && (
                         <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 p-2 flex flex-col items-center justify-center max-h-32">
-                          {localHandoverSalesAdminFile.startsWith('data:') || localHandoverSalesAdminFile.startsWith('/uploads/') ? (
-                            <ResolvedImage src={localHandoverSalesAdminFile} alt="Preview serah terima" loading="lazy" decoding="async" className="object-contain max-h-28" />
-                          ) : (
-                            <div className="text-center py-2 text-[10px] text-emerald-600 font-bold flex flex-col items-center">
-                              <Cloud className="w-6 h-6 mb-1 text-emerald-500" />
-                              <span>Berkas Aman Terunggah ke Google Drive</span>
-                            </div>
-                          )}
+                          <ResolvedImage src={localHandoverSalesAdminFile} alt="Preview serah terima" loading="lazy" decoding="async" className="object-contain max-h-28" />
                         </div>
                       )}
                     </div>
@@ -2891,14 +3068,14 @@ export default function DetailModal({
                           { 
                             file_handover_aso_sales_url: localHandoverSalesAdminFile,
                             file_handover_sales_admin_url: localHandoverSalesAdminFile,
-                            status_handover: 'Diserahkan ke Admin',
+                            status_handover: 'Diterima Admin',
                             tanggal_handover: transaction.tanggal_handover || new Date().toLocaleString('id-ID'),
                             file_bak_url: localFileBak || transaction.file_bak_url,
                             upload_dok_pendukung: localUploadDokPendukung || transaction.upload_dok_pendukung,
                             dok_pendukung_alasan: localDokPendukungAlasan.trim() || transaction.dok_pendukung_alasan || '-',
                             alasan: localDokPendukungAlasan.trim() || transaction.alasan || '-'
                           },
-                          `ASO melengkapi dokumen lampiran dan mengunggah Foto Bukti Serah Terima ASO ke Admin`
+                          `ASO melengkapi dokumen lampiran dan berkas Backcharge diterima Admin`
                         );
                         setActionLoading(false);
                         setShowActionForm(null);
@@ -3091,39 +3268,7 @@ export default function DetailModal({
 
           {/* Lightbox Content Body */}
           <div className="flex-grow flex items-center justify-center overflow-auto py-6 print:py-0 print:block print:overflow-visible">
-            {lightboxLoading ? (
-              <div className="flex flex-col items-center justify-center p-12 text-white space-y-3">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-                <span className="text-xs font-bold font-sans">Memuat pratinjau berkas...</span>
-              </div>
-            ) : (resolvedLightboxUrl.startsWith('data:image/') || resolvedLightboxUrl.startsWith('blob:') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(resolvedLightboxUrl) || lightboxFile.url.startsWith('/uploads/')) ? (
-              <ResolvedImage 
-                src={lightboxFile.url} 
-                alt={lightboxFile.title} 
-                className="max-w-full max-h-[75vh] object-contain rounded-xl border border-slate-800 shadow-2xl animate-in zoom-in-95 duration-200" 
-              />
-            ) : (resolvedLightboxUrl.startsWith('data:application/pdf') || /\.pdf$/i.test(resolvedLightboxUrl)) ? (
-              <iframe 
-                src={resolvedLightboxUrl} 
-                className="w-full max-w-4xl h-[75vh] rounded-xl border border-slate-800 bg-white" 
-                title="PDF Viewer"
-              />
-            ) : lightboxFile.url.startsWith('http') ? (
-              <div className="w-full max-w-4xl h-[75vh] flex flex-col bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative">
-                <div className="flex-grow bg-slate-950 relative">
-                  <iframe 
-                    src={getDrivePreviewUrl(lightboxFile.url)} 
-                    className="w-full h-full border-0 bg-white" 
-                    title="Google Drive Document Viewer"
-                    allow="autoplay"
-                  />
-                  {/* Floating helpful banner */}
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-900/95 text-slate-300 text-[10px] px-3 py-1.5 rounded-full border border-slate-800 shadow-xl backdrop-blur-sm pointer-events-none text-center font-sans max-w-xs sm:max-w-md font-medium leading-normal">
-                    💡 Berkas tersimpan di Google Drive. Jika pratinjau tidak muncul secara otomatis, silakan klik tombol <b>Buka di Tab Baru</b> atau <b>Unduh Berkas</b>.
-                  </div>
-                </div>
-              </div>
-            ) : (
+            {lightboxFile.url.startsWith('MOCK_') ? (
               /* Simulated Document Renderer (MOCK_BAK or MOCK_HANDOVER etc) */
               <div className="bg-white text-slate-800 rounded-2xl p-6 md:p-8 w-full max-w-2xl shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200 font-sans relative">
                 
@@ -3150,7 +3295,7 @@ export default function DetailModal({
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-12 pointer-events-none select-none border-4 border-emerald-500/30 text-emerald-500/30 font-black text-4xl md:text-6xl px-6 py-2 uppercase rounded-xl tracking-widest flex items-center justify-center">
                   APPROVED
                 </div>
-
+              
                 {/* Header */}
                 <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4">
                   <div>
@@ -3248,7 +3393,25 @@ export default function DetailModal({
                   </div>
                 </div>
               </div>
+            ) : (
+              <SafeLightboxContent 
+                url={lightboxFile.url} 
+                title={lightboxFile.title} 
+                onDownload={() => downloadFile(
+                  lightboxFile.url,
+                  getFormattedFileName(
+                    lightboxFile.docName || lightboxFile.title.split(':')[0] || 'Lampiran_Dokumen',
+                    transaction,
+                    lightboxFile.url
+                  ),
+                  lightboxFile.title
+                )} 
+              />
+
+
             )}
+
+
           </div>
 
           {/* Lightbox Footer */}

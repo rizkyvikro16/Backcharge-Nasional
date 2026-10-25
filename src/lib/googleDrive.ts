@@ -197,21 +197,93 @@ export const checkServiceAccountStatus = async (): Promise<boolean> => {
  * @param file Berkas yang ingin diunggah
  * @param filename Nama berkas akhir di Google Drive
  * @param token Token OAuth opsional
+/**
+ * Mengunggah file secara aman menggunakan backend cloud engine ASSA.
+ * File disimpan secara privat di Google Drive dan dimasking melalui proxy server internal
+ * sehingga tidak ada tautan Google Drive publik yang terekspos ke pengguna luar.
+ * 
+ * @param file Berkas yang ingin diunggah
+ * @param filename Nama berkas akhir
+ * @param token Token OAuth opsional
  */
 export const uploadFileToDrive = async (
   file: File | Blob, 
   filename: string, 
   token: string | null = null
 ): Promise<string> => {
-  // Optimisasi 1: Kompres gambar secara lokal terlebih dahulu jika tipe file adalah foto/gambar
-  // Memotong waktu upload dari belasan detik menjadi < 1 detik
+  // Optimisasi: Kompres gambar secara lokal terlebih dahulu jika tipe file adalah foto/gambar
   const optimizedFile = await compressImageIfNeeded(file);
 
-  // 1. PRIORITAS UTAMA (Jika user sudah Login Akun Google di browser): Client OAuth
+  // 1. PRIORITAS UTAMA: Backend Cloud Relay (/api/upload-to-drive)
+  // Backend secara privat menyimpan ke Google Drive (tanpa izin publik) & mengembalikan URL aman internal
+  try {
+    console.log('[DRIVE SECURE] Mengunggah ke Cloud Storage via Backend Authenticated Proxy...');
+    const formData = new FormData();
+    formData.append('file', optimizedFile, filename);
+
+    // Ambil token otentikasi lokal jika ada
+    const authToken = localStorage.getItem('backcharge_auth_token') || localStorage.getItem('bc_auth_token') || localStorage.getItem('auth_token') || '';
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+      headers['x-auth-token'] = authToken;
+    }
+
+    const response = await fetch(getApiUrl('/api/upload-to-drive'), {
+      method: 'POST',
+      headers,
+      body: formData
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      
+      // Mengembalikan tautan proxy internal aman (/api/files/secure/... atau /uploads/...)
+      const secureUrl = data.url || data.webViewLink || (data.fileId ? `/api/files/secure/${data.fileId}?name=${encodeURIComponent(filename)}` : null);
+      if (secureUrl) {
+        console.log('[DRIVE SECURE] Berkas aman terunggah ke Cloud Storage ASSA:', secureUrl);
+        return secureUrl;
+      }
+    }
+  } catch (backendErr: any) {
+    console.warn('[DRIVE SECURE] Backend Cloud Relay tidak merespons, mencoba jalur alternatif aman...', backendErr?.message);
+  }
+
+  // 2. PRIORITAS KEDUA: Simpan via /api/upload-file dengan otentikasi
+  try {
+    const base64Data = await toBase64(optimizedFile);
+    const mime = optimizedFile.type || 'image/jpeg';
+    const dataUrl = `data:${mime};base64,${base64Data}`;
+    
+    const authToken = localStorage.getItem('backcharge_auth_token') || localStorage.getItem('bc_auth_token') || localStorage.getItem('auth_token') || '';
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+      headers['x-auth-token'] = authToken;
+    }
+
+    const uploadRes = await fetch(getApiUrl('/api/upload-file'), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ base64: dataUrl, filename })
+    });
+    if (uploadRes.ok) {
+      const uploadJson = await uploadRes.json();
+      const safeUrl = uploadJson.url || (uploadJson.localUrl ? uploadJson.localUrl : null);
+      if (safeUrl) {
+        console.log('[DRIVE SECURE] Berkas aman tersimpan:', safeUrl);
+        return safeUrl;
+      }
+    }
+  } catch (convErr) {
+    console.warn('[DRIVE SECURE] Fallback /api/upload-file notice:', convErr);
+  }
+
+  // 3. PRIORITAS KETIGA (Client OAuth jika user login mandiri): Simpan secara PRIVAT tanpa 'anyone' permission
   const activeToken = token || checkGoogleToken();
   if (activeToken) {
     try {
-      console.log('[DRIVE CLIENT] Mengunggah ke Google Drive via Client OAuth...');
+      console.log('[DRIVE CLIENT] Mengunggah ke Google Drive pribadi via OAuth...');
       
       const metadata = {
         name: filename,
@@ -222,7 +294,7 @@ export const uploadFileToDrive = async (
       form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
       form.append('file', optimizedFile);
 
-      const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink', {
+      const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${activeToken}`
@@ -233,125 +305,24 @@ export const uploadFileToDrive = async (
       if (response.ok) {
         const data = await response.json();
         if (data.id) {
-          // Atur izin file agar dapat dilihat publik
-          try {
-            await fetch(`https://www.googleapis.com/drive/v3/files/${data.id}/permissions`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${activeToken}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ role: 'reader', type: 'anyone' })
-            });
-          } catch (permErr) {
-            console.warn('[DRIVE CLIENT] Izin publik gagal diatur:', permErr);
-          }
-
-          const fileUrl = data.webViewLink || `https://drive.google.com/file/d/${data.id}/view`;
-          console.log('[DRIVE CLIENT] Unggah via Client OAuth sukses!', fileUrl);
-          return fileUrl;
+          // Jangan buat publik! Gunakan proxy internal
+          const secureProxyUrl = `/api/files/secure/${data.id}?name=${encodeURIComponent(filename)}`;
+          return secureProxyUrl;
         }
       } else if (response.status === 401) {
         logoutGoogleDrive();
       }
     } catch (err: any) {
-      console.warn('[DRIVE CLIENT] Client OAuth gagal, melanjutkan ke Backend Cloud Relay...', err?.message);
+      console.warn('[DRIVE CLIENT] OAuth notice:', err?.message);
     }
   }
 
-  // 2. PRIORITAS KEDUA: Backend Cloud Relay (/api/upload-to-drive)
-  // Backend secara otomatis menangani Service Account dan Google Apps Script Relay dengan koneksi server berkecepatan tinggi
-  let localFallbackUrl: string | null = null;
-  try {
-    console.log('[DRIVE CLOUD] Mengunggah ke Google Drive via Backend Cloud Relay...');
-    const formData = new FormData();
-    formData.append('file', optimizedFile, filename);
-
-    const response = await fetch(getApiUrl('/api/upload-to-drive'), {
-      method: 'POST',
-      body: formData
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      
-      // Jika backend berhasil mendapatkan tautan Google Drive atau penyimpanan lokal server
-      if (data.webViewLink) {
-        console.log('[DRIVE CLOUD] Unggah berkas sukses!', data.webViewLink);
-        return data.webViewLink;
-      }
-    }
-  } catch (backendErr: any) {
-    console.warn('[DRIVE CLOUD] Backend Cloud Relay tidak merespons, mencoba Browser Direct Apps Script...', backendErr?.message);
-  }
-
-  // 3. PRIORITAS KETIGA: Direct Browser Google Apps Script Web App
-  const appsScriptUrl = (import.meta as any).env.VITE_GOOGLE_APPS_SCRIPT_URL || 
-                        "https://script.google.com/macros/s/AKfycbwtd0ETxA17JRECbuhpPjnQRvmlI8OmExOOmbl5hlxWDY1O33rV99OZ68eVnQ7Sp_n-/exec";
-  const targetFolderId = "1YDe87vD-540Tupk2gwp9qGfvGNBBoZEQ";
-
-  if (appsScriptUrl && appsScriptUrl.trim() !== '') {
-    try {
-      console.log('[DRIVE APPS SCRIPT] Mengunggah via Browser Direct Apps Script...');
-      const base64Data = await toBase64(optimizedFile);
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12 detik timeout
-
-      const response = await fetch(appsScriptUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
-        },
-        body: JSON.stringify({
-          fileBase64: base64Data,
-          fileName: filename,
-          mimeType: optimizedFile.type || 'image/jpeg',
-          folderId: targetFolderId,
-          parentId: targetFolderId
-        }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        const data = await response.json().catch(async () => {
-          const txt = await response.text();
-          try { return JSON.parse(txt); } catch { return { fileUrl: txt }; }
-        });
-
-        const fileUrl = data?.fileUrl || data?.url || (data?.id ? `https://drive.google.com/file/d/${data.id}/view` : null);
-        if (fileUrl && (fileUrl.includes('drive.google.com') || fileUrl.includes('google.com') || fileUrl.includes('googleusercontent.com') || fileUrl.startsWith('http'))) {
-          console.log('[DRIVE APPS SCRIPT] Unggah sukses via Apps Script!', fileUrl);
-          return fileUrl;
-        }
-      }
-    } catch (gasErr: any) {
-      console.warn('[DRIVE APPS SCRIPT] Direct Apps Script notice:', gasErr?.message);
-    }
-  }
-
-  // 4. PENYELAMATAN DATA: Simpan ke endpoint /api/upload-file untuk menghasilkan URL ringkas (/uploads/...)
+  // 4. Cadangan Darurat: Kembalikan Data URL agar transaksi tetap dapat disimpan tanpa kehilangan bukti
   try {
     const base64Data = await toBase64(optimizedFile);
     const mime = optimizedFile.type || 'image/jpeg';
-    const dataUrl = `data:${mime};base64,${base64Data}`;
-    const uploadRes = await fetch(getApiUrl('/api/upload-file'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ base64: dataUrl, filename })
-    });
-    if (uploadRes.ok) {
-      const uploadJson = await uploadRes.json();
-      if (uploadJson.url) {
-        console.log('[STORAGE OPTIMIZER] Berkas dikonversi menjadi URL ringkas:', uploadJson.url);
-        return uploadJson.url;
-      }
-    }
-  } catch (convErr) {
-    console.warn('[DRIVE ERROR] Gagal mengunggah ke /api/upload-file:', convErr);
+    return `data:${mime};base64,${base64Data}`;
+  } catch {
+    throw new Error("Gagal mengunggah berkas. Mohon periksa koneksi atau format file Anda.");
   }
-
-  throw new Error("Gagal mengunggah berkas. Mohon periksa format file Anda.");
 };

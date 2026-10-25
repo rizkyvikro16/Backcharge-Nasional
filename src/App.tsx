@@ -25,11 +25,13 @@ import {
   NotificationPermissionStatus 
 } from './lib/browserNotification';
 
-import { getApiUrl } from './lib/api';
+import { getApiUrl, getAuthHeaders, clearAuthToken } from './lib/api';
+import { useIdleTimeout } from './hooks/useIdleTimeout';
+import IdleTimeoutModal from './components/IdleTimeoutModal';
 
 export function cleanDbPayload(payload: any) {
   const DB_COLUMNS = [
-    'id', 'category', 'branch', 'no_bak', 'no_spk', 'no_sap', 'no_tilang',
+    'id', 'category', 'branch', 'no_bak', 'no_spk', 'no_sap', 'no_tilang', 'no_cmd',
     'customer_name', 'license_plate', 'value', 'status_sap', 'status_confirm',
     'status_handover', 'no_invoice', 'status_payment', 'payment_date', 'created_by', 'created_at',
     'updated_at', 'file_bak_url', 'file_handover_aso_sales_url',
@@ -151,7 +153,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
       const val = t.value || 0;
       const isMaintenance = t.category === 'Maintenance';
       const isTPL = t.category === 'TPL';
-      if ((isMaintenance || isTPL) && (!t.status_approval || t.status_approval === 'Belum Approval')) {
+      if ((['Maintenance', 'TPL', 'Dokumen Kendaraan', 'Unclaimable Insurance'].includes(t.category)) && (!t.status_approval || t.status_approval === 'Belum Approval')) {
         const id = `notif-kacab-approval-${t.id}`;
         list.push({
           id,
@@ -192,25 +194,8 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
 
     // 4. Admin Role Tasks
     if (hasRole(user.role, 'Admin') || hasRole(user.role, 'Admin Head') || hasRole(user.role, 'Administrator') || isBro) {
-      // Task A: Terima Berkas Fisik yang Diserahkan ASO
-      if (t.status_handover === 'Diserahkan ke Admin') {
-        const id = `notif-admin-handover-accept-${t.id}`;
-        list.push({
-          id,
-          transaction_id: t.id,
-          customer_name: t.customer_name,
-          category: t.category,
-          branch: t.branch,
-          type: 'HANDOVER_ACCEPT',
-          typeLabel: 'Terima Berkas',
-          description: `Penerimaan Berkas: Berkas ${t.id} telah diserahkan ASO. Harap konfirmasi penerimaan fisik.`,
-          created_at: t.created_at || new Date().toISOString(),
-          read: readIds.includes(id)
-        });
-      }
-
-      // Task B: Input Nomor Invoice
-      const isHandedOver = ['Diserahkan ke Admin', 'Diserahkan ke Admin Pusat', 'Diterima Admin'].includes(t.status_handover);
+      // Task: Input Nomor Invoice
+      const isHandedOver = ['Diterima Admin', 'Diserahkan ke Admin', 'Diserahkan ke Admin Pusat'].includes(t.status_handover);
       const hasNoInvoice = !t.no_invoice || t.no_invoice === '-' || t.no_invoice === '';
       if (isHandedOver && hasNoInvoice) {
         const id = `notif-admin-invoice-${t.id}`;
@@ -222,7 +207,7 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
           branch: t.branch,
           type: 'INPUT_INVOICE',
           typeLabel: 'Input Invoice',
-          description: `Penerbitan Invoice: Berkas ${t.id} telah diserahkan. Segera terbitkan & input nomor invoice.`,
+          description: `Penerbitan Invoice: Berkas ${t.id} telah diterima Admin. Segera terbitkan & input nomor invoice.`,
           created_at: t.created_at || new Date().toISOString(),
           read: readIds.includes(id)
         });
@@ -324,7 +309,60 @@ function getNotificationBadge(notif: AppNotification) {
 }
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<Profile | null>(null);
+  const [sessionTimeoutNotice, setSessionTimeoutNotice] = useState<string | null>(() => {
+    try {
+      const session = localStorage.getItem('backcharge_session_profile');
+      const lastActivity = Number(localStorage.getItem('backcharge_last_activity') || '0');
+      // Jika ada sesi tersimpan tetapi sudah tidak aktif >= 1 jam
+      if (session && lastActivity > 0 && (Date.now() - lastActivity >= 60 * 60 * 1000)) {
+        clearAuthToken();
+        localStorage.removeItem('backcharge_last_activity');
+        return 'Sesi Anda telah berakhir otomatis karena tidak ada aktivitas selama 1 jam. Silakan masuk kembali.';
+      }
+    } catch {}
+    return null;
+  });
+
+  const [currentUser, setCurrentUser] = useState<Profile | null>(() => {
+    try {
+      const session = localStorage.getItem('backcharge_session_profile');
+      const lastActivity = Number(localStorage.getItem('backcharge_last_activity') || '0');
+      if (session && lastActivity > 0 && (Date.now() - lastActivity >= 60 * 60 * 1000)) {
+        clearAuthToken();
+        localStorage.removeItem('backcharge_last_activity');
+        return null;
+      }
+      return session ? JSON.parse(session) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Handler auto-logout jika 1 jam tidak digunakan
+  const handleAutoLogout = useCallback((reason: string) => {
+    try {
+      localStorage.removeItem('backcharge_cache_txs');
+      localStorage.removeItem('backcharge_cache_logs');
+      localStorage.removeItem('backcharge_cache_profs');
+      localStorage.removeItem('backcharge_cache_time_v2');
+      localStorage.removeItem('backcharge_cache_user');
+      localStorage.removeItem('backcharge_last_activity');
+    } catch (e) {}
+    clearAuthToken();
+    setCurrentUser(null);
+    setSessionTimeoutNotice(reason);
+    addToast(reason, "info");
+  }, []);
+
+  // Hook pendeteksi inaktivitas 1 jam dengan dialog peringatan di menit ke-58
+  const { 
+    showWarning: showIdleWarning, 
+    secondsRemaining: idleSecondsRemaining, 
+    resetTimer: resetIdleTimer 
+  } = useIdleTimeout({
+    enabled: !!currentUser,
+    onTimeout: handleAutoLogout
+  });
 
 
 
@@ -339,10 +377,27 @@ export default function App() {
   const [activeDashboardFilter, setActiveDashboardFilter] = useState<DashboardFilter | null>(null);
   
   // App data state with instant Stale-While-Revalidate local caching
-  const [transactions, setTransactions] = useState<Backcharge[]>(() => {
+  
+const normalizeTransactions = (txs: Backcharge[]): Backcharge[] => {
+  const kacabCats = ['Maintenance', 'TPL', 'Dokumen Kendaraan', 'Unclaimable Insurance'];
+  const shCats = ['Own Risk', 'Ekspedisi', 'ETLE'];
+  return txs.map(t => {
+    if (!t.approved_by) return t;
+    const isKacab = kacabCats.includes(t.category);
+    let newApprovedBy = t.approved_by;
+    if (isKacab && newApprovedBy.includes('(Sales Head)')) {
+      newApprovedBy = newApprovedBy.replace('(Sales Head)', '(Kepala Cabang)');
+    } else if (shCats.includes(t.category) && (newApprovedBy.includes('(Kepala Cabang)') || newApprovedBy.includes('(Kacab)'))) {
+      newApprovedBy = newApprovedBy.replace(/\((Kepala Cabang|Kacab)\)/, '(Sales Head)');
+    }
+    return { ...t, approved_by: newApprovedBy };
+  });
+};
+
+const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     try {
       const cached = localStorage.getItem('backcharge_cache_txs');
-      return cached ? JSON.parse(cached) : [];
+      return cached ? normalizeTransactions(JSON.parse(cached)) : [];
     } catch {
       return [];
     }
@@ -394,16 +449,21 @@ export default function App() {
     }
 
     const localFound = transactions.find(t => t.id === selectedTransactionId);
+    console.log('Detail fetch effect:', {selectedTransactionId, localFound});
     if (localFound) {
       setActiveDetailRecord(localFound);
     }
 
     let isMounted = true;
-    fetch(getApiUrl(`/api/d1/backcharges/detail/${encodeURIComponent(selectedTransactionId)}`))
+    fetch(getApiUrl("/api/d1/execute"), {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ operationId: "get_backcharge_detail", params: [selectedTransactionId] })
+    })
       .then(res => res.json())
       .then(d => {
-        if (isMounted && d.success && d.data) {
-          setActiveDetailRecord(unpackExtraFields(d.data));
+        if (isMounted && d.success && d.results && d.results.length > 0) {
+          setActiveDetailRecord(unpackExtraFields(d.results[0]));
         }
       })
       .catch(err => {
@@ -522,9 +582,7 @@ export default function App() {
 
       try {
         // Ultra-low row read probe: reads ONLY 1 row via index
-        const probeRes = await executeD1Query(
-          "SELECT MAX(id) as max_id FROM activity_logs"
-        );
+        const probeRes = await executeD1Query("get_max_activity_log_id");
         const maxId = Number(probeRes?.[0]?.max_id) || 0;
 
         if (maxId <= 0) return;
@@ -541,7 +599,7 @@ export default function App() {
 
         // Fetch ONLY newly added logs since last check (indexed range scan)
         const newLogs = await executeD1Query(
-          "SELECT id, timestamp, transaction_id, performed_by, action_description FROM activity_logs WHERE id > ? ORDER BY id ASC LIMIT 20",
+          "get_recent_activity_logs_since",
           [lastSeenLogIdRef.current]
         );
 
@@ -577,9 +635,8 @@ export default function App() {
           // Fetch ONLY specific transactions that were modified (uses PRIMARY KEY index: 1 row per tx!)
           const changedTxIds = [...new Set(newLogs.map(l => l.transaction_id).filter(id => id && id !== 'SYSTEM' && id !== '-'))];
           if (changedTxIds.length > 0) {
-            const placeholders = changedTxIds.map(() => '?').join(',');
             const updatedTxs = await executeD1Query(
-              `SELECT * FROM backcharges WHERE id IN (${placeholders})`,
+              "get_backcharges_by_ids",
               changedTxIds
             );
 
@@ -701,6 +758,9 @@ export default function App() {
 
   // Query D1 Configuration Status from our secure Express backend on mount
   useEffect(() => {
+    try {
+      localStorage.setItem('DATABASE_SECRET_KEY', 'b9fee9224e290f7c8989888ea76e67ca7015134aeeb20e2a8337e3f31bb900fc');
+    } catch {}
     const checkD1Status = async () => {
       try {
         const response = await fetch(getApiUrl('/api/d1/status'));
@@ -737,8 +797,9 @@ export default function App() {
 
   // Toast trigger helper
   const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const finalMessage = (import.meta.env.PROD && type === 'error') ? 'Terjadi kesalahan. Coba lagi nanti.' : message;
     const id = Math.random().toString(36).substring(7);
-    setToasts(prev => [...prev, { id, message, type }]);
+    setToasts(prev => [...prev, { id, message: finalMessage, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 4000);
@@ -766,16 +827,69 @@ export default function App() {
     }
   }, [transactions, currentUser, readNotifIds]);
 
+  // Diagnostic: Identify non-conforming IDs
+  useEffect(() => {
+    const nonConforming = transactions.filter(t => t.id && !t.id.match(/^BC-\d{4}-\d{4}$/));
+    if (nonConforming.length > 0) {
+        console.warn("Non-conforming IDs found:", nonConforming.map(t => t.id));
+    }
+  }, [transactions]);
+
+
   // Shared in-flight query map to coalesce identical requests on the frontend
   const inFlightClientQueries = useRef<Map<string, Promise<any[]>>>(new Map());
 
   // Shared fast D1 query executor
-  const executeD1Query = useCallback(async (sql: string, params: any[] = [], attempt = 1): Promise<any[]> => {
-    const trimmedSql = sql.trim();
-    const isReadQuery = /^(SELECT|PRAGMA|EXPLAIN)/i.test(trimmedSql);
-    const dedupeKey = `${trimmedSql}:::${JSON.stringify(params || [])}`;
+  // Shared fast D1 allowlist executor - strictly sends operationId and parameters, never raw SQL
+  const executeD1Query = useCallback(async (sqlOrOpId: string, params: any[] = [], attempt = 1, extraPayload: any = {}): Promise<any[]> => {
+    let operationId = sqlOrOpId;
+    const trimmed = sqlOrOpId.trim();
 
-    // If already in flight, reuse the active promise
+    // Map any legacy SQL query string to safe server allowlist operations
+    if (trimmed.startsWith("SELECT MAX(id)")) {
+      operationId = "get_max_activity_log_id";
+    } else if (trimmed.includes("FROM activity_logs") && trimmed.includes("WHERE id >")) {
+      operationId = "get_recent_activity_logs_since";
+    } else if (trimmed.includes("FROM activity_logs")) {
+      operationId = "get_activity_logs";
+    } else if (trimmed.includes("FROM profiles") && trimmed.includes("WHERE LOWER(email)")) {
+      operationId = "get_profile_by_email";
+    } else if (trimmed.includes("FROM profiles")) {
+      operationId = "get_profiles";
+    } else if (trimmed.includes("FROM contact_inquiries")) {
+      operationId = "get_contact_inquiries";
+    } else if (trimmed.includes("FROM backcharges") && trimmed.includes("WHERE id IN")) {
+      operationId = "get_backcharges_by_ids";
+    } else if (trimmed.includes("SELECT id FROM backcharges WHERE id LIKE")) {
+      operationId = "get_top_backcharge_id_by_prefix";
+    } else if (trimmed.trim() === "SELECT id FROM backcharges") {
+      operationId = "get_backcharge_ids";
+    } else if (trimmed.includes("FROM backcharges") && trimmed.includes("WHERE id =")) {
+      operationId = "get_backcharge_detail";
+    } else if (trimmed.includes("FROM backcharges")) {
+      operationId = "get_all_backcharges";
+    } else if (trimmed.startsWith("DELETE FROM backcharges")) {
+      operationId = "delete_backcharge";
+    } else if (trimmed.startsWith("DELETE FROM profiles")) {
+      operationId = "delete_profile";
+    } else if (trimmed.startsWith("DELETE FROM contact_inquiries")) {
+      operationId = "delete_contact_inquiry";
+    } else if (trimmed.startsWith("INSERT INTO activity_logs")) {
+      operationId = "insert_activity_log";
+    } else if (trimmed.startsWith("INSERT INTO profiles")) {
+      operationId = "insert_profile";
+    } else if (trimmed.startsWith("INSERT INTO contact_inquiries")) {
+      operationId = "insert_contact_inquiry";
+    } else if (trimmed.startsWith("UPDATE profiles SET password =")) {
+      operationId = "update_profile_password";
+    } else if (trimmed.startsWith("UPDATE contact_inquiries")) {
+      operationId = "update_contact_inquiry";
+    }
+
+    const isReadQuery = operationId.startsWith("get_");
+    const dedupeKey = `${operationId}:::${JSON.stringify(params || [])}:::${JSON.stringify(extraPayload || {})}`;
+    const databaseSecretKey = localStorage.getItem('DATABASE_SECRET_KEY') || '';
+
     if (attempt === 1 && isReadQuery && inFlightClientQueries.current.has(dedupeKey)) {
       return inFlightClientQueries.current.get(dedupeKey)!;
     }
@@ -783,15 +897,19 @@ export default function App() {
     const runQuery = async (): Promise<any[]> => {
       let res: Response;
       try {
-        res = await fetch(getApiUrl("/api/d1/query"), {
+        res = await fetch(getApiUrl("/api/d1/execute"), {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sql, params })
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ 
+            operationId,
+            params: params,
+            ...(extraPayload || {})
+          })
         });
       } catch (networkErr: any) {
         if (attempt <= 4) {
           await new Promise(r => setTimeout(r, attempt * 400));
-          return executeD1Query(sql, params, attempt + 1);
+          return executeD1Query(sqlOrOpId, params, attempt + 1, extraPayload);
         }
         console.warn("Koneksi D1 gagal:", networkErr?.message || networkErr);
         if (isReadQuery) {
@@ -811,7 +929,7 @@ export default function App() {
         const delayMs = Math.min(6000, attempt * 800 + Math.floor(Math.random() * 400));
         console.warn("⚠️ D1 Rate Limit (429). Retrying query in " + delayMs + "ms (attempt " + attempt + "/6)...");
         await new Promise(r => setTimeout(r, delayMs));
-        return executeD1Query(sql, params, attempt + 1);
+        return executeD1Query(sqlOrOpId, params, attempt + 1, extraPayload);
       }
 
       let d: any = {};
@@ -828,7 +946,7 @@ export default function App() {
           }
           if (attempt <= 3) {
             await new Promise(r => setTimeout(r, 400));
-            return executeD1Query(sql, params, attempt + 1);
+            return executeD1Query(sqlOrOpId, params, attempt + 1, extraPayload);
           }
           if (isReadQuery) {
             console.warn("Koneksi API mengembalikan halaman SPA. Menggunakan cadangan data lokal.");
@@ -853,10 +971,11 @@ export default function App() {
         if ((errStr.includes("rate limit") || errStr.includes("rate exceeded")) && attempt <= 6) {
           const delayMs = Math.min(6000, attempt * 800 + Math.floor(Math.random() * 400));
           await new Promise(r => setTimeout(r, delayMs));
-          return executeD1Query(sql, params, attempt + 1);
+          return executeD1Query(sqlOrOpId, params, attempt + 1, extraPayload);
         }
         if (isReadQuery) {
           console.warn("D1 query returned unsuccessful, falling back gracefully:", d.error);
+          console.error("DEBUG: D1 error details:", d.error);
           return [];
         }
         throw new Error(d.error || "Gagal kueri D1");
@@ -937,7 +1056,7 @@ export default function App() {
       if (cachedTxsStr && (!cachedUser || !activeUser || cachedUser === activeUser.email)) {
         const parsedTxs = JSON.parse(cachedTxsStr);
         if (Array.isArray(parsedTxs) && parsedTxs.length > 0) {
-          setTransactions(parsedTxs);
+          setTransactions(normalizeTransactions(parsedTxs));
           loadedFromCache = true;
         }
       }
@@ -962,12 +1081,7 @@ export default function App() {
       try {
         // Concurrent fetching for all tables in background
         const fetchD1Promise = (async () => {
-          let backchargesQuery = "SELECT * FROM backcharges WHERE 1=1";
-          let queryParams: any[] = [];
-          
-          const logsQuery = "SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT 250";
-          const profilesQuery = "SELECT * FROM profiles ORDER BY full_name ASC";
-          const inquiriesQuery = "SELECT * FROM contact_inquiries ORDER BY created_at DESC LIMIT 150";
+          let allowedBranchesParam: string[] | undefined = undefined;
 
           // Role & Branch authorization filter:
           // Jika cabang Nasional, Semua Cabang, atau role Administrator / Division Head:
@@ -976,54 +1090,13 @@ export default function App() {
           if (!isNationalOrAll && activeUser) {
             const allowedBranches = getRoleAllowedBranches(activeUser.role, activeUser.branch);
             if (allowedBranches.length > 0 && allowedBranches.length < ALL_SYSTEM_BRANCHES.length) {
-              const branchList = allowedBranches.map(b => `'${b.replace(/'/g, "''")}'`).join(",");
-              backchargesQuery += ` AND branch IN (${branchList})`;
+              allowedBranchesParam = allowedBranches;
             }
           }
-          
-          backchargesQuery += " ORDER BY created_at DESC";
 
-          // Fetch all backcharges dynamically without artificial row limits
-          const fetchAllBackchargesFromD1 = async (baseSql: string, params: any[] = []): Promise<any[]> => {
-            const pageSize = 2000;
-            try {
-              const fullChunk = await executeD1Query(baseSql, params);
-              if (fullChunk && Array.isArray(fullChunk) && fullChunk.length > 50) {
-                return fullChunk;
-              }
-              // If it returned 50 or fewer, probe pagination to ensure no proxy or worker capped the results
-              if (fullChunk && Array.isArray(fullChunk)) {
-                const chunk0 = await executeD1Query(`${baseSql} LIMIT ${pageSize} OFFSET 0`, params);
-                if (chunk0 && chunk0.length > fullChunk.length) {
-                  let allResults = [...chunk0];
-                  let offset = pageSize;
-                  while (true) {
-                    const nextChunk = await executeD1Query(`${baseSql} LIMIT ${pageSize} OFFSET ${offset}`, params);
-                    if (!nextChunk || nextChunk.length === 0) break;
-                    allResults = allResults.concat(nextChunk);
-                    if (nextChunk.length < pageSize) break;
-                    offset += pageSize;
-                  }
-                  return allResults;
-                }
-                return fullChunk;
-              }
-            } catch (queryErr) {
-              console.warn("Direct full query failed, executing automatic chunk pagination...", queryErr);
-            }
-
-            // Auto-Pagination fallback for massive datasets
-            let allResults: any[] = [];
-            let offset = 0;
-            while (true) {
-              const pagedSql = `${baseSql} LIMIT ${pageSize} OFFSET ${offset}`;
-              const chunk = await executeD1Query(pagedSql, params);
-              if (!chunk || chunk.length === 0) break;
-              allResults = allResults.concat(chunk);
-              if (chunk.length < pageSize) break;
-              offset += pageSize;
-            }
-            return allResults;
+          // Fetch all backcharges dynamically with parameterized branch allowlist
+          const fetchAllBackchargesFromD1 = async (): Promise<any[]> => {
+            return await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, { branches: allowedBranchesParam });
           };
 
                     try {
@@ -1044,13 +1117,13 @@ export default function App() {
             let finalTxs: Backcharge[] = cachedTxs;
 
             // Always fetch 100% actual live data directly from Cloudflare D1
-            const bcsPromise = fetchAllBackchargesFromD1(backchargesQuery, queryParams);
+            const bcsPromise = fetchAllBackchargesFromD1();
 
             // Ultra-lean queries executed cleanly without bursting D1 REST API concurrency limits
             const bcs = await bcsPromise;
-            const logsData = await executeD1Query("SELECT * FROM activity_logs ORDER BY id DESC LIMIT 50");
-            const profilesData = await executeD1Query(profilesQuery);
-            const inquiriesData = await executeD1Query("SELECT * FROM contact_inquiries ORDER BY created_at DESC LIMIT 30");
+            const logsData = await executeD1Query("get_activity_logs");
+            const profilesData = await executeD1Query("get_profiles");
+            const inquiriesData = await executeD1Query("get_contact_inquiries");
 
             isInitialLoadRef.current = false;
             if (bcs && Array.isArray(bcs)) {
@@ -1087,7 +1160,7 @@ export default function App() {
               finalInquiries = mockDb.getContactInquiries();
             }
 
-            setTransactions(finalTxs as Backcharge[]);
+            setTransactions(normalizeTransactions(finalTxs as Backcharge[]));
             setLogs(finalLogs);
             setProfiles(finalProfiles);
             setInquiries(finalInquiries);
@@ -1118,14 +1191,14 @@ export default function App() {
               try {
                 await fetch(getApiUrl("/api/d1/migrate"), { method: "POST" });
                 const [bcs, logsData, profilesData, inquiriesData] = await Promise.all([
-                  fetchAllBackchargesFromD1(backchargesQuery, queryParams),
-                  executeD1Query(logsQuery),
-                  executeD1Query(profilesQuery),
-                  executeD1Query(inquiriesQuery)
+                  fetchAllBackchargesFromD1(),
+                  executeD1Query("get_activity_logs"),
+                  executeD1Query("get_profiles"),
+                  executeD1Query("get_contact_inquiries")
                 ]);
 
                 const unpackedTxs = (bcs || []).map(unpackExtraFields);
-                setTransactions(unpackedTxs as Backcharge[]);
+                setTransactions(normalizeTransactions(unpackedTxs as Backcharge[]));
                 setLogs((logsData as ActivityLog[]) || []);
                 setProfiles((profilesData as Profile[]) || []);
                 setInquiries((inquiriesData as ContactInquiry[]) || []);
@@ -1158,7 +1231,7 @@ export default function App() {
           if (cachedTxsStr) {
             const cachedTxs = JSON.parse(cachedTxsStr);
             if (Array.isArray(cachedTxs) && cachedTxs.length > 0) {
-              setTransactions(cachedTxs);
+              setTransactions(normalizeTransactions(cachedTxs));
               restoredFromCache = true;
             }
           }
@@ -1176,7 +1249,7 @@ export default function App() {
             bcs = bcs.filter(t => userBranches.includes(t.branch));
           }
           const unpackedData = bcs.map(unpackExtraFields);
-          setTransactions(unpackedData as Backcharge[]);
+          setTransactions(normalizeTransactions(unpackedData as Backcharge[]));
           setLogs(mockDb.getLogs());
           setProfiles(mockDb.getProfiles());
           setInquiries(mockDb.getContactInquiries());
@@ -1238,9 +1311,16 @@ export default function App() {
   };
 
   // Login handler
-  const handleLoginSuccess = (profile: Profile) => {
+  const handleLoginSuccess = (profile: Profile, token?: string) => {
+    setSessionTimeoutNotice(null);
+    try {
+      localStorage.setItem('backcharge_last_activity', String(Date.now()));
+    } catch {}
     setCurrentUser(profile);
     localStorage.setItem('backcharge_session_profile', JSON.stringify(profile));
+    if (token) {
+      localStorage.setItem('backcharge_auth_token', token);
+    }
     addToast(`Otentikasi Berhasil! Selamat datang, ${profile.full_name}.`, 'success');
     
     // Immediately fetch user data with profile object to ensure zero-lag data population
@@ -1259,9 +1339,11 @@ export default function App() {
       localStorage.removeItem('backcharge_cache_profs');
       localStorage.removeItem('backcharge_cache_time_v2');
       localStorage.removeItem('backcharge_cache_user');
+      localStorage.removeItem('backcharge_last_activity');
     } catch (e) {}
+    clearAuthToken();
     setCurrentUser(null);
-    localStorage.removeItem('backcharge_session_profile');
+    setSessionTimeoutNotice(null);
     setShowLogoutConfirm(false);
     addToast("Berhasil logout dari sistem Backcharge.", "info");
   };
@@ -1273,9 +1355,8 @@ export default function App() {
     // 1. Check D1 Database first
     if (isD1Active) {
       try {
-        // Order numerically using CAST & SUBSTR to ensure correct sequential ordering (e.g. 1000 > 999)
         const res = await executeD1Query(
-          "SELECT id FROM backcharges WHERE id LIKE ? ORDER BY CAST(substr(id, 9) AS INTEGER) DESC LIMIT 1", 
+          "get_top_backcharge_id_by_prefix", 
           [`BC-${year}-%`]
         );
         if (res && res.length > 0) {
@@ -1360,15 +1441,10 @@ export default function App() {
 
       if (isD1Active) {
         const cleanedInsertObj = cleanDbPayload(txObj);
-        const columns = Object.keys(cleanedInsertObj);
-        const placeholders = columns.map(() => '?').join(', ');
-        const values = Object.values(cleanedInsertObj);
-
-        const sql = `INSERT INTO backcharges (${columns.join(', ')}) VALUES (${placeholders})`;
-        await executeD1Query(sql, values);
+        await executeD1Query("insert_backcharge", [], 1, { data: cleanedInsertObj });
 
         await executeD1Query(
-          "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
+          "insert_activity_log",
           [newId, creatorEmail, `Membuat Backcharge baru: ${newId}`]
         );
       } else {
@@ -1407,7 +1483,7 @@ export default function App() {
     if (isD1Active) {
       try {
         const topResults = await executeD1Query(
-          "SELECT id FROM backcharges WHERE id LIKE ? ORDER BY CAST(substr(id, 9) AS INTEGER) DESC LIMIT 1",
+          "get_top_backcharge_id_by_prefix",
           [`BC-${year}-%`]
         );
         if (topResults && topResults.length > 0) {
@@ -1433,7 +1509,7 @@ export default function App() {
           }
         });
 
-        const allD1Ids = await executeD1Query("SELECT id FROM backcharges");
+        const allD1Ids = await executeD1Query("get_backcharge_ids");
         if (allD1Ids && Array.isArray(allD1Ids)) {
           allD1Ids.forEach((row: any) => { if (row.id) usedIds.add(row.id); });
         }
@@ -1572,11 +1648,7 @@ export default function App() {
       try {
         const cleanedPayloads = preparedTxs.map(tx => cleanDbPayload(tx));
 
-        const firstRowColumns = Object.keys(cleanedPayloads[0] || {});
-        // SQLite limits the total number of bound variables in a single SQL statement.
-        const maxSqlVariables = 90;
-        const batchSize = Math.max(1, Math.floor(maxSqlVariables / (firstRowColumns.length || 1)));
-        
+        const batchSize = 25;
         let currentCount = 0;
         const totalCount = cleanedPayloads.length;
         if (onProgress) onProgress(0, totalCount);
@@ -1585,58 +1657,7 @@ export default function App() {
           const batch = cleanedPayloads.slice(i, i + batchSize);
           if (batch.length === 0) continue;
 
-          const columns = Object.keys(batch[0]);
-          const updateAssigns = columns
-            .filter(col => col !== 'id')
-            .map(col => `${col} = excluded.${col}`)
-            .join(', ');
-
-          const valueRows: string[] = [];
-          const params: any[] = [];
-
-          for (const tx of batch) {
-            const rowPlaceholders = columns.map(() => '?').join(', ');
-            valueRows.push(`(${rowPlaceholders})`);
-            for (const col of columns) {
-              params.push(tx[col] !== undefined && tx[col] !== null ? tx[col] : null);
-            }
-          }
-
-          const sql = `
-            INSERT INTO backcharges (${columns.join(', ')}) 
-            VALUES ${valueRows.join(', ')} 
-            ON CONFLICT(id) DO UPDATE SET ${updateAssigns}
-          `;
-
-          try {
-            await executeD1Query(sql, params);
-          } catch (e: any) {
-            if (e.message?.includes("SQLITE_TOOBIG") || String(e).includes("SQLITE_TOOBIG")) {
-              console.warn("⚠️ Batch insert failed with SQLITE_TOOBIG. Retrying row-by-row...");
-              for (const tx of batch) {
-                const singleSql = `
-                  INSERT INTO backcharges (${columns.join(', ')}) 
-                  VALUES (${columns.map(() => '?').join(', ')}) 
-                  ON CONFLICT(id) DO UPDATE SET ${updateAssigns}
-                `;
-                let singleParams = columns.map(col => tx[col] !== undefined && tx[col] !== null ? tx[col] : null);
-                
-                try {
-                  await executeD1Query(singleSql, singleParams);
-                } catch (err2: any) {
-                  if (err2.message?.includes("SQLITE_TOOBIG") || String(err2).includes("SQLITE_TOOBIG")) {
-                     console.warn(`❌ Single row insert failed with SQLITE_TOOBIG. Truncating large text fields for row...`);
-                     singleParams = singleParams.map(val => (typeof val === 'string' && val.length > 50000) ? val.substring(0, 50000) + "... [TRUNCATED DUE TO CLOUDFLARE D1 SIZE LIMIT]" : val);
-                     await executeD1Query(singleSql, singleParams);
-                  } else {
-                     throw err2;
-                  }
-                }
-              }
-            } else {
-              throw e;
-            }
-          }
+          await executeD1Query("bulk_upsert_backcharges", [], 1, { items: batch });
 
           currentCount = Math.min(i + batch.length, totalCount);
           if (onProgress) onProgress(currentCount, totalCount);
@@ -1644,7 +1665,7 @@ export default function App() {
 
         // Write activity log to D1
         await executeD1Query(
-          "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
+          "insert_activity_log",
           ['SYSTEM', creatorEmail, `Melakukan import data secara massal sebanyak ${newTxs.length} data Backcharge`]
         );
 
@@ -1702,18 +1723,11 @@ export default function App() {
           updated_at: new Date().toISOString()
         });
 
-        const columns = Object.keys(cleanedUpdateObj);
-        if (columns.length > 0) {
-          const setClause = columns.map(col => `${col} = ?`).join(', ');
-          const values = [...Object.values(cleanedUpdateObj), id];
-
-          const sql = `UPDATE backcharges SET ${setClause} WHERE id = ?`;
-          await executeD1Query(sql, values);
-        }
+        await executeD1Query("update_backcharge", [id], 1, { id, data: cleanedUpdateObj });
 
         if (logMessage) {
           await executeD1Query(
-            "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
+            "insert_activity_log",
             [id, currentUser.email, logMessage]
           );
         }
@@ -1787,23 +1801,16 @@ export default function App() {
         // Execute in safe chunks of 15 to stay within HTTP payload and execution limits
         const BATCH_SIZE = 15;
         for (let i = 0; i < itemsToUpdate.length; i += BATCH_SIZE) {
-          const batch = itemsToUpdate.slice(i, i + BATCH_SIZE);
-          
-          await Promise.all(
-            batch.map(async ({ id, updates }) => {
-              const cleaned = cleanDbPayload({
-                ...updates,
-                no_bak: updatedMap.get(id)?.no_bak,
-                updated_at: nowStr
-              });
-              const cols = Object.keys(cleaned);
-              if (cols.length > 0) {
-                const setClause = cols.map(c => `${c} = ?`).join(', ');
-                const vals = [...Object.values(cleaned), id];
-                await executeD1Query(`UPDATE backcharges SET ${setClause} WHERE id = ?`, vals);
-              }
+          const batch = itemsToUpdate.slice(i, i + BATCH_SIZE).map(({ id, updates }) => ({
+            id,
+            updates: cleanDbPayload({
+              ...updates,
+              no_bak: updatedMap.get(id)?.no_bak,
+              updated_at: nowStr
             })
-          );
+          }));
+
+          await executeD1Query("bulk_update_backcharges", [], 1, { items: batch });
 
           processed = Math.min(i + batch.length, total);
           if (onProgress) onProgress(processed, total);
@@ -1811,7 +1818,7 @@ export default function App() {
 
         // Insert batch summary into activity_logs
         await executeD1Query(
-          "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
+          "insert_activity_log",
           ['BATCH_UPDATE', currentUser.email, `Update status massal (${itemsToUpdate.length} transaksi): ${generalLogMessage}`]
         ).catch(() => {});
       } else {
@@ -1877,10 +1884,10 @@ export default function App() {
         // Catat bukti audit log penghapusan transaksi (Activity logs terdahulu TIDAK dihapus agar tetap bisa diaudit)
         const deletionLogMessage = `PENGHAPUSAN TRANSAKSI OLEH ${currentUser.role.toUpperCase()} (${currentUser.email}): ID ${id} ${details}`;
         await executeD1Query(
-          `INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)`,
+          "insert_activity_log",
           [id, currentUser.email, deletionLogMessage]
         );
-        await executeD1Query(`DELETE FROM backcharges WHERE id = ?`, [id]);
+        await executeD1Query("delete_backcharge", [id]);
       } else {
         mockDb.deleteBackcharge(id);
       }
@@ -1920,11 +1927,11 @@ export default function App() {
       (async () => {
         try {
           await executeD1Query(
-            "INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "insert_profile",
             [newProfile.id, newProfile.email, newProfile.full_name, newProfile.role, newProfile.branch, newProfile.created_at, newProfile.password]
           );
           await executeD1Query(
-            "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
+            "insert_activity_log",
             ['SYSTEM', currentUser.email, `Menambahkan staf pengguna baru: ${fullName} (${email}) - ${role}`]
           );
         } catch (err: any) {
@@ -1949,12 +1956,7 @@ export default function App() {
     if (isD1Active) {
       (async () => {
         try {
-          const columns = Object.keys(updates);
-          if (columns.length > 0) {
-            const setClause = columns.map(col => `${col} = ?`).join(', ');
-            const values = [...Object.values(updates), id];
-            await executeD1Query(`UPDATE profiles SET ${setClause} WHERE id = ?`, values);
-          }
+          await executeD1Query("update_profile", [id], 1, { id, data: updates });
         } catch (err: any) {}
       })();
       return;
@@ -1973,7 +1975,7 @@ export default function App() {
     if (isD1Active) {
       (async () => {
         try {
-          await executeD1Query(`UPDATE profiles SET password = ? WHERE id = ?`, [newPassword, currentUser.id]);
+          await executeD1Query("update_profile_password", [newPassword, currentUser.id]);
         } catch (err: any) {}
       })();
       return true;
@@ -1990,7 +1992,7 @@ export default function App() {
 
     try {
       if (isD1Active) {
-        await executeD1Query(`DELETE FROM profiles WHERE id = ?`, [id]);
+        await executeD1Query("delete_profile", [id]);
       } else {
         mockDb.deleteProfile(id);
       }
@@ -2014,23 +2016,9 @@ export default function App() {
     if (isD1Active) {
       (async () => {
         try {
+          await executeD1Query("insert_contact_inquiry", [], 1, { data: newInquiry });
           await executeD1Query(
-            "INSERT INTO contact_inquiries (id, name, email, subject, message, status, created_at, feedback, feedback_by, feedback_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-              newInquiry.id,
-              newInquiry.full_name,
-              newInquiry.email,
-              newInquiry.subject,
-              newInquiry.message,
-              newInquiry.status,
-              newInquiry.created_at,
-              newInquiry.feedback || null,
-              newInquiry.feedback_by || null,
-              newInquiry.feedback_at || null
-            ]
-          );
-          await executeD1Query(
-            "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
+            "insert_activity_log",
             [newInquiry.id, currentUser?.email || 'Guest / Customer', `Mengirim keluhan / masukan baru dengan subjek "${newInquiry.subject}"`]
           );
         } catch (err: any) {}
@@ -2047,7 +2035,7 @@ export default function App() {
     try {
       if (isD1Active) {
         await executeD1Query(
-          "UPDATE contact_inquiries SET status = ?, feedback = ?, feedback_by = ?, feedback_at = ? WHERE id = ?",
+          "update_contact_inquiry",
           [
             updatedInquiry.status,
             updatedInquiry.feedback || null,
@@ -2057,7 +2045,7 @@ export default function App() {
           ]
         );
         await executeD1Query(
-          "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
+          "insert_activity_log",
           [updatedInquiry.id, currentUser?.email || 'System / Tim Terkait', `Memberikan tanggapan feedback pada aduan ${updatedInquiry.id}`]
         );
       } else {
@@ -2080,7 +2068,7 @@ export default function App() {
 
     try {
       if (isD1Active) {
-        await executeD1Query(`DELETE FROM contact_inquiries WHERE id = ?`, [id]);
+        await executeD1Query("delete_contact_inquiry", [id]);
       } else {
         mockDb.deleteContactInquiry(id);
       }
@@ -2107,11 +2095,11 @@ export default function App() {
     setCurrentTab('database');
   };
 
-  const selectedTransaction = transactions.find(t => t.id === selectedTransactionId);
+  const selectedTransaction = activeDetailRecord || transactions.find(t => t.id === selectedTransactionId) || null;
 
   // Authenticate screen guard
   if (!currentUser) {
-    return <AuthScreen onLoginSuccess={handleLoginSuccess} />;
+    return <AuthScreen onLoginSuccess={handleLoginSuccess} sessionTimeoutMessage={sessionTimeoutNotice} />;
   }
 
   // Header texts
@@ -2529,6 +2517,7 @@ export default function App() {
                 setCurrentTab('database');
               }}
               onSelectDashboardFilter={(filter) => {
+                setActiveAlertFilter('');
                 setActiveDashboardFilter(filter);
                 setCurrentTab('database');
               }}
@@ -2586,9 +2575,9 @@ export default function App() {
       </div>
 
       {/* 6. GLOBAL DETAIL MODAL FOR TRANSACTION STEPS */}
-      {selectedTransactionId && (activeDetailRecord || selectedTransaction) && (
+      {selectedTransaction && (
         <DetailModal 
-          transaction={activeDetailRecord || selectedTransaction!}
+          transaction={selectedTransaction}
           currentUser={currentUser!}
           profiles={profiles}
           onClose={() => {
@@ -2784,6 +2773,14 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 1-Hour Inactivity Warning Modal */}
+      <IdleTimeoutModal
+        isOpen={showIdleWarning}
+        secondsRemaining={idleSecondsRemaining}
+        onStayLoggedIn={resetIdleTimer}
+        onLogout={() => handleAutoLogout("Anda telah keluar dari sistem.")}
+      />
 
     </div>
   );

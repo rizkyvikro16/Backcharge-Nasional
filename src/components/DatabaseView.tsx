@@ -1,34 +1,39 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
-  Search, Download, 
-  Upload, FileText, Check, AlertCircle, AlertTriangle, RefreshCw, X, Trash2,
-  Loader2, Edit, Info, ChevronDown, CheckCircle2, XCircle, User, Clock,
-  ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
+  Search, Filter, Plus, Download, Upload, Trash2, Edit3, Eye, 
+  CheckCircle2, Clock, AlertCircle, X, ChevronLeft, ChevronRight, 
+  FileSpreadsheet, ArrowUpDown, RefreshCw, CheckSquare, Square,
+  Building, DollarSign, Layers, Tag, HelpCircle, FileText, Check, ShieldAlert,
+  Calendar, Lock
 } from 'lucide-react';
-import { Backcharge, BackchargeCategory, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, getRoleAllowedBranches, isNationalOrAllBranches, hasRole, isRegionalHeadRole, unpackExtraFields } from '../types';
-import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
-import { getApiUrl } from '../lib/api';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 
-interface DatabaseViewProps {
+import { 
+  Backcharge, 
+  Profile, 
+  DashboardFilter, 
+  ALL_SYSTEM_BRANCHES, 
+  getRoleAllowedBranches, 
+  isNationalOrAllBranches, 
+  hasRole, 
+  BackchargeCategory,
+  unpackExtraFields,
+  isRegionalHeadRole
+} from '../types';
+import MultiSelect from './MultiSelect';
+
+export interface DatabaseViewProps {
   transactions: Backcharge[];
   currentUser: Profile;
-  profiles?: Profile[];
+  profiles: Profile[];
   isLoading?: boolean;
   onAddTransaction: (newTx: Omit<Backcharge, 'id' | 'created_by' | 'created_at' | 'updated_at'>) => Promise<void>;
-  onBulkAddTransactions?: (
-    newTxs: Omit<Backcharge, 'id' | 'created_by' | 'created_at' | 'updated_at'>[],
-    onProgress?: (current: number, total: number) => void
-  ) => Promise<void>;
+  onBulkAddTransactions: (newTxs: Omit<Backcharge, 'id' | 'created_by' | 'created_at' | 'updated_at'>[], onProgress?: (current: number, total: number) => void) => Promise<void>;
   onSelectTransaction: (id: string) => void;
-  onDeleteTransaction?: (id: string) => void;
-  onUpdateTransaction?: (id: string, updates: Partial<Backcharge>, logMessage: string) => Promise<void> | void;
-  onBulkUpdateTransactions?: (
-    itemsToUpdate: { id: string; updates: Partial<Backcharge> }[],
-    generalLogMessage: string,
-    onProgress?: (current: number, total: number) => void
-  ) => Promise<void>;
+  onDeleteTransaction: (id: string) => Promise<void> | void;
+  onUpdateTransaction: (id: string, updates: Partial<Backcharge>, logMessage: string) => Promise<void>;
+  onBulkUpdateTransactions: (itemsToUpdate: { id: string; updates: Partial<Backcharge> }[], generalLogMessage: string, onProgress?: (current: number, total: number) => void) => Promise<void>;
   activeAlertFilter?: 'due' | 'pending' | 'high_value' | '';
   onClearAlertFilter?: () => void;
   activeDashboardFilter?: DashboardFilter | null;
@@ -36,4164 +41,3861 @@ interface DatabaseViewProps {
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-export default function DatabaseView({ 
-  transactions, 
-  currentUser, 
-  profiles = [],
+const CATEGORIES: BackchargeCategory[] = [
+  'Own Risk',
+  'Maintenance',
+  'Ekspedisi',
+  'ETLE',
+  'TPL',
+  'Unclaimable Insurance',
+  'Dokumen Kendaraan'
+];
+
+const PAYMENT_STATUS_OPTIONS = ['Lunas', 'Belum Bayar'];
+const APPROVAL_STATUS_OPTIONS = ['Disetujui', 'Belum Approval', 'Ditolak'];
+const HANDOVER_STATUS_OPTIONS = ['Pending', 'Diterima Admin'];
+const SAP_STATUS_OPTIONS = ['Bill', 'Not Bill', 'N/A'];
+
+const getCategoryColor = (cat: string) => {
+  switch (cat) {
+    case 'Own Risk':
+      return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+    case 'Maintenance':
+      return 'bg-blue-50 text-blue-700 border-blue-200';
+    case 'Ekspedisi':
+      return 'bg-sky-50 text-sky-700 border-sky-200';
+    case 'ETLE':
+      return 'bg-amber-50 text-amber-700 border-amber-200';
+    case 'TPL':
+      return 'bg-rose-50 text-rose-700 border-rose-200';
+    case 'Unclaimable Insurance':
+      return 'bg-teal-50 text-teal-700 border-teal-200';
+    case 'Dokumen Kendaraan':
+      return 'bg-purple-50 text-purple-700 border-purple-200';
+    default:
+      return 'bg-slate-50 text-slate-700 border-slate-200';
+  }
+};
+
+const formatCurrency = (val: number) => {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0
+  }).format(val || 0);
+};
+
+const formatDate = (dateStr?: string | null) => {
+  if (!dateStr) return '-';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('id-ID', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  } catch {
+    return dateStr;
+  }
+};
+
+const getLeadTimeDays = (bakDateStr?: string | null, paymentDateStr?: string | null, isLunas?: boolean): number => {
+  if (!bakDateStr) return 0;
+  try {
+    const bakDateOnly = bakDateStr.includes('T') ? bakDateStr.split('T')[0] : bakDateStr;
+    const bakTime = new Date(`${bakDateOnly}T00:00:00`).getTime();
+    if (isNaN(bakTime)) return 0;
+
+    let targetTime = Date.now();
+    if (isLunas && paymentDateStr) {
+      const payDateOnly = paymentDateStr.includes('T') ? paymentDateStr.split('T')[0] : paymentDateStr;
+      const payTime = new Date(`${payDateOnly}T00:00:00`).getTime();
+      if (!isNaN(payTime) && payTime >= bakTime) {
+        targetTime = payTime;
+      }
+    } else {
+      const todayOnly = new Date().toISOString().split('T')[0];
+      targetTime = new Date(`${todayOnly}T00:00:00`).getTime();
+    }
+
+    const diffDays = Math.round((targetTime - bakTime) / (1000 * 60 * 60 * 24));
+    return Math.max(0, diffDays);
+  } catch {
+    return 0;
+  }
+};
+
+const getLeadTimeColorClass = (days: number): { bg: string; text: string; border: string } => {
+  if (days <= 7) {
+    return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' };
+  } else if (days <= 14) {
+    return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' };
+  } else if (days <= 30) {
+    return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' };
+  } else {
+    return { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' };
+  }
+};
+
+interface ApprovalTierInfo {
+  role: 'SH' | 'Kacab' | 'RH' | 'DH';
+  label: string;
+  status: string;
+  by?: string | null;
+  at?: string | null;
+}
+
+interface ApprovalSummary {
+  tiers: ApprovalTierInfo[];
+  approvedTiers: ApprovalTierInfo[];
+  pendingTiers: ApprovalTierInfo[];
+  rejectedTiers: ApprovalTierInfo[];
+  isFullyApproved: boolean;
+  isRejected: boolean;
+  isAllPending: boolean;
+  isPartiallyApproved: boolean;
+}
+
+const getApprovalSummary = (tx: Backcharge): ApprovalSummary => {
+  const transVal = Number(tx.value) || 0;
+  const isMaintenance = tx.category === 'Maintenance';
+  const isKacabCat = ['Maintenance', 'TPL', 'Dokumen Kendaraan', 'Unclaimable Insurance'].includes(tx.category);
+  const isRegionalHeadReq = isMaintenance ? (transVal > 7500000) : (transVal > 5000000);
+  const isDivisionHeadReq = transVal > 15000000;
+
+  const tiers: ApprovalTierInfo[] = [
+    {
+      role: isKacabCat ? 'Kacab' : 'SH',
+      label: isKacabCat ? 'Kacab' : 'SH',
+      status: tx.status_approval || 'Belum Approval',
+      by: tx.approved_by,
+      at: tx.approved_at
+    }
+  ];
+
+  if (isRegionalHeadReq || isDivisionHeadReq) {
+    tiers.push({
+      role: 'RH',
+      label: 'RH',
+      status: tx.regional_approval_status || 'Belum Approval',
+      by: tx.regional_approved_by,
+      at: tx.regional_approved_at
+    });
+  }
+
+  if (isDivisionHeadReq) {
+    tiers.push({
+      role: 'DH',
+      label: 'DH',
+      status: tx.division_approval_status || 'Belum Approval',
+      by: tx.division_approved_by,
+      at: tx.division_approved_at
+    });
+  }
+
+  const rejectedTiers = tiers.filter(t => t.status === 'Ditolak');
+  const approvedTiers = tiers.filter(t => t.status === 'Disetujui');
+  const pendingTiers = tiers.filter(t => !t.status || t.status === 'Belum Approval' || t.status === 'Pending');
+
+  const isRejected = rejectedTiers.length > 0;
+  const isFullyApproved = !isRejected && approvedTiers.length === tiers.length;
+  const isAllPending = !isRejected && pendingTiers.length === tiers.length;
+  const isPartiallyApproved = !isRejected && approvedTiers.length > 0 && pendingTiers.length > 0;
+
+  return {
+    tiers,
+    approvedTiers,
+    pendingTiers,
+    rejectedTiers,
+    isFullyApproved,
+    isRejected,
+    isAllPending,
+    isPartiallyApproved
+  };
+};
+
+const getShortApproverName = (byStr?: string | null): string => {
+  if (!byStr || byStr === '-' || byStr === 'null' || byStr.trim() === '') return '-';
+  const clean = byStr.replace(/\s*\([^)]*\)$/, '').trim();
+  return clean || byStr;
+};
+
+const getApprovalText = (tx: Backcharge): string => {
+  const s = getApprovalSummary(tx);
+  if (s.isRejected) {
+    const rejNames = s.rejectedTiers.map(t => `${t.label}: ${getShortApproverName(t.by)}`).join(', ');
+    return `Ditolak (${rejNames})`;
+  }
+  if (s.isFullyApproved) {
+    const appNames = s.approvedTiers.map(t => `${t.label}: ${getShortApproverName(t.by)}`).join(', ');
+    return `Disetujui (${appNames})`;
+  }
+  if (s.isPartiallyApproved) {
+    const pend = s.pendingTiers.map(t => t.label).join(', ');
+    const appNames = s.approvedTiers.map(t => `${t.label}: ${getShortApproverName(t.by)}`).join(', ');
+    return `Belum Appr. ${pend} (Disetujui ${appNames})`;
+  }
+  return `Belum Appr. ${s.tiers.map(t => t.label).join(', ')}`;
+};
+
+const PROCESS_STAGES = [
+  'Menunggu Serah Terima Berkas',
+  'Berkas di Admin (Belum Selesai Approval)',
+  'Belum Approve SH',
+  'Belum Approve KACAB',
+  'Belum Approve RH',
+  'Belum Approve DH',
+  'Menunggu Cetak & Kirim Invoice',
+  'Menunggu Pelunasan Backcharge',
+  'Selesai (Lunas)',
+  'Dokumen Ditolak (Reject)'
+];
+
+const getTransactionStage = (t: Backcharge): string => {
+  const transVal = Number(t.value) || 0;
+  const isMaintenance = t.category === 'Maintenance';
+  const isRegionalHeadReq = isMaintenance ? (transVal > 7500000) : (transVal > 5000000);
+  const isDivisionHeadReq = transVal > 15000000;
+
+  const isDocRejected = Boolean(
+    t.status_approval === 'Ditolak' || 
+    t.regional_approval_status === 'Ditolak' || 
+    t.division_approval_status === 'Ditolak' || 
+    t.status_confirm === 'Ditolak / Negosiasi Ulang'
+  );
+
+  if (isDocRejected) {
+    return 'Dokumen Ditolak (Reject)';
+  }
+
+  if (t.status_payment === 'Lunas') {
+    return 'Selesai (Lunas)';
+  }
+
+  const isHandedOverAdmin = t.status_handover === 'Diterima Admin' || t.status_handover === 'Diserahkan ke Admin';
+  if (!isHandedOverAdmin) {
+    return 'Menunggu Serah Terima Berkas';
+  }
+
+  const isPendingL1 = !t.status_approval || t.status_approval === 'Belum Approval' || t.status_approval === 'Pending';
+  const isL1Approved = t.status_approval === 'Disetujui';
+  const isRegionalApproved = !isRegionalHeadReq || t.regional_approval_status === 'Disetujui';
+  const isDivisionApproved = !isDivisionHeadReq || t.division_approval_status === 'Disetujui';
+
+  if (!isL1Approved || isPendingL1) {
+    const isKacabCat = ['Maintenance', 'TPL', 'Dokumen Kendaraan', 'Unclaimable Insurance'].includes(t.category);
+    return isKacabCat ? 'Belum Approve KACAB' : 'Belum Approve SH';
+  }
+
+  if (isRegionalHeadReq && !isRegionalApproved) {
+    return 'Belum Approve RH';
+  }
+
+  if (isDivisionHeadReq && !isDivisionApproved) {
+    return 'Belum Approve DH';
+  }
+
+  const stepInvoice = Boolean(t.no_invoice && typeof t.no_invoice === 'string' && t.no_invoice.trim() !== '' && t.no_invoice.trim() !== '-');
+  if (!stepInvoice) {
+    return 'Menunggu Cetak & Kirim Invoice';
+  }
+
+  return 'Menunggu Pelunasan Backcharge';
+};
+
+export default function DatabaseView({
+  transactions,
+  currentUser,
+  profiles,
   isLoading = false,
-  onAddTransaction, 
+  onAddTransaction,
   onBulkAddTransactions,
   onSelectTransaction,
   onDeleteTransaction,
   onUpdateTransaction,
   onBulkUpdateTransactions,
-  activeAlertFilter,
+  activeAlertFilter = '',
   onClearAlertFilter,
-  activeDashboardFilter,
+  activeDashboardFilter = null,
   onClearDashboardFilter,
   addToast
 }: DatabaseViewProps) {
-  
-  // Role permissions
-  const userRole = currentUser.role as string;
-  const isAsoUser = hasRole(userRole, 'ASO') || hasRole(userRole, 'Maintenance Center') || hasRole(userRole, 'ASO Megabranch');
-  const isSalesHeadUser = hasRole(userRole, 'Sales Head') || hasRole(userRole, 'Sales / Sales Head') || hasRole(userRole, 'SM Megabranch');
-  const isKacabUser = hasRole(userRole, 'Kepala Cabang') || hasRole(userRole, 'kacab');
-  const isRegionalHead = isRegionalHeadRole(userRole);
-  const isDivisionHead = hasRole(userRole, 'Division Head') || hasRole(userRole, 'RBU');
-  const isBroUser = hasRole(userRole, 'BRO') || hasRole(userRole, 'BRO Megabranch');
-  const isAdminUser = hasRole(userRole, 'Admin') || hasRole(userRole, 'Admin Head');
-  const isSuperAdmin = hasRole(userRole, 'Administrator');
+  // Permission helpers
+  const canDelete = hasRole(currentUser?.role, 'Administrator') ||
+    hasRole(currentUser?.role, 'ASO') ||
+    hasRole(currentUser?.role, 'ASO Megabranch') ||
+    hasRole(currentUser?.role, 'Maintenance Center');
 
-  // Search & filter states
-  const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const isNasional = isNationalOrAllBranches(currentUser.branch, currentUser.role);
-  const userBranchList = !isNasional
-    ? getRoleAllowedBranches(currentUser.role, currentUser.branch)
-    : null;
-  const availableBranchOptions = userBranchList && userBranchList.length > 0
-    ? ALL_SYSTEM_BRANCHES.filter(b => userBranchList.some(ub => ub.toLowerCase() === b.toLowerCase()))
-    : ALL_SYSTEM_BRANCHES;
-  const showBranchFilter = isNasional || (userBranchList && userBranchList.length > 1);
-  const [selectedBranch, setSelectedBranch] = useState(
-    isNasional || (userBranchList && userBranchList.length > 1) ? '' : (userBranchList && userBranchList.length === 1 ? userBranchList[0] : (currentUser.branch || ''))
-  );
-  const [filterStartDate, setFilterStartDate] = useState('');
-  const [filterEndDate, setFilterEndDate] = useState('');
-  const [selectedStage, setSelectedStage] = useState('');
-  const [selectedPaymentStatus, setSelectedPaymentStatus] = useState('');
-  const [selectedConfirmStatus, setSelectedConfirmStatus] = useState('');
-  const [selectedSapStatus, setSelectedSapStatus] = useState('');
+  const canAdd = hasRole(currentUser?.role, 'Administrator') ||
+    hasRole(currentUser?.role, 'Admin') ||
+    hasRole(currentUser?.role, 'Admin Head') ||
+    hasRole(currentUser?.role, 'ASO') ||
+    hasRole(currentUser?.role, 'ASO Megabranch') ||
+    hasRole(currentUser?.role, 'Maintenance Center') ||
+    hasRole(currentUser?.role, 'BRO');
 
-  // Synchronize dashboard filters with local state
+  // Role authority checks for each section of Bulk Update
+  const canUpdateHandover = useMemo(() => {
+    return hasRole(currentUser?.role, 'Administrator') ||
+      hasRole(currentUser?.role, 'Admin') ||
+      hasRole(currentUser?.role, 'Admin Head') ||
+      hasRole(currentUser?.role, 'ASO') ||
+      hasRole(currentUser?.role, 'ASO Megabranch') ||
+      hasRole(currentUser?.role, 'Maintenance Center');
+  }, [currentUser]);
+
+  const canUpdateSap = useMemo(() => {
+    return hasRole(currentUser?.role, 'Administrator') ||
+      hasRole(currentUser?.role, 'Admin Head') ||
+      hasRole(currentUser?.role, 'Sales Head') ||
+      hasRole(currentUser?.role, 'Sales');
+  }, [currentUser]);
+
+  const canUpdatePayment = useMemo(() => {
+    return hasRole(currentUser?.role, 'Administrator') ||
+      hasRole(currentUser?.role, 'Admin') ||
+      hasRole(currentUser?.role, 'Admin Head') ||
+      hasRole(currentUser?.role, 'Finance');
+  }, [currentUser]);
+
+  const canUpdateApproval = useMemo(() => {
+    return hasRole(currentUser?.role, 'Administrator') ||
+      hasRole(currentUser?.role, 'Admin Head') ||
+      hasRole(currentUser?.role, 'Kepala Cabang') ||
+      hasRole(currentUser?.role, 'Sales Head') ||
+      hasRole(currentUser?.role, 'Division Head') ||
+      isRegionalHeadRole(currentUser?.role || '');
+  }, [currentUser]);
+
+  const canBulkAction = canUpdateHandover || canUpdateSap || canUpdatePayment || canUpdateApproval;
+
+  // Authorized branches for current user
+  const userBranches = useMemo(() => {
+    if (!currentUser) return ALL_SYSTEM_BRANCHES;
+    if (isNationalOrAllBranches(currentUser.branch, currentUser.role)) return ALL_SYSTEM_BRANCHES;
+    return getRoleAllowedBranches(currentUser.role, currentUser.branch);
+  }, [currentUser]);
+
+  const getCreatorName = (email?: string) => {
+    if (!email) return '-';
+    const found = profiles.find(p => p.email && p.email.toLowerCase() === email.toLowerCase());
+    return found?.full_name || email;
+  };
+
+  // Filters State (Multi-selection via checkboxes)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<string[]>([]);
+  const [selectedApprovalStatuses, setSelectedApprovalStatuses] = useState<string[]>([]);
+  const [selectedHandoverStatuses, setSelectedHandoverStatuses] = useState<string[]>([]);
+  const [selectedSapStatuses, setSelectedSapStatuses] = useState<string[]>([]);
+  const [selectedProcessStages, setSelectedProcessStages] = useState<string[]>([]);
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+
+  // Sorting State
+  const [sortField, setSortField] = useState<keyof Backcharge>('created_at');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
+
+  // Selection for Bulk Actions
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Modal States
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Backcharge | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  // Unified Bulk Update Modal States matching image_308f8e6a.png
+  const [isBulkUpdateModalOpen, setIsBulkUpdateModalOpen] = useState(false);
+  const [bulkHandoverStatus, setBulkHandoverStatus] = useState<string>('-- Tidak Diubah --');
+  const [bulkHandoverDate, setBulkHandoverDate] = useState<string>('');
+  const [bulkSapStatus, setBulkSapStatus] = useState<string>('-- Tidak Diubah --');
+  const [bulkPaymentStatus, setBulkPaymentStatus] = useState<string>('-- Tidak Diubah --');
+  const [bulkApprovalStatus, setBulkApprovalStatus] = useState<string>('-- Tidak Diubah --');
+  const [bulkAuditNote, setBulkAuditNote] = useState<string>('');
+  const [bulkFile, setBulkFile] = useState<{ name: string; size: number; type: string; dataUrl: string } | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
+  const bulkFileInputRef = useRef<HTMLInputElement>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Form State for Add / Edit
+  const initialFormState = {
+    category: 'Own Risk' as BackchargeCategory,
+    branch: userBranches[0] || 'Bandung',
+    customer_name: '',
+    license_plate: '',
+    value: 0,
+    no_bak: '',
+    no_spk: '',
+    no_cmd: '',
+    no_sap: '',
+    no_tilang: '',
+    nama_bro: '',
+    tanggal: new Date().toISOString().split('T')[0],
+    status_sap: 'N/A',
+    status_confirm: 'Belum Konfirmasi',
+    status_handover: 'Pending',
+    status_payment: 'Belum Bayar',
+    no_invoice: '',
+    payment_date: '',
+    alasan: ''
+  };
+  const [formData, setFormData] = useState(initialFormState);
+
+  // Autocomplete state for Add / Edit form (no_cmd, customer_name, license_plate, nama_bro)
+  const [activeAutocompleteField, setActiveAutocompleteField] = useState<'no_cmd' | 'customer_name' | 'license_plate' | 'nama_bro' | null>(null);
+
+  // Extract distinct historical data from transactions
+  const historicalData = useMemo(() => {
+    const cmds: string[] = [];
+    const customers: string[] = [];
+    const plates: string[] = [];
+    const bros: string[] = [];
+
+    const seenCmds = new Set<string>();
+    const seenCustomers = new Set<string>();
+    const seenPlates = new Set<string>();
+    const seenBros = new Set<string>();
+
+    transactions.forEach(t => {
+      // 1. NO. CMD
+      if (t.no_cmd && t.no_cmd !== '-' && t.no_cmd.trim()) {
+        const c = t.no_cmd.trim();
+        if (!seenCmds.has(c)) {
+          seenCmds.add(c);
+          cmds.push(c);
+        }
+      }
+      // 2. NAMA CUSTOMER
+      if (t.customer_name && t.customer_name !== '-' && t.customer_name.trim()) {
+        const cust = t.customer_name.trim();
+        if (!seenCustomers.has(cust)) {
+          seenCustomers.add(cust);
+          customers.push(cust);
+        }
+      }
+      // 3. NO. POLISI
+      if (t.license_plate && t.license_plate !== '-' && t.license_plate.trim()) {
+        const lp = t.license_plate.trim().toUpperCase();
+        if (!seenPlates.has(lp)) {
+          seenPlates.add(lp);
+          plates.push(lp);
+        }
+      }
+      // 4. NAMA BRO
+      const bro = (t.nama_bro || t.bro_name || '').trim();
+      if (bro && bro !== '-') {
+        if (!seenBros.has(bro)) {
+          seenBros.add(bro);
+          bros.push(bro);
+        }
+      }
+    });
+
+    return { cmds, customers, plates, bros };
+  }, [transactions]);
+
+  const getSuggestions = (field: 'no_cmd' | 'customer_name' | 'license_plate' | 'nama_bro', query: string) => {
+    let list: string[] = [];
+    if (field === 'no_cmd') list = historicalData.cmds;
+    else if (field === 'customer_name') list = historicalData.customers;
+    else if (field === 'license_plate') list = historicalData.plates;
+    else if (field === 'nama_bro') list = historicalData.bros;
+
+    const q = (query || '').trim().toLowerCase();
+    if (!q) {
+      return list.slice(0, 5);
+    }
+
+    const exactStarts: string[] = [];
+    const wordStarts: string[] = [];
+    const otherMatches: string[] = [];
+
+    list.forEach(item => {
+      const itemLower = item.toLowerCase();
+      if (itemLower.startsWith(q)) {
+        exactStarts.push(item);
+      } else {
+        const words = itemLower.split(/[\s-]+/);
+        if (words.some(w => w.startsWith(q))) {
+          wordStarts.push(item);
+        } else if (itemLower.includes(q)) {
+          otherMatches.push(item);
+        }
+      }
+    });
+
+    exactStarts.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    wordStarts.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+    return [...exactStarts, ...wordStarts, ...otherMatches].slice(0, 8);
+  };
+
+  const handleSelectSuggestion = (field: 'no_cmd' | 'customer_name' | 'license_plate' | 'nama_bro', val: string) => {
+    setFormData(prev => {
+      const updated = { ...prev, [field]: val };
+      
+      // Auto-fill convenience: If picking a plate and customer is empty, fill customer from historical match
+      if (field === 'license_plate' && (!prev.customer_name || !prev.customer_name.trim())) {
+        const matchTx = transactions.find(t => (t.license_plate || '').trim().toUpperCase() === val.toUpperCase());
+        if (matchTx && matchTx.customer_name && matchTx.customer_name !== '-') {
+          updated.customer_name = matchTx.customer_name.trim();
+        }
+      }
+      return updated;
+    });
+    setActiveAutocompleteField(null);
+  };
+
+  const renderHighlightedText = (text: string, query: string) => {
+    if (!query || !query.trim()) return <span>{text}</span>;
+    const q = query.trim();
+    const lowerText = text.toLowerCase();
+    const lowerQ = q.toLowerCase();
+    const idx = lowerText.indexOf(lowerQ);
+    if (idx === -1) return <span>{text}</span>;
+
+    const before = text.substring(0, idx);
+    const match = text.substring(idx, idx + q.length);
+    const after = text.substring(idx + q.length);
+
+    return (
+      <span>
+        {before}
+        <span className="text-blue-700 font-extrabold bg-blue-100/90 px-0.5 rounded underline decoration-blue-400">{match}</span>
+        {after}
+      </span>
+    );
+  };
+
+  const renderAutocompleteDropdown = (
+    field: 'no_cmd' | 'customer_name' | 'license_plate' | 'nama_bro',
+    query: string
+  ) => {
+    const suggestions = getSuggestions(field, query);
+    if (suggestions.length === 0) return null;
+
+    const fieldLabels: Record<string, string> = {
+      no_cmd: 'No. CMD',
+      customer_name: 'Customer',
+      license_plate: 'No. Polisi',
+      nama_bro: 'Nama BRO'
+    };
+
+    return (
+      <div 
+        className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white rounded-2xl border border-blue-200/90 shadow-2xl overflow-hidden animate-in fade-in-50 zoom-in-95"
+        onMouseDown={(e) => e.preventDefault()}
+      >
+        <div className="px-3.5 py-2 text-[10px] font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between border-b border-slate-100 bg-slate-50/90">
+          <span className="flex items-center gap-1.5 text-blue-700">
+            <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            Riwayat {fieldLabels[field]} ({suggestions.length})
+          </span>
+          <span className="text-[9px] text-slate-400 font-normal">Klik untuk pilih</span>
+        </div>
+        <div className="max-h-48 overflow-y-auto divide-y divide-slate-100">
+          {suggestions.map((item, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleSelectSuggestion(field, item);
+              }}
+              className="w-full text-left px-3.5 py-2.5 hover:bg-blue-50/90 transition-colors flex items-center justify-between group cursor-pointer"
+            >
+              <div className="flex items-center gap-2 overflow-hidden pr-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <span className={`text-xs font-semibold text-slate-800 group-hover:text-blue-700 truncate ${field === 'license_plate' || field === 'no_cmd' ? 'font-mono' : ''}`}>
+                  {renderHighlightedText(item, query)}
+                </span>
+              </div>
+              <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md group-hover:bg-blue-600 group-hover:text-white transition-all shrink-0">
+                Pilih
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Synchronize incoming Dashboard filter if provided
   useEffect(() => {
     if (activeDashboardFilter) {
-      setSelectedCategory(activeDashboardFilter.category !== undefined ? activeDashboardFilter.category : '');
-      setSelectedStage(activeDashboardFilter.stage !== undefined ? activeDashboardFilter.stage : '');
-      if (activeDashboardFilter.branch !== undefined) {
-        setSelectedBranch(activeDashboardFilter.branch);
+      if (activeDashboardFilter.category) {
+        const cats = activeDashboardFilter.category.split(',').map(c => c.trim()).filter(Boolean);
+        setSelectedCategories(cats);
+      } else {
+        setSelectedCategories([]);
       }
-      setSelectedPaymentStatus(activeDashboardFilter.statusPayment !== undefined ? activeDashboardFilter.statusPayment : '');
-      setSelectedConfirmStatus(activeDashboardFilter.statusConfirm !== undefined ? activeDashboardFilter.statusConfirm : '');
-      setFilterStartDate(activeDashboardFilter.startDate !== undefined ? activeDashboardFilter.startDate : '');
-      setFilterEndDate(activeDashboardFilter.endDate !== undefined ? activeDashboardFilter.endDate : '');
+
+      if (activeDashboardFilter.branch) {
+        const branches = activeDashboardFilter.branch.split(',').map(b => b.trim()).filter(Boolean);
+        setSelectedBranches(branches);
+      } else {
+        setSelectedBranches([]);
+      }
+
+      if (activeDashboardFilter.statusPayment) {
+        const payments = activeDashboardFilter.statusPayment.split(',').map(p => p.trim()).filter(Boolean);
+        setSelectedPaymentStatuses(payments);
+      } else {
+        setSelectedPaymentStatuses([]);
+      }
+
+      if (activeDashboardFilter.statusConfirm) {
+        const handovers = activeDashboardFilter.statusConfirm.split(',').map(h => h.trim()).filter(Boolean);
+        setSelectedHandoverStatuses(handovers);
+      } else {
+        setSelectedHandoverStatuses([]);
+      }
+
+      setSelectedApprovalStatuses([]);
+
+      setStartDate(activeDashboardFilter.startDate || '');
+      setEndDate(activeDashboardFilter.endDate || '');
+      setSearchQuery(activeDashboardFilter.customerName || '');
+
+      if (activeDashboardFilter.statusSap) {
+        const saps = activeDashboardFilter.statusSap.split(',').map(s => s.trim()).filter(Boolean);
+        setSelectedSapStatuses(saps);
+      } else {
+        setSelectedSapStatuses([]);
+      }
+
+      if (activeDashboardFilter.stage) {
+        if (activeDashboardFilter.stage === '1_in_aso' || activeDashboardFilter.stage === '1_handover') {
+          setSelectedProcessStages(['Menunggu Serah Terima Berkas']);
+        } else if (activeDashboardFilter.stage === '2_at_admin' || activeDashboardFilter.stage === '2_confirm') {
+          setSelectedProcessStages(['Berkas di Admin (Belum Selesai Approval)']);
+        } else if (activeDashboardFilter.stage === '3_sap_sh') {
+          setSelectedProcessStages(['Belum Approve SH']);
+        } else if (activeDashboardFilter.stage === '3_sap_kacab') {
+          setSelectedProcessStages(['Belum Approve KACAB']);
+        } else if (activeDashboardFilter.stage === '3_sap_rh') {
+          setSelectedProcessStages(['Belum Approve RH']);
+        } else if (activeDashboardFilter.stage === '3_sap_dh') {
+          setSelectedProcessStages(['Belum Approve DH']);
+        } else if (activeDashboardFilter.stage === '4_invoice') {
+          setSelectedProcessStages(['Menunggu Cetak & Kirim Invoice']);
+        } else if (activeDashboardFilter.stage === '5_payment') {
+          setSelectedProcessStages(['Menunggu Pelunasan Backcharge']);
+        } else if (activeDashboardFilter.stage === '6_reject' || activeDashboardFilter.stage === 'Dokumen Ditolak (Reject)') {
+          setSelectedProcessStages(['Dokumen Ditolak (Reject)']);
+        } else {
+          setSelectedProcessStages([activeDashboardFilter.stage]);
+        }
+      } else {
+        setSelectedProcessStages([]);
+      }
+      setCurrentPage(1);
     }
   }, [activeDashboardFilter]);
 
-  // Pagination states
-  const [pageSize, setPageSize] = useState(100);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [serverRows, setServerRows] = useState<Backcharge[] | null>(null);
-  const [serverTotalCount, setServerTotalCount] = useState<number | null>(null);
-  const [isServerLoading, setIsServerLoading] = useState(false);
-  const [sortBy, setSortBy] = useState<string>('created_at');
-  const [sortDir, setSortDir] = useState<'ASC' | 'DESC'>('DESC');
-  const abortControllerRef = useRef<AbortController | null>(null);
-
-  // Form states
-  const [category, setCategory] = useState<BackchargeCategory>('Own Risk');
-  const [branch, setBranch] = useState(() => {
-    if (userBranchList && userBranchList.length > 0) {
-      return userBranchList[0];
+  // Synchronize incoming Alert filter
+  useEffect(() => {
+    if (activeAlertFilter) {
+      setCurrentPage(1);
     }
-    if (currentUser.branch && currentUser.branch !== 'Nasional' && currentUser.branch !== 'Megabranch') {
-      return currentUser.branch;
-    }
-    return ALL_SYSTEM_BRANCHES[0];
-  });
-  const [noBak, setNoBak] = useState('');
-  const [noSpk, setNoSpk] = useState('');
-  const [noSap, setNoSap] = useState('');
-  const [noTilang, setNoTilang] = useState('');
-  const [customerName, setCustomerName] = useState('');
-  const [licensePlate, setLicensePlate] = useState('');
-  const [value, setValue] = useState('');
-  const [statusSap, setStatusSap] = useState('Bill');
-  const [broName, setBroName] = useState('');
-  const [dokPendukungAlasan, setDokPendukungAlasan] = useState('');
-  const [tanggal, setTanggal] = useState(() => {
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  });
+  }, [activeAlertFilter]);
 
-  const formatDateOnly = (dateStr?: string | null) => {
-    if (!dateStr) return '-';
-    const justDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.split(' ')[0];
-    const parts = justDate.split('-');
-    if (parts.length === 3) {
-      if (parts[0].length === 4) {
-        return `${parts[2]}/${parts[1]}/${parts[0]}`; // DD/MM/YYYY
+  // Filter transactions
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(t => {
+      // 1. Branch authorization check
+      if (userBranches && userBranches.length > 0 && !isNationalOrAllBranches(currentUser?.branch, currentUser?.role)) {
+        const branchAllowed = userBranches.some(ub => ub.toLowerCase() === (t.branch || '').toLowerCase());
+        if (!branchAllowed) return false;
       }
-      if (parts[2].length === 4) {
-        return `${parts[0]}/${parts[1]}/${parts[2]}`; // DD/MM/YYYY
+
+      // 2. Branch selector filter (multi-select)
+      if (selectedBranches.length > 0) {
+        const matchesBranch = selectedBranches.some(b => b.toLowerCase() === (t.branch || '').toLowerCase());
+        if (!matchesBranch) return false;
       }
-    }
-    return justDate;
-  };
 
-  // Attachment states (Base64 data URLs or Google Drive URLs, and file names)
-  const [fileBak, setFileBak] = useState<string | null>(null);
-  const [fileBakName, setFileBakName] = useState('');
-  const [fileHandoverAsoSales, setFileHandoverAsoSales] = useState<string | null>(null);
-  const [fileHandoverAsoSalesName, setFileHandoverAsoSalesName] = useState('');
-  const [fileHandoverSalesAdmin, setFileHandoverSalesAdmin] = useState<string | null>(null);
-  const [fileHandoverSalesAdminName, setFileHandoverSalesAdminName] = useState('');
-  const [uploadDokPendukung, setUploadDokPendukung] = useState<string | null>(null);
-  const [uploadDokPendukungName, setUploadDokPendukungName] = useState('');
-
-  // Google Drive integration states
-  const [googleToken, setGoogleToken] = useState<string | null>(null);
-  const [serviceAccountActive, setServiceAccountActive] = useState(false);
-  const [appsScriptActive, setAppsScriptActive] = useState(false);
-  const [uploadingToDrive, setUploadingToDrive] = useState<{ [key: string]: boolean }>({});
-
-  // Check token, service account, and apps script on mount
-  React.useEffect(() => {
-    const token = checkGoogleToken();
-    if (token) {
-      setGoogleToken(token);
-    }
-
-    // Check Google Apps Script Web App
-    setAppsScriptActive(checkAppsScriptStatus());
-
-    // Check if backend Google Drive Service Account is active
-    checkServiceAccountStatus().then(active => {
-      setServiceAccountActive(active);
-    });
-  }, []);
-
-  // Form error & success states
-  const [formError, setFormError] = useState<string | null>(null);
-  const [formSuccess, setFormSuccess] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Check role permission for writing & editing
-  const isBroOnly = hasRole(currentUser.role, 'BRO');
-  const canWrite = hasRole(currentUser.role, 'ASO') || hasRole(currentUser.role, 'Maintenance Center') || hasRole(currentUser.role, 'ASO Megabranch') || hasRole(currentUser.role, 'Administrator') || isBroOnly;
-  const canShowInputForm = hasRole(currentUser.role, 'ASO') || hasRole(currentUser.role, 'Maintenance Center') || hasRole(currentUser.role, 'ASO Megabranch') || hasRole(currentUser.role, 'Administrator');
-
-  // Upgraded file change handler with automatic Google Drive upload (either Service Account or Client OAuth)
-  const handleFileChange = async (
-    e: React.ChangeEvent<HTMLInputElement>, 
-    setFile: React.Dispatch<React.SetStateAction<string | null>>, 
-    setName: React.Dispatch<React.SetStateAction<string>>,
-    uploadKey: string
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 15 * 1024 * 1024) {
-      if (addToast) {
-        addToast("Ukuran file maksimal adalah 15MB", "error");
-      } else {
-        alert("Ukuran file maksimal adalah 15MB");
-      }
-      return;
-    }
-
-    setName(file.name);
-
-    setUploadingToDrive(prev => ({ ...prev, [uploadKey]: true }));
-    try {
-      const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
-      setFile(driveUrl);
-      setFormError(null);
-      if (addToast) {
-        addToast("Dokumen berhasil diunggah dengan URL ringkas!", "success");
-      }
-    } catch (err: any) {
-      console.warn("Upload gagal, mencoba simpan URL ringkas server...", err);
-      try {
-        const reader = new FileReader();
-        const base64Data = await new Promise<string>((resolve) => {
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(file);
-        });
-        const uploadRes = await fetch(getApiUrl('/api/upload-file'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ base64: base64Data, filename: file.name })
-        });
-        if (uploadRes.ok) {
-          const uploadJson = await uploadRes.json();
-          if (uploadJson.url) {
-            setFile(uploadJson.url);
-            if (addToast) addToast("Dokumen berhasil dirampingkan ke penyimpanan lokal.", "success");
-            return;
-          }
+      // 3. Category filter (multi-select)
+      if (selectedCategories.length > 0) {
+        if (!selectedCategories.includes(t.category)) {
+          return false;
         }
-      } catch (convErr) {
-        console.error("Gagal mengunggah file:", convErr);
       }
-      if (addToast) {
-        addToast("Gagal mengunggah berkas: " + err.message, "error");
+
+      // 4. Payment status filter (multi-select)
+      if (selectedPaymentStatuses.length > 0) {
+        const currentPay = t.status_payment || 'Belum Bayar';
+        if (!selectedPaymentStatuses.includes(currentPay)) {
+          return false;
+        }
       }
-    } finally {
-      setUploadingToDrive(prev => ({ ...prev, [uploadKey]: false }));
+
+      // 5. Approval status filter (multi-select)
+      if (selectedApprovalStatuses.length > 0) {
+        const apprSummary = getApprovalSummary(t);
+        const matchesApproval = selectedApprovalStatuses.some(status => {
+          if (status === 'Disetujui') {
+            return apprSummary.isFullyApproved;
+          }
+          if (status === 'Ditolak') {
+            return apprSummary.isRejected;
+          }
+          if (status === 'Belum Approval') {
+            return !apprSummary.isFullyApproved && !apprSummary.isRejected;
+          }
+          return false;
+        });
+        if (!matchesApproval) return false;
+      }
+
+      // 6. Handover status filter (multi-select)
+      if (selectedHandoverStatuses.length > 0) {
+        const effectiveHandover = (t.status_handover === 'Diserahkan ke Admin') ? 'Diterima Admin' : (t.status_handover || 'Pending');
+        if (!selectedHandoverStatuses.includes(effectiveHandover)) {
+          return false;
+        }
+      }
+
+      // 7. SAP status filter (multi-select)
+      if (selectedSapStatuses.length > 0) {
+        const effectiveSap = t.status_sap || 'N/A';
+        if (!selectedSapStatuses.includes(effectiveSap)) {
+          return false;
+        }
+      }
+
+      // 8. Process Stage filter (multi-select)
+      if (selectedProcessStages.length > 0) {
+        const stage = getTransactionStage(t);
+        const matchesStage = selectedProcessStages.some(selStage => {
+          if (
+            selStage === 'Berkas di Admin' || 
+            selStage === 'Berkas di Admin (Belum Selesai Approval)' ||
+            selStage === '2_confirm' ||
+            selStage === '2_at_admin'
+          ) {
+            return [
+              'Berkas di Admin',
+              'Berkas di Admin (Belum Selesai Approval)',
+              'Belum Approve SH',
+              'Belum Approve KACAB',
+              'Belum Approve RH',
+              'Belum Approve DH'
+            ].includes(stage);
+          }
+          return stage === selStage;
+        });
+        if (!matchesStage) return false;
+      }
+
+      // 9. Date Range filter
+      const txDate = t.tanggal || (t.created_at ? t.created_at.split('T')[0] : '');
+      if (startDate && txDate && txDate < startDate) return false;
+      if (endDate && txDate && txDate > endDate) return false;
+
+      // 10. Alert filter
+      if (activeAlertFilter === 'high_value') {
+        if ((t.value || 0) < 15000000) return false;
+      } else if (activeAlertFilter === 'pending') {
+        const isPending = t.status_handover === 'Pending' || t.status_payment === 'Belum Bayar' || !getApprovalSummary(t).isFullyApproved;
+        if (!isPending) return false;
+      } else if (activeAlertFilter === 'due') {
+        if (t.status_payment === 'Lunas') return false;
+        const dStr = t.tanggal || t.created_at;
+        if (dStr) {
+          const ageDays = Math.floor((Date.now() - new Date(dStr).getTime()) / (1000 * 60 * 60 * 24));
+          if (ageDays < 30) return false;
+        }
+      }
+
+      // 11. Search query filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchId = (t.id || '').toLowerCase().includes(q);
+        const matchCust = (t.customer_name || '').toLowerCase().includes(q);
+        const matchPlate = (t.license_plate || '').toLowerCase().includes(q);
+        const matchBak = (t.no_bak || '').toLowerCase().includes(q);
+        const matchSpk = (t.no_spk || '').toLowerCase().includes(q);
+        const matchSap = (t.no_sap || '').toLowerCase().includes(q);
+        const matchTilang = (t.no_tilang || '').toLowerCase().includes(q);
+        const matchCmd = (t.no_cmd || '').toLowerCase().includes(q);
+        const matchInvoice = (t.no_invoice || '').toLowerCase().includes(q);
+        const matchBro = (t.nama_bro || t.bro_name || '').toLowerCase().includes(q);
+        const matchBranch = (t.branch || '').toLowerCase().includes(q);
+
+        if (!matchId && !matchCust && !matchPlate && !matchBak && !matchSpk && !matchSap && !matchTilang && !matchCmd && !matchInvoice && !matchBro && !matchBranch) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [
+    transactions,
+    userBranches,
+    currentUser,
+    selectedBranches,
+    selectedCategories,
+    selectedPaymentStatuses,
+    selectedApprovalStatuses,
+    selectedHandoverStatuses,
+    selectedSapStatuses,
+    selectedProcessStages,
+    startDate,
+    endDate,
+    activeAlertFilter,
+    searchQuery
+  ]);
+
+  // Sort transactions
+  const sortedTransactions = useMemo(() => {
+    return [...filteredTransactions].sort((a, b) => {
+      let aVal = a[sortField];
+      let bVal = b[sortField];
+
+      if (aVal === undefined || aVal === null) aVal = '';
+      if (bVal === undefined || bVal === null) bVal = '';
+
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+
+      const strA = String(aVal).toLowerCase();
+      const strB = String(bVal).toLowerCase();
+      return sortDirection === 'asc' ? strA.localeCompare(strB) : strB.localeCompare(strA);
+    });
+  }, [filteredTransactions, sortField, sortDirection]);
+
+  // Paginated records
+  const totalPages = Math.max(1, Math.ceil(sortedTransactions.length / pageSize));
+  const paginatedTransactions = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sortedTransactions.slice(start, start + pageSize);
+  }, [sortedTransactions, currentPage, pageSize]);
+
+
+  // Sorting Handler
+  const handleSort = (field: keyof Backcharge) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('desc');
     }
   };
 
-  // Reset page whenever filter or page size changes
-  React.useEffect(() => {
+  // Selection handlers
+  const handleSelectAllOnPage = () => {
+    const pageIds = paginatedTransactions.map(t => t.id);
+    const allSelected = pageIds.every(id => selectedIds.has(id));
+
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        pageIds.forEach(id => next.delete(id));
+      } else {
+        pageIds.forEach(id => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllFiltered = () => {
+    const allIds = filteredTransactions.map(t => t.id);
+    setSelectedIds(new Set(allIds));
+    if (addToast) addToast(`Semua ${allIds.length} data terpilih!`, 'info');
+  };
+
+  const handleToggleSelectRow = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds(new Set());
+  };
+
+  // Active filters count for badge display
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (searchQuery.trim()) count++;
+    if (selectedBranches.length > 0) count += selectedBranches.length;
+    if (startDate || endDate) count++;
+    if (selectedCategories.length > 0) count += selectedCategories.length;
+    if (selectedPaymentStatuses.length > 0) count += selectedPaymentStatuses.length;
+    if (selectedApprovalStatuses.length > 0) count += selectedApprovalStatuses.length;
+    if (selectedHandoverStatuses.length > 0) count += selectedHandoverStatuses.length;
+    if (selectedSapStatuses.length > 0) count += selectedSapStatuses.length;
+    if (selectedProcessStages.length > 0) count += selectedProcessStages.length;
+    return count;
+  }, [
+    searchQuery,
+    selectedBranches,
+    startDate,
+    endDate,
+    selectedCategories,
+    selectedPaymentStatuses,
+    selectedApprovalStatuses,
+    selectedHandoverStatuses,
+    selectedSapStatuses,
+    selectedProcessStages
+  ]);
+
+  // Reset Filters
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setSelectedBranches([]);
+    setSelectedCategories([]);
+    setSelectedPaymentStatuses([]);
+    setSelectedApprovalStatuses([]);
+    setSelectedHandoverStatuses([]);
+    setSelectedSapStatuses([]);
+    setSelectedProcessStages([]);
+    setStartDate('');
+    setEndDate('');
     setCurrentPage(1);
-  }, [search, selectedCategory, selectedBranch, filterStartDate, filterEndDate, selectedStage, pageSize]);
+    if (onClearAlertFilter) onClearAlertFilter();
+    if (onClearDashboardFilter) onClearDashboardFilter();
+  };
 
-  // Bulk selection & update states
-  const [selectedTxIds, setSelectedTxIds] = useState<string[]>([]);
-  const [showBulkModal, setShowBulkModal] = useState(false);
-  const [showBulkConfirmStep, setShowBulkConfirmStep] = useState(false);
-  const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
-  const [bulkStatusHandover, setBulkStatusHandover] = useState<string>('');
-  const [bulkFileHandover, setBulkFileHandover] = useState<string | null>(null);
-  const [bulkFileHandoverName, setBulkFileHandoverName] = useState<string>('');
-  const [bulkTanggalHandover, setBulkTanggalHandover] = useState<string>('');
-  const [bulkStatusSap, setBulkStatusSap] = useState<string>('');
-  const [bulkStatusPayment, setBulkStatusPayment] = useState<string>('');
-  const [bulkPaymentDate, setBulkPaymentDate] = useState<string>('');
-  const [bulkStatusApproval, setBulkStatusApproval] = useState<string>('');
-  const [bulkLogReason, setBulkLogReason] = useState<string>('');
-  const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
-  const [bulkSuccessMessage, setBulkSuccessMessage] = useState<string | null>(null);
-  const [bulkErrorMessage, setBulkErrorMessage] = useState<string | null>(null);
-
-  // Bulk import states (Administrator Only)
-  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
-  const [bulkImportList, setBulkImportList] = useState<any[]>([]);
-  const [bulkImportError, setBulkImportError] = useState<string | null>(null);
-  const [isProcessingImport, setIsProcessingImport] = useState(false);
-  const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
-
-  const downloadTemplate = async () => {
+  // EXCEL EXPORT (Comprehensive, Beautiful, and Formatted)
+  const handleExportExcel = async () => {
     try {
+      if (addToast) addToast('Menyiapkan file Rekap Excel lengkap...', 'info');
+
+      const dataToExport = selectedIds.size > 0 
+        ? sortedTransactions.filter(t => selectedIds.has(t.id))
+        : sortedTransactions;
+
+      if (dataToExport.length === 0) {
+        if (addToast) addToast('Tidak ada data untuk diekspor.', 'error');
+        return;
+      }
+
       const workbook = new ExcelJS.Workbook();
-      workbook.creator = 'Sistem Manajemen Backcharge';
-      workbook.lastModifiedBy = currentUser?.full_name || 'Admin';
+      workbook.creator = 'ASSA Rent Backcharge Workflow System';
+      workbook.lastModifiedBy = currentUser?.full_name || 'ASSA Rent';
       workbook.created = new Date();
       workbook.modified = new Date();
 
-      // Sheet 1: Template Utama (Template Backcharge)
-      const worksheet = workbook.addWorksheet('Template Backcharge', {
-        views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
+      const worksheet = workbook.addWorksheet('Rekap Backcharge Nasional', {
+        views: [{ state: 'frozen', ySplit: 8, xSplit: 2 }]
       });
 
-      const headers = [
-        "Tanggal",
-        "Kategori",
-        "Cabang",
-        "Nama Customer",
-        "No Polisi",
-        "Nilai Backcharge",
-        "No BAK",
-        "No SPK",
-        "No SAP",
-        "No Tilang",
-        "PIC",
-        "Alasan",
-        "Tahap Proses",
-        "No Invoice",
-        "Status Bayar",
-        "Status SAP (Bill/Not Bill/NA)"
+      // 1. BANNER HEADER
+      worksheet.mergeCells('A1:AC1');
+      const titleRow = worksheet.getCell('A1');
+      titleRow.value = 'PT ADIRA SARANA ARMADA TBK (ASSA RENT) - REKAPITULASI BACKCHARGE NASIONAL';
+      titleRow.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF0F172A' } // Dark Navy
+      };
+      titleRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      worksheet.getRow(1).height = 34;
+
+      // 2. METADATA BLOCK
+      const nowStr = new Date().toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }) + ' WIB';
+
+      worksheet.getCell('A3').value = 'Tanggal Unduh:';
+      worksheet.getCell('B3').value = nowStr;
+      worksheet.getCell('A4').value = 'Diunduh Oleh:';
+      worksheet.getCell('B4').value = `${currentUser?.full_name || 'User'} (${currentUser?.role || '-'} - ${currentUser?.branch || 'Nasional'})`;
+      worksheet.getCell('A5').value = 'Total Transaksi:';
+      worksheet.getCell('B5').value = `${dataToExport.length} Data`;
+      worksheet.getCell('A6').value = 'Total Nilai:';
+      worksheet.getCell('B6').value = formatCurrency(dataToExport.reduce((sum, t) => sum + (Number(t.value) || 0), 0));
+
+      ['A3', 'A4', 'A5', 'A6'].forEach(cellId => {
+        worksheet.getCell(cellId).font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF475569' } };
+      });
+      ['B3', 'B4', 'B5', 'B6'].forEach(cellId => {
+        worksheet.getCell(cellId).font = { name: 'Arial', size: 9, bold: false, color: { argb: 'FF0F172A' } };
+      });
+
+      // 3. TABLE COLUMN DEFINITIONS
+      const columnsConfig = [
+        { header: 'No', key: 'no', width: 6 },
+        { header: 'ID Transaksi', key: 'id', width: 16 },
+        { header: 'Tanggal', key: 'tanggal', width: 14 },
+        { header: 'Cabang Otoritas', key: 'branch', width: 18 },
+        { header: 'Kategori Backcharge', key: 'category', width: 20 },
+        { header: 'Nama CUSTOMER', key: 'customer_name', width: 28 },
+        { header: 'No. CMD', key: 'no_cmd', width: 16 },
+        { header: 'No. Polisi', key: 'license_plate', width: 14 },
+        { header: 'Nilai Nominal (Rp)', key: 'value', width: 18 },
+        { header: 'No. BAK', key: 'no_bak', width: 18 },
+        { header: 'No. SPK', key: 'no_spk', width: 18 },
+        { header: 'No. SAP', key: 'no_sap', width: 16 },
+        { header: 'No. Tilang / ETLE', key: 'no_tilang', width: 18 },
+        { header: 'Nama Penginput', key: 'penginput', width: 22 },
+        { header: 'Nama BRO', key: 'nama_bro', width: 20 },
+        { header: 'Status SAP', key: 'status_sap', width: 14 },
+        { header: 'Status Konfirmasi', key: 'status_confirm', width: 20 },
+        { header: 'Status Serah Terima', key: 'status_handover', width: 22 },
+        { header: 'Tanggal Serah Terima', key: 'tanggal_handover', width: 18 },
+        { header: 'Status Approval Tier 1', key: 'status_approval', width: 20 },
+        { header: 'Disetujui Oleh (Tier 1)', key: 'approved_by', width: 24 },
+        { header: 'Waktu Approval Tier 1', key: 'approved_at', width: 20 },
+        { header: 'Catatan Approval Tier 1', key: 'approval_note', width: 26 },
+        { header: 'Status Approval RH', key: 'regional_approval_status', width: 20 },
+        { header: 'Disetujui Oleh RH', key: 'regional_approved_by', width: 24 },
+        { header: 'Status Approval DH', key: 'division_approval_status', width: 20 },
+        { header: 'Disetujui Oleh DH', key: 'division_approved_by', width: 24 },
+        { header: 'No. Invoice', key: 'no_invoice', width: 18 },
+        { header: 'Status Pembayaran', key: 'status_payment', width: 18 },
+        { header: 'Tanggal Pembayaran', key: 'payment_date', width: 18 },
+        { header: 'Catatan / Alasan', key: 'alasan', width: 30 }
       ];
 
-      worksheet.addRow(headers);
+      const headerRowIndex = 8;
+      const headerRow = worksheet.getRow(headerRowIndex);
+      headerRow.height = 26;
 
-      // Header styling
-      const headerRow = worksheet.getRow(1);
-      headerRow.height = 28;
-      headerRow.eachCell((cell, colNumber) => {
-        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      columnsConfig.forEach((col, idx) => {
+        const cell = headerRow.getCell(idx + 1);
+        cell.value = col.header;
+        cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FF1E293B' } // Slate 800
+          fgColor: { argb: 'FF1E3A8A' } // Royal Blue
         };
-        cell.alignment = { vertical: 'middle', horizontal: colNumber === 6 ? 'right' : 'center', wrapText: true };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
         cell.border = {
           top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
           left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
           bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
           right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
         };
+        worksheet.getColumn(idx + 1).width = col.width;
       });
 
-      // Sheet 2: Referensi Dropdown
-      const refSheet = workbook.addWorksheet('Referensi_Data', { state: 'hidden' });
-      
-      const categories = [
-        'Own Risk',
-        'Maintenance',
-        'Ekspedisi',
-        'ETLE',
-        'TPL',
-        'Unclaimable Insurance',
-        'Dokumen Kendaraan'
-      ];
+      // 4. POPULATE DATA ROWS
+      dataToExport.forEach((tx, index) => {
+        const rowIndex = headerRowIndex + 1 + index;
+        const row = worksheet.getRow(rowIndex);
+        row.height = 20;
 
-      const branches = ALL_SYSTEM_BRANCHES;
+        const isZebra = index % 2 === 1;
+        const rowBgColor = isZebra ? 'FFF8FAFC' : 'FFFFFFFF';
 
-      const stages = [
-        '1. Menunggu Serah Terima Berkas',
-        '2. Berkas di Admin',
-        '3. Menunggu Approval SH / Kacab',
-        '4. Belum Approve RH',
-        '5. Belum Approve DH',
-        '6. Menunggu Cetak & Kirim Invoice',
-        '7. Menunggu Pelunasan',
-        '8. Selesai (Lunas)'
-      ];
+        const rowValues = [
+          index + 1,
+          tx.id || '-',
+          tx.tanggal || formatDate(tx.created_at),
+          tx.branch || '-',
+          tx.category || '-',
+          tx.customer_name || '-',
+          tx.no_cmd || '-',
+          tx.license_plate || '-',
+          Number(tx.value) || 0,
+          tx.no_bak || '-',
+          tx.no_spk || '-',
+          tx.no_sap || '-',
+          tx.no_tilang || '-',
+          getCreatorName(tx.created_by),
+          tx.nama_bro || tx.bro_name || '-',
+          tx.status_sap || 'N/A',
+          tx.status_confirm || 'Belum Konfirmasi',
+          tx.status_handover || 'Pending',
+          tx.tanggal_handover || '-',
+          tx.status_approval || 'Belum Approval',
+          tx.approved_by || '-',
+          tx.approved_at ? formatDate(tx.approved_at) : '-',
+          tx.approval_note || '-',
+          tx.regional_approval_status || 'Belum Approval',
+          tx.regional_approved_by || '-',
+          tx.division_approval_status || 'Belum Approval',
+          tx.division_approved_by || '-',
+          tx.no_invoice || '-',
+          tx.status_payment || 'Belum Bayar',
+          tx.payment_date ? formatDate(tx.payment_date) : '-',
+          tx.alasan || tx.dok_pendukung_alasan || '-'
+        ];
 
-      const paymentStatuses = ['Belum Bayar', 'Lunas'];
-      const sapStatuses = ['Bill', 'Not Bill', 'N/A'];
+        rowValues.forEach((val, colIdx) => {
+          const cell = row.getCell(colIdx + 1);
+          cell.value = val;
+          cell.font = { name: 'Arial', size: 9, color: { argb: 'FF1E293B' } };
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: rowBgColor }
+          };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+          };
 
-      // Populate reference sheet columns
-      refSheet.getColumn(1).values = ['Kategori', ...categories];
-      refSheet.getColumn(2).values = ['Cabang', ...branches];
-      refSheet.getColumn(3).values = ['Tahap Proses', ...stages];
-      refSheet.getColumn(4).values = ['Status Bayar', ...paymentStatuses];
-      refSheet.getColumn(5).values = ['Status SAP', ...sapStatuses];
+          // Alignment & format specs
+          if (colIdx === 0) { // No
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          } else if (colIdx === 1) { // ID
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            cell.font = { name: 'Courier New', size: 9, bold: true, color: { argb: 'FF1E40AF' } };
+          } else if (colIdx === 2) { // Tanggal
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          } else if (colIdx === 7) { // Nilai
+            cell.alignment = { vertical: 'middle', horizontal: 'right' };
+            cell.numFmt = '#,##0';
+            cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF0F172A' } };
+          } else if (colIdx === 26) { // Status Bayar
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            if (val === 'Lunas') {
+              cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF047857' } };
+            } else {
+              cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFE11D48' } };
+            }
+          } else {
+            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+          }
+        });
+      });
 
-      // Add Data Validations to Template Backcharge for rows 2 to 500
-      const maxRows = 500;
-      for (let r = 2; r <= maxRows; r++) {
-        // Kolom B: Kategori (Col 2)
-        worksheet.getCell(`B${r}`).dataValidation = {
-          type: 'list',
-          allowBlank: true,
-          formulae: [`Referensi_Data!$A$2:$A$${categories.length + 1}`],
-          showErrorMessage: true,
-          errorTitle: 'Kategori Tidak Valid',
-          error: 'Silakan pilih Kategori dari daftar dropdown yang tersedia.'
+      // 5. SUMMARY ROW AT BOTTOM
+      const lastDataRow = headerRowIndex + dataToExport.length;
+      const totalRowIndex = lastDataRow + 1;
+      const totalRow = worksheet.getRow(totalRowIndex);
+      totalRow.height = 24;
+
+      worksheet.mergeCells(`A${totalRowIndex}:G${totalRowIndex}`);
+      const labelCell = worksheet.getCell(`A${totalRowIndex}`);
+      labelCell.value = 'TOTAL KESELURUHAN';
+      labelCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+      labelCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const valueCell = worksheet.getCell(`H${totalRowIndex}`);
+      valueCell.value = {
+        formula: `SUM(H${headerRowIndex + 1}:H${lastDataRow})`,
+        result: dataToExport.reduce((sum, t) => sum + (Number(t.value) || 0), 0)
+      };
+      valueCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+      valueCell.numFmt = '#,##0';
+      valueCell.alignment = { vertical: 'middle', horizontal: 'right' };
+
+      for (let c = 1; c <= columnsConfig.length; c++) {
+        const cell = totalRow.getCell(c);
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE2E8F0' }
         };
-
-        // Kolom C: Cabang (Col 3)
-        worksheet.getCell(`C${r}`).dataValidation = {
-          type: 'list',
-          allowBlank: true,
-          formulae: [`Referensi_Data!$B$2:$B$${branches.length + 1}`],
-          showErrorMessage: true,
-          errorTitle: 'Cabang Tidak Valid',
-          error: 'Silakan pilih Cabang dari daftar dropdown yang tersedia.'
+        cell.border = {
+          top: { style: 'medium', color: { argb: 'FF0F172A' } },
+          bottom: { style: 'double', color: { argb: 'FF0F172A' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
         };
-
-        // Kolom M: Tahap Proses (Col 13)
-        worksheet.getCell(`M${r}`).dataValidation = {
-          type: 'list',
-          allowBlank: true,
-          formulae: [`Referensi_Data!$C$2:$C$${stages.length + 1}`],
-          showErrorMessage: true,
-          errorTitle: 'Tahap Proses Tidak Valid',
-          error: 'Silakan pilih Tahap Proses dari daftar dropdown yang tersedia.'
-        };
-
-        // Kolom O: Status Bayar (Col 15)
-        worksheet.getCell(`O${r}`).dataValidation = {
-          type: 'list',
-          allowBlank: true,
-          formulae: [`Referensi_Data!$D$2:$D$${paymentStatuses.length + 1}`],
-          showErrorMessage: true,
-          errorTitle: 'Status Bayar Tidak Valid',
-          error: 'Silakan pilih Status Bayar dari daftar dropdown.'
-        };
-
-        // Kolom P: Status SAP (Col 16)
-        worksheet.getCell(`P${r}`).dataValidation = {
-          type: 'list',
-          allowBlank: true,
-          formulae: [`Referensi_Data!$E$2:$E$${sapStatuses.length + 1}`],
-          showErrorMessage: true,
-          errorTitle: 'Status SAP Tidak Valid',
-          error: 'Silakan pilih Status SAP (Bill / Not Bill / N/A).'
-        };
-
-        // Format Date and Number
-        worksheet.getCell(`A${r}`).numFmt = 'yyyy-mm-dd';
-        worksheet.getCell(`F${r}`).numFmt = '#,##0';
       }
 
-      // Column widths
-      worksheet.columns = [
-        { width: 14 }, // Tanggal
-        { width: 22 }, // Kategori
-        { width: 24 }, // Cabang
-        { width: 30 }, // Nama Customer
-        { width: 16 }, // No Polisi
-        { width: 20 }, // Nilai Backcharge
-        { width: 20 }, // No BAK
-        { width: 18 }, // No SPK
-        { width: 18 }, // No SAP
-        { width: 18 }, // No Tilang
-        { width: 20 }, // PIC
-        { width: 34 }, // Alasan
-        { width: 36 }, // Tahap Proses
-        { width: 18 }, // No Invoice
-        { width: 18 }, // Status Bayar
-        { width: 30 }  // Status SAP (Bill/Not Bill/NA)
-      ];
+      // 6. GENERATE BLOB & DOWNLOAD
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const nowFormatted = new Date().toISOString().replace(/[-:T.]/g, '').substring(0, 14);
+      const filename = `Rekap_Backcharge_ASSA_Nasional_${nowFormatted}.xlsx`;
 
-      // Sheet 3: Petunjuk & Contoh Pengisian
-      const guideSheet = workbook.addWorksheet('Petunjuk & Contoh Pengisian');
-      guideSheet.columns = [
-        { width: 6 },
-        { width: 26 },
-        { width: 36 },
-        { width: 46 }
-      ];
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
 
-      guideSheet.addRow(['', 'PETUNJUK PENGISIAN TEMPLATE IMPORT BACKCHARGE']);
-      guideSheet.getCell('B1').font = { size: 14, bold: true, color: { argb: 'FF1E3A8A' } };
-      guideSheet.addRow([]);
+      if (addToast) addToast(`Rekap Excel berhasil diunduh (${dataToExport.length} data)!`, 'success');
+    } catch (err: any) {
+      console.error('Error exporting Excel:', err);
+      // SheetJS Fallback
+      try {
+        const fallbackData = sortedTransactions.map((tx, idx) => ({
+          'No': idx + 1,
+          'ID Transaksi': tx.id,
+          'Tanggal': tx.tanggal || formatDate(tx.created_at),
+          'Cabang': tx.branch,
+          'Kategori': tx.category,
+          'Nama CUSTOMER': tx.customer_name,
+          'No. Polisi': tx.license_plate,
+          'Nilai (Rp)': tx.value,
+          'No. BAK': tx.no_bak,
+          'No. SPK': tx.no_spk,
+          'No. SAP': tx.no_sap,
+          'No. Tilang': tx.no_tilang || '-',
+          'Nama BRO': tx.nama_bro || tx.bro_name || '-',
+          'Status SAP': tx.status_sap,
+          'Status Konfirmasi': tx.status_confirm,
+          'Status Serah Terima': tx.status_handover,
+          'Status Approval': getApprovalText(tx),
+          'No. Invoice': tx.no_invoice,
+          'Status Pembayaran': tx.status_payment,
+          'Tanggal Pembayaran': tx.payment_date || '-',
+          'Alasan': tx.alasan || '-'
+        }));
+        const ws = XLSX.utils.json_to_sheet(fallbackData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Rekap Backcharge');
+        XLSX.writeFile(wb, `Rekap_Backcharge_${Date.now()}.xlsx`);
+        if (addToast) addToast('Rekap Excel diekspor via modul standar.', 'success');
+      } catch (fallbackErr: any) {
+        if (addToast) addToast(`Gagal export Excel: ${err.message}`, 'error');
+      }
+    }
+  };
 
-      const guideHeaders = ['No', 'Nama Kolom', 'Keterangan Pengisian', 'Contoh / Opsi Valid'];
-      guideSheet.addRow(guideHeaders);
-      const guideHeaderRow = guideSheet.getRow(3);
-      guideHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      guideHeaderRow.eachCell(c => {
-        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+  // EXCEL IMPORT WORKFLOW
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importPreview, setImportPreview] = useState<any[]>([]);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importProgress, setImportProgress] = useState<{ current: number; total: number; percent: number } | null>(null);
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'ASSA Rent Backcharge Workflow System';
+      workbook.lastModifiedBy = currentUser?.full_name || 'ASSA Rent';
+      workbook.created = new Date();
+      workbook.modified = new Date();
+
+      // SHEET 1: Template Backcharge
+      const wsTemplate = workbook.addWorksheet('Template Backcharge', {
+        views: [{ state: 'frozen', ySplit: 1 }]
       });
 
+      // Headers corresponding to image_b5f6bef6.png
+      const headers = [
+        'Tanggal',
+        'Kategori',
+        'Cabang',
+        'No CMD',
+        'Nama Customer',
+        'No Polisi',
+        'Nilai Backcharge',
+        'No BAK',
+        'No SPK',
+        'No Tilang',
+        'PIC/BRO',
+        'Alasan',
+        'Tahap Proses',
+        'No Invoice',
+        'Status Bayar',
+        'Status SAP (Bill/Not Bill/NA)'
+      ];
+
+      wsTemplate.addRow(headers);
+
+      // Header row styling - dark navy #1A2234 / #0F172A with white bold text
+      const headerRow = wsTemplate.getRow(1);
+      headerRow.height = 32;
+      headerRow.eachCell((cell) => {
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF1A2332' }
+        };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF334155' } },
+          left: { style: 'thin', color: { argb: 'FF334155' } },
+          bottom: { style: 'thin', color: { argb: 'FF334155' } },
+          right: { style: 'thin', color: { argb: 'FF334155' } }
+        };
+      });
+
+      // Sample Data Row 1 (matching Petunjuk & image_666936b0.png)
+      wsTemplate.addRow([
+        '2026-09-13',
+        'Own Risk',
+        'BSO Sunter',
+        '2001874',
+        'PT Mitra Bahagia Sejahtera',
+        'B-1234-ABC',
+        5000000,
+        'BAK/2026/09/001',
+        'SPK-12345',
+        'TLG-001',
+        'Budi Santoso',
+        'Klaim perbaikan bodi penyok akibat senggolan',
+        'Menunggu Serah Terima Berkas',
+        'INV-2026-001',
+        'Belum Bayar',
+        'Bill'
+      ]);
+
+      // Sample Data Row 2
+      wsTemplate.addRow([
+        '2026-09-14',
+        'Maintenance',
+        'Bandung',
+        '2001875',
+        'PT Global Transport',
+        'D-5678-XYZ',
+        3500000,
+        'BAK/2026/09/002',
+        'SPK-12346',
+        '-',
+        'Ahmad Fauzi',
+        'Penggantian ban dan servis berkala',
+        'Menunggu Cetak & Kirim Invoice',
+        'INV-2026-002',
+        'Lunas',
+        'Bill'
+      ]);
+
+      // Column widths for Sheet 1
+      wsTemplate.columns = [
+        { width: 15 }, // Tanggal
+        { width: 18 }, // Kategori
+        { width: 18 }, // Cabang
+        { width: 15 }, // No CMD
+        { width: 30 }, // Nama Customer
+        { width: 16 }, // No Polisi
+        { width: 18 }, // Nilai Backcharge
+        { width: 22 }, // No BAK
+        { width: 18 }, // No SPK
+        { width: 16 }, // No Tilang
+        { width: 20 }, // PIC/BRO
+        { width: 38 }, // Alasan
+        { width: 30 }, // Tahap Proses
+        { width: 18 }, // No Invoice
+        { width: 16 }, // Status Bayar
+        { width: 26 }  // Status SAP
+      ];
+
+      // Format data rows
+      for (let r = 2; r <= 3; r++) {
+        const row = wsTemplate.getRow(r);
+        row.height = 24;
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          cell.font = { name: 'Arial', size: 10 };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+          };
+          if (colNumber === 7) {
+            cell.numFmt = '#,##0';
+            cell.alignment = { vertical: 'middle', horizontal: 'right' };
+          } else {
+            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+          }
+        });
+      }
+
+      // Add Data Validations to Sheet 1 (Rows 2 to 200)
+      const catList = '"Own Risk,Maintenance,Ekspedisi,ETLE,TPL,Unclaimable Insurance,Dokumen Kendaraan"';
+      const branchList = `"${ALL_SYSTEM_BRANCHES.slice(0, 20).join(',')}"`;
+      const stageList = `"${PROCESS_STAGES.join(',')}"`;
+      const paymentList = '"Belum Bayar,Lunas"';
+      const sapList = '"Bill,Not Bill,N/A"';
+
+      if ((wsTemplate as any).dataValidations && typeof (wsTemplate as any).dataValidations.add === 'function') {
+        (wsTemplate as any).dataValidations.add('B2:B500', { type: 'list', allowBlank: true, formulae: [catList] });
+        (wsTemplate as any).dataValidations.add('C2:C500', { type: 'list', allowBlank: true, formulae: [branchList] });
+        (wsTemplate as any).dataValidations.add('M2:M500', { type: 'list', allowBlank: true, formulae: [stageList] });
+        (wsTemplate as any).dataValidations.add('O2:O500', { type: 'list', allowBlank: true, formulae: [paymentList] });
+        (wsTemplate as any).dataValidations.add('P2:P500', { type: 'list', allowBlank: true, formulae: [sapList] });
+      }
+
+      for (let r = 2; r <= 100; r++) {
+        wsTemplate.getCell(`B${r}`).dataValidation = { type: 'list', allowBlank: true, formulae: [catList] };
+        wsTemplate.getCell(`C${r}`).dataValidation = { type: 'list', allowBlank: true, formulae: [branchList] };
+        wsTemplate.getCell(`M${r}`).dataValidation = { type: 'list', allowBlank: true, formulae: [stageList] };
+        wsTemplate.getCell(`O${r}`).dataValidation = { type: 'list', allowBlank: true, formulae: [paymentList] };
+        wsTemplate.getCell(`P${r}`).dataValidation = { type: 'list', allowBlank: true, formulae: [sapList] };
+      }
+
+      // SHEET 2: Petunjuk & Contoh Pengisian
+      const wsGuide = workbook.addWorksheet('Petunjuk & Contoh Pengisian');
+
+      // Title
+      wsGuide.getCell('A1').value = 'PETUNJUK PENGISIAN TEMPLATE IMPORT BACKCHARGE';
+      wsGuide.getCell('A1').font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FF1E40AF' } };
+      wsGuide.getRow(1).height = 28;
+
+      // Table Header Row at Row 3
+      const guideHeaders = ['No', 'Nama Kolom', 'Keterangan Pengisian', 'Contoh / Opsi Valid'];
+      const guideHeaderRow = wsGuide.getRow(3);
+      guideHeaderRow.values = guideHeaders;
+      guideHeaderRow.height = 28;
+      guideHeaderRow.eachCell((cell) => {
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF2563EB' } // Bright Blue
+        };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF1D4ED8' } },
+          left: { style: 'thin', color: { argb: 'FF1D4ED8' } },
+          bottom: { style: 'thin', color: { argb: 'FF1D4ED8' } },
+          right: { style: 'thin', color: { argb: 'FF1D4ED8' } }
+        };
+      });
+
+      // Guide items matching image_666936b0.png
       const guideRows = [
         [1, 'Tanggal', 'Format tanggal transaksi', '2026-09-13 atau 13/09/2026'],
         [2, 'Kategori', 'Pilih dari Dropdown Kategori', 'Own Risk, Maintenance, Ekspedisi, ETLE, TPL, Unclaimable Insurance, Dokumen Kendaraan'],
         [3, 'Cabang', 'Pilih dari Dropdown Cabang', 'BSO Sunter, Bandung, Surabaya, dll.'],
-        [4, 'Nama Customer', 'Nama PT / Customer penanggung', 'PT Mitra Bahagia Sejahtera'],
-        [5, 'No Polisi', 'Nomor polisi kendaraan terkait', 'B-1234-ABC'],
-        [6, 'Nilai Backcharge', 'Nominal biaya dalam rupiah (angka saja)', '5000000'],
-        [7, 'No BAK', 'Nomor Berita Acara Kerusakan (jika ada)', 'BAK/2026/09/001 (isi "-" jika tidak ada)'],
-        [8, 'No SPK', 'Nomor Surat Perintah Kerja (jika ada)', 'SPK-12345 (isi "-" jika tidak ada)'],
-        [9, 'No SAP', 'Nomor SAP billing / tracking', 'SAP-67890 (isi "-" jika tidak ada)'],
+        [4, 'No. CMD', 'Nomor CMD atas Customer', '2001874'],
+        [5, 'Nama Customer', 'Nama PT / Customer penanggung', 'PT Mitra Bahagia Sejahtera'],
+        [6, 'No Polisi', 'Nomor polisi kendaraan terkait', 'B-1234-ABC'],
+        [7, 'Nilai Backcharge', 'Nominal biaya dalam rupiah (angka saja)', '5000000'],
+        [8, 'No BAK', 'Nomor Berita Acara Kerusakan (jika ada)', 'BAK/2026/09/001 (isi "-" jika tidak ada)'],
+        [9, 'No SPK', 'Nomor Surat Perintah Kerja (jika ada)', 'SPK-12345 (isi "-" jika tidak ada)'],
         [10, 'No Tilang', 'Nomor tilang (khusus kategori ETLE)', 'TLG-001 (isi "-" jika tidak ada)'],
         [11, 'PIC', 'Nama BRO / Broker / PIC pengaju', 'Budi Santoso'],
         [12, 'Alasan', 'Rincian / alasan timbulnya klaim', 'Klaim perbaikan bodi penyok akibat senggolan'],
-        [13, 'Tahap Proses', 'Pilih dari Dropdown Tahap Proses', '1. Menunggu Serah Terima Berkas s/d 8. Selesai (Lunas)'],
+        [13, 'Tahap Proses', 'Pilih dari Dropdown Tahap Proses', PROCESS_STAGES.join(', ')],
         [14, 'No Invoice', 'Nomor invoice billing (jika sudah dicetak)', 'INV-2026-001 (isi "-" jika belum ada)'],
         [15, 'Status Bayar', 'Pilih dari Dropdown Status Bayar', 'Belum Bayar / Lunas'],
         [16, 'Status SAP', 'Pilih dari Dropdown Status SAP', 'Bill / Not Bill / N/A']
       ];
 
-      guideRows.forEach(gr => guideSheet.addRow(gr));
+      guideRows.forEach((r) => {
+        const addedRow = wsGuide.addRow(r);
+        addedRow.height = 24;
+        addedRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          cell.font = { name: 'Arial', size: 9.5 };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+          };
+          if (colNumber === 1) {
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          } else if (colNumber === 2) {
+            cell.font = { name: 'Arial', size: 9.5, bold: true };
+            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+          } else {
+            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+          }
+        });
+      });
 
+      // Guide column widths
+      wsGuide.columns = [
+        { width: 8 },  // No
+        { width: 22 }, // Nama Kolom
+        { width: 42 }, // Keterangan Pengisian
+        { width: 85 }  // Contoh / Opsi Valid
+      ];
+
+      // Download file
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = 'template_import_backcharge.xlsx';
-      anchor.click();
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Template_Import_Massal_Backcharge.xlsx';
+      a.click();
       window.URL.revokeObjectURL(url);
+      if (addToast) addToast('Template Excel resmi berhasil diunduh (2 Sheet: Template Backcharge & Petunjuk Pengisian).', 'success');
     } catch (err: any) {
-      console.error('Error generating Excel template:', err);
-      if (addToast) {
-        addToast('Gagal mengunduh template Excel: ' + (err.message || ''), 'error');
-      }
+      console.error('Failed to download template:', err);
+      if (addToast) addToast(`Gagal mengunduh template: ${err.message}`, 'error');
     }
   };
 
-  const handleBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = (evt) => {
       try {
-        const data = new Uint8Array(event.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        
-        // Select sheet: prefer 'Template Backcharge' or first sheet that is not 'Referensi_Data' or 'Petunjuk'
-        let targetSheetName = workbook.SheetNames[0];
-        const templateSheet = workbook.SheetNames.find(s => s.toLowerCase().includes('template') || s.toLowerCase().includes('backcharge'));
-        if (templateSheet) {
-          targetSheetName = templateSheet;
-        } else {
-          const nonGuideSheet = workbook.SheetNames.find(s => !s.toLowerCase().includes('petunjuk') && !s.toLowerCase().includes('referensi'));
-          if (nonGuideSheet) targetSheetName = nonGuideSheet;
-        }
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
 
-        const worksheet = workbook.Sheets[targetSheetName];
-        
-        // Convert to array of arrays
-        const rawJsonData = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
-        // Also parse as json objects if column names are present
-        const rawObjRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
-        
-        if (rawJsonData.length === 0) {
-          setBulkImportError("File Excel kosong.");
+        // Target 'Template Backcharge' sheet or first sheet
+        const targetSheetName = wb.SheetNames.find((name: string) => {
+          const n = name.trim().toLowerCase();
+          return n.includes('template') || n.includes('backcharge') || n.includes('data');
+        }) || wb.SheetNames[0];
+
+        const ws = wb.Sheets[targetSheetName];
+        const rawJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        if (rawJson.length === 0) {
+          setImportErrors(['File Excel kosong atau tidak terbaca.']);
           return;
         }
-        
-        // Check if first row is headers
-        let startIndex = 0;
-        const firstRow = rawJsonData[0];
-        let isFullDbSchema = false;
 
-        if (firstRow && firstRow.length > 0) {
-          const firstCell = String(firstRow[0] || '').trim().toLowerCase();
-          const secondCell = firstRow[1] ? String(firstRow[1]).trim().toLowerCase() : '';
-          if (
-            firstCell === 'id' ||
-            firstCell === 'tanggal' ||
-            firstCell === 'tgl' ||
-            firstCell === 'date' ||
-            firstCell === 'category' ||
-            firstCell.includes('kategori') ||
-            secondCell === 'category' ||
-            secondCell.includes('kategori')
-          ) {
-            startIndex = 1;
-          }
+        const parsedItems: any[] = [];
+        const errs: string[] = [];
 
-          if (firstCell === 'id' && (secondCell === 'category' || secondCell.includes('kategori'))) {
-            isFullDbSchema = true;
-          }
-        }
-
-        const resultList: any[] = [];
-        
-        // Flexible key matcher for object rows
-        const findObjValue = (row: any, candidates: string[]): string | undefined => {
-          if (!row) return undefined;
-          const rowKeys = Object.keys(row);
-          for (const cand of candidates) {
-            const candNorm = cand.toLowerCase().replace(/[^a-z0-9]/g, '');
-            for (const key of rowKeys) {
-              const keyNorm = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-              if (keyNorm === candNorm && row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') {
-                return String(row[key]).trim();
-              }
+        rawJson.forEach((row, index) => {
+          const rowNum = index + 2;
+          const getVal = (keys: string[]) => {
+            for (const k of keys) {
+              const found = Object.keys(row).find(rk => rk.trim().toLowerCase() === k.toLowerCase());
+              if (found && row[found] !== undefined && row[found] !== '') return String(row[found]).trim();
             }
-          }
-          return undefined;
-        };
-
-        const getVal = (objRow: any, arrRow: any[], candidates: string[], colIdx: number, defaultVal: string = '') => {
-          const objVal = findObjValue(objRow, candidates);
-          if (objVal !== undefined) return objVal;
-          if (arrRow && colIdx >= 0 && arrRow[colIdx] !== undefined && arrRow[colIdx] !== null) {
-            const str = String(arrRow[colIdx]).trim();
-            if (str !== '') return str;
-          }
-          return defaultVal;
-        };
-
-        for (let i = startIndex; i < rawJsonData.length; i++) {
-          const arrRow = rawJsonData[i] || [];
-          const objRow = rawObjRows[i - (startIndex === 1 ? 0 : 0)] || null;
-
-          if (arrRow.length === 0 && (!objRow || Object.keys(objRow).length === 0)) continue;
-
-          let id = '';
-          let rawCategory = '';
-          let rawBranch = '';
-          let rawNoBak = '';
-          let rawNoSpk = '';
-          let rawNoSap = '';
-          let rawCustomer = '';
-          let rawLicensePlate = '';
-          let rawValue = '';
-          let rawStatusSap = '';
-          let rawStatusConfirm = '';
-          let rawStatusHandover = '';
-          let rawNoInvoice = '';
-          let rawStatusPayment = '';
-          let rawCreatedBy = '';
-          let rawCreatedAt = '';
-          let rawUpdatedAt = '';
-          let rawFileBakUrl = '';
-          let rawFileHandoverAsoSalesUrl = '';
-          let rawFileHandoverSalesAdminUrl = '';
-          let rawNoTilang = '';
-          let rawTanggal = '';
-          let rawNamaBro = '';
-          let rawUploadDokPendukung = '';
-          let rawAlasanPendukung = '';
-          let rawTanggalHandover = '';
-          let rawAlasan = '';
-          let rawTahapProses = '';
-          let rawStatusApproval = '';
-          let rawApprovedBy = '';
-          let rawApprovedAt = '';
-          let rawApprovalNote = '';
-          let rawAppAtt1 = '';
-          let rawAppAtt2 = '';
-          let rawAppAtt3 = '';
-          let rawRegStatus = '';
-          let rawRegBy = '';
-          let rawRegAt = '';
-          let rawRegNote = '';
-          let rawDivStatus = '';
-          let rawDivBy = '';
-          let rawDivAt = '';
-          let rawDivNote = '';
-
-          if (isFullDbSchema) {
-            // Full 42-column internal schema
-            id = getVal(objRow, arrRow, ['id'], 0);
-            rawCategory = getVal(objRow, arrRow, ['category', 'Kategori'], 1);
-            rawBranch = getVal(objRow, arrRow, ['branch', 'Cabang'], 2);
-            rawNoBak = getVal(objRow, arrRow, ['no_bak', 'No BAK'], 3);
-            rawNoSpk = getVal(objRow, arrRow, ['no_spk', 'No SPK'], 4);
-            rawNoSap = getVal(objRow, arrRow, ['no_sap', 'No SAP'], 5);
-            rawCustomer = getVal(objRow, arrRow, ['customer_name', 'Nama Customer'], 6);
-            rawLicensePlate = getVal(objRow, arrRow, ['license_plate', 'No Polisi'], 7);
-            rawValue = getVal(objRow, arrRow, ['value', 'Nilai Backcharge'], 8);
-            rawStatusSap = getVal(objRow, arrRow, ['status_sap', 'Status SAP'], 9);
-            rawStatusConfirm = getVal(objRow, arrRow, ['status_confirm'], 10);
-            rawStatusHandover = getVal(objRow, arrRow, ['status_handover'], 11);
-            rawNoInvoice = getVal(objRow, arrRow, ['no_invoice', 'No Invoice'], 12);
-            rawStatusPayment = getVal(objRow, arrRow, ['status_payment', 'Status Bayar'], 13);
-            rawCreatedBy = getVal(objRow, arrRow, ['created_by'], 14);
-            rawCreatedAt = getVal(objRow, arrRow, ['created_at'], 15);
-            rawUpdatedAt = getVal(objRow, arrRow, ['updated_at'], 16);
-            rawFileBakUrl = getVal(objRow, arrRow, ['file_bak_url'], 17);
-            rawFileHandoverAsoSalesUrl = getVal(objRow, arrRow, ['file_handover_aso_sales_url'], 18);
-            rawFileHandoverSalesAdminUrl = getVal(objRow, arrRow, ['file_handover_sales_admin_url'], 19);
-            rawNoTilang = getVal(objRow, arrRow, ['no_tilang', 'No Tilang'], 20);
-            rawTanggal = getVal(objRow, arrRow, ['tanggal', 'Tanggal'], 21);
-            rawNamaBro = getVal(objRow, arrRow, ['nama_bro', 'PIC'], 22);
-            rawUploadDokPendukung = getVal(objRow, arrRow, ['upload_dok_pendukung'], 23);
-            rawAlasanPendukung = getVal(objRow, arrRow, ['alasan_pendukung'], 24);
-            rawTanggalHandover = getVal(objRow, arrRow, ['tanggal_handover'], 25);
-            rawAlasan = getVal(objRow, arrRow, ['alasan', 'Alasan'], 26);
-            rawStatusApproval = getVal(objRow, arrRow, ['status_approval'], 27);
-            rawApprovedBy = getVal(objRow, arrRow, ['approved_by'], 28);
-            rawApprovedAt = getVal(objRow, arrRow, ['approved_at'], 29);
-            rawApprovalNote = getVal(objRow, arrRow, ['approval_note'], 30);
-            rawAppAtt1 = getVal(objRow, arrRow, ['approval_attachment_1_url'], 31);
-            rawAppAtt2 = getVal(objRow, arrRow, ['approval_attachment_2_url'], 32);
-            rawAppAtt3 = getVal(objRow, arrRow, ['approval_attachment_3_url'], 33);
-            rawRegStatus = getVal(objRow, arrRow, ['regional_approval_status'], 34);
-            rawRegBy = getVal(objRow, arrRow, ['regional_approved_by'], 35);
-            rawRegAt = getVal(objRow, arrRow, ['regional_approved_at'], 36);
-            rawRegNote = getVal(objRow, arrRow, ['regional_approval_note'], 37);
-            rawDivStatus = getVal(objRow, arrRow, ['division_approval_status'], 38);
-            rawDivBy = getVal(objRow, arrRow, ['division_approved_by'], 39);
-            rawDivAt = getVal(objRow, arrRow, ['division_approved_at'], 40);
-            rawDivNote = getVal(objRow, arrRow, ['division_approval_note'], 41);
-          } else {
-            // Standard 16-Column Template Format
-            // 1. Tanggal, 2. Kategori, 3. Cabang, 4. Nama Customer, 5. No Polisi, 6. Nilai Backcharge,
-            // 7. No BAK, 8. No SPK, 9. No SAP, 10. No Tilang, 11. PIC, 12. Alasan, 13. Tahap Proses,
-            // 14. No Invoice, 15. Status Bayar, 16. Status SAP (Bill/Not Bill/NA)
-            rawTanggal = getVal(objRow, arrRow, ['Tanggal', 'tanggal', 'Tgl', 'Date'], 0);
-            rawCategory = getVal(objRow, arrRow, ['Kategori', 'kategori', 'Category', 'category'], 1);
-            rawBranch = getVal(objRow, arrRow, ['Cabang', 'cabang', 'Branch', 'branch'], 2);
-            rawCustomer = getVal(objRow, arrRow, ['Nama Customer', 'nama_customer', 'Customer Name', 'customer_name', 'Customer'], 3);
-            rawLicensePlate = getVal(objRow, arrRow, ['No Polisi', 'no_polisi', 'License Plate', 'license_plate', 'Nopol', 'Plat'], 4);
-            rawValue = getVal(objRow, arrRow, ['Nilai Backcharge', 'nilai_backcharge', 'Nilai', 'Value', 'value', 'Nominal', 'Amount'], 5);
-            rawNoBak = getVal(objRow, arrRow, ['No BAK', 'no_bak', 'BAK'], 6);
-            rawNoSpk = getVal(objRow, arrRow, ['No SPK', 'no_spk', 'SPK'], 7);
-            rawNoSap = getVal(objRow, arrRow, ['No SAP', 'no_sap', 'SAP'], 8);
-            rawNoTilang = getVal(objRow, arrRow, ['No Tilang', 'no_tilang', 'Tilang', 'ETLE'], 9);
-            rawNamaBro = getVal(objRow, arrRow, ['PIC', 'pic', 'Nama BRO', 'nama_bro', 'BRO', 'bro_name'], 10);
-            rawAlasan = getVal(objRow, arrRow, ['Alasan', 'alasan', 'Keterangan', 'keterangan', 'Deskripsi'], 11);
-            rawTahapProses = getVal(objRow, arrRow, ['Tahap Proses', 'tahap_proses', 'Tahap', 'Stage', 'stage', 'Status Proses'], 12);
-            rawNoInvoice = getVal(objRow, arrRow, ['No Invoice', 'no_invoice', 'Invoice', 'INV'], 13);
-            rawStatusPayment = getVal(objRow, arrRow, ['Status Bayar', 'status_bayar', 'Status Payment', 'status_payment', 'Payment Status'], 14);
-            rawStatusSap = getVal(objRow, arrRow, ['Status SAP (Bill/Not Bill/NA)', 'Status SAP', 'status_sap', 'SAP Status', 'Bill'], 15);
-          }
-
-          if (!rawCustomer && !rawTanggal && !rawValue && !rawNoBak && !id) {
-            // Skip completely empty row
-            continue;
-          }
-
-          // Automatic Protection: Detect and safely ignore dummy/sample rows from template
-          const isDummySample = (
-            (rawCustomer && (
-              rawCustomer.toLowerCase().includes('contoh mitra jaya') ||
-              rawCustomer.toLowerCase().includes('sumber makmur sentosa') ||
-              rawCustomer.toLowerCase().includes('pt logistik nusantara') ||
-              rawCustomer.toLowerCase().includes('[contoh]')
-            )) ||
-            (rawNoBak && (
-              rawNoBak.toLowerCase() === 'bak/2026/09/001' ||
-              rawNoBak.toLowerCase() === 'bak/2026/09/002' ||
-              rawNoBak.toLowerCase() === 'bak/2026/09/003'
-            ))
-          );
-
-          if (isDummySample) {
-            // Skip sample rows automatically so they never pollute production database
-            continue;
-          }
-
-          // 1. Clean and format date
-          let formattedDate = '';
-          if (rawTanggal) {
-            if (!isNaN(Number(rawTanggal)) && Number(rawTanggal) > 20000 && Number(rawTanggal) < 60000) {
-              try {
-                const dateObj = new Date((Number(rawTanggal) - 25569) * 86400 * 1000);
-                if (!isNaN(dateObj.getTime())) {
-                  formattedDate = dateObj.toISOString().split('T')[0];
-                }
-              } catch {}
-            } else {
-              const cleanDateStr = rawTanggal.replace(/["']/g, '').trim();
-              const partsSlash = cleanDateStr.split('/');
-              const partsDash = cleanDateStr.split('-');
-              if (partsSlash.length === 3) {
-                const d = partsSlash[0].padStart(2, '0');
-                const m = partsSlash[1].padStart(2, '0');
-                const y = partsSlash[2];
-                formattedDate = y.length === 4 ? `${y}-${m}-${d}` : `20${y}-${m}-${d}`;
-              } else if (partsDash.length === 3) {
-                formattedDate = partsDash[0].length === 4 ? cleanDateStr : `20${partsDash[2]}-${partsDash[1].padStart(2, '0')}-${partsDash[0].padStart(2, '0')}`;
-              } else {
-                try {
-                  const parsed = new Date(cleanDateStr);
-                  if (!isNaN(parsed.getTime())) {
-                    formattedDate = parsed.toISOString().split('T')[0];
-                  }
-                } catch {}
-              }
-            }
-          }
-          if (!formattedDate) {
-            formattedDate = new Date().toISOString().split('T')[0];
-          }
-
-          // 2. Kategori matching
-          let matchedCategory: BackchargeCategory = 'Own Risk';
-          const cleanKategori = rawCategory.replace(/["']/g, '').trim().toLowerCase();
-          if (cleanKategori.includes('own') || cleanKategori.includes('risk')) matchedCategory = 'Own Risk';
-          else if (cleanKategori.includes('maint') || cleanKategori.includes('perawatan')) matchedCategory = 'Maintenance';
-          else if (cleanKategori.includes('ekspedisi') || cleanKategori.includes('exp')) matchedCategory = 'Ekspedisi';
-          else if (cleanKategori.includes('etle') || cleanKategori.includes('tilang')) matchedCategory = 'ETLE';
-          else if (cleanKategori.includes('tpl') || cleanKategori.includes('third')) matchedCategory = 'TPL';
-          else if (cleanKategori.includes('unclaim') || cleanKategori.includes('insurance') || cleanKategori.includes('asuransi')) matchedCategory = 'Unclaimable Insurance';
-          else if (cleanKategori.includes('dokumen') || cleanKategori.includes('stnk') || cleanKategori.includes('kendaraan')) matchedCategory = 'Dokumen Kendaraan';
-
-          // 3. Cabang matching
-          let matchedBranch = MEGABRANCH_LIST[0];
-          const cleanCabang = rawBranch.replace(/["']/g, '').trim().toLowerCase();
-          const foundBranch = ALL_SYSTEM_BRANCHES.find(b => b.toLowerCase() === cleanCabang);
-          if (foundBranch) {
-            matchedBranch = foundBranch;
-          } else if (cleanCabang === 'jakarta' || cleanCabang.includes('jakarta') || cleanCabang === 'megabranch') {
-            matchedBranch = MEGABRANCH_LIST[0];
-          } else {
-            const partialBranch = ALL_SYSTEM_BRANCHES.find(b => cleanCabang.includes(b.toLowerCase()) || b.toLowerCase().includes(cleanCabang));
-            if (partialBranch) matchedBranch = partialBranch;
-          }
-
-          // 4. Value parsing
-          let cleanValueStr = String(rawValue).replace(/[^0-9.,-]/g, '');
-          if (cleanValueStr.includes(',') && cleanValueStr.includes('.')) {
-            const lastComma = cleanValueStr.lastIndexOf(',');
-            const lastDot = cleanValueStr.lastIndexOf('.');
-            cleanValueStr = lastComma > lastDot ? cleanValueStr.replace(/\./g, '').replace(',', '.') : cleanValueStr.replace(/,/g, '');
-          } else if (cleanValueStr.includes(',')) {
-            const parts = cleanValueStr.split(',');
-            cleanValueStr = (parts[parts.length - 1].length === 3 && parts.length > 1) ? cleanValueStr.replace(/,/g, '') : cleanValueStr.replace(',', '.');
-          } else if (cleanValueStr.includes('.')) {
-            const parts = cleanValueStr.split('.');
-            if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
-              cleanValueStr = cleanValueStr.replace(/\./g, '');
-            }
-          }
-          const parsedValue = Math.round(parseFloat(cleanValueStr)) || 0;
-
-          // 5. Status SAP normalization
-          let finalStatusSap = 'N/A';
-          const cleanStatusSap = (rawStatusSap || '').replace(/["']/g, '').trim().toLowerCase();
-          if (cleanStatusSap.includes('not bill') || cleanStatusSap.includes('notbill') || cleanStatusSap.includes('non bill')) {
-            finalStatusSap = 'Not Bill';
-          } else if (cleanStatusSap.includes('bill')) {
-            finalStatusSap = 'Bill';
-          } else if (cleanStatusSap === 'na' || cleanStatusSap === 'n/a' || cleanStatusSap === '-' || cleanStatusSap === '') {
-            finalStatusSap = matchedCategory === 'Own Risk' ? 'Bill' : 'N/A';
-          } else {
-            finalStatusSap = rawStatusSap.trim();
-          }
-
-          // 6. Status Bayar normalization
-          let finalStatusPayment = 'Belum Bayar';
-          const cleanStatusPayment = (rawStatusPayment || '').replace(/["']/g, '').trim().toLowerCase();
-          if (cleanStatusPayment.includes('lunas') || cleanStatusPayment.includes('paid') || cleanStatusPayment.includes('sudah')) {
-            finalStatusPayment = 'Lunas';
-          }
-
-          // 7. Tahap Proses mapping into Workflow Statuses
-          let finalStatusHandover = rawStatusHandover || 'Pending';
-          let finalStatusApproval = rawStatusApproval || 'Belum Approval';
-          let finalStatusConfirm = rawStatusConfirm || 'Telah Dikonfirmasi';
-          let finalRegStatus = rawRegStatus || 'Belum Approval';
-          let finalDivStatus = rawDivStatus || 'Belum Approval';
-
-          if (rawTahapProses) {
-            const cleanTahap = rawTahapProses.toLowerCase().trim();
-            if (cleanTahap.startsWith('1') || cleanTahap.includes('serah terima') || cleanTahap.includes('handover')) {
-              finalStatusHandover = 'Pending';
-              finalStatusApproval = 'Belum Approval';
-            } else if (cleanTahap.startsWith('2') || cleanTahap.includes('berkas di admin')) {
-              finalStatusHandover = 'Diserahkan ke Admin';
-              finalStatusApproval = 'Belum Approval';
-            } else if (cleanTahap.startsWith('4') || cleanTahap.includes('belum approve rh') || cleanTahap.includes('regional head') || cleanTahap.includes('appr. rh')) {
-              finalStatusHandover = 'Diterima Admin';
-              finalStatusApproval = 'Disetujui';
-              finalRegStatus = 'Belum Approval';
-            } else if (cleanTahap.startsWith('5') || cleanTahap.includes('belum approve dh') || cleanTahap.includes('division head') || cleanTahap.includes('appr. dh')) {
-              finalStatusHandover = 'Diterima Admin';
-              finalStatusApproval = 'Disetujui';
-              finalRegStatus = 'Disetujui';
-              finalDivStatus = 'Belum Approval';
-            } else if (cleanTahap.startsWith('3') || cleanTahap.includes('sales head') || cleanTahap.includes('menunggu approval') || cleanTahap.includes('kacab')) {
-              finalStatusHandover = 'Diterima Admin';
-              finalStatusApproval = 'Belum Approval';
-            } else if (cleanTahap.startsWith('6') || cleanTahap.includes('cetak') || cleanTahap.includes('kirim invoice')) {
-              finalStatusHandover = 'Diterima Admin';
-              finalStatusApproval = 'Disetujui';
-              finalRegStatus = 'Disetujui';
-              finalDivStatus = 'Disetujui';
-            } else if (cleanTahap.startsWith('7') || cleanTahap.includes('pelunasan') || cleanTahap.includes('menunggu pelunasan')) {
-              finalStatusHandover = 'Diterima Admin';
-              finalStatusApproval = 'Disetujui';
-              finalRegStatus = 'Disetujui';
-              finalDivStatus = 'Disetujui';
-            } else if (cleanTahap.startsWith('8') || cleanTahap.includes('selesai') || cleanTahap.includes('lunas')) {
-              finalStatusHandover = 'Diterima Admin';
-              finalStatusApproval = 'Disetujui';
-              finalRegStatus = 'Disetujui';
-              finalDivStatus = 'Disetujui';
-              finalStatusPayment = 'Lunas';
-            }
-          }
-
-          const rowObj = {
-            id: id || undefined,
-            tanggal: formattedDate,
-            category: matchedCategory,
-            branch: matchedBranch,
-            customer_name: rawCustomer.replace(/["']/g, '').trim(),
-            license_plate: rawLicensePlate.replace(/["']/g, '').trim() || '-',
-            value: parsedValue,
-            no_bak: rawNoBak.replace(/["']/g, '').trim() || '-',
-            no_spk: rawNoSpk.replace(/["']/g, '').trim() || '-',
-            no_sap: rawNoSap.replace(/["']/g, '').trim() || '-',
-            no_tilang: rawNoTilang.replace(/["']/g, '').trim() || '-',
-            bro_name: rawNamaBro.replace(/["']/g, '').trim() || '-',
-            nama_bro: rawNamaBro.replace(/["']/g, '').trim() || '-',
-            alasan: rawAlasan.replace(/["']/g, '').trim() || '-',
-            alasan_pendukung: rawAlasanPendukung.replace(/["']/g, '').trim() || '-',
-            upload_dok_pendukung: rawUploadDokPendukung.replace(/["']/g, '').trim() || '',
-            dok_pendukung_alasan: rawAlasanPendukung || rawAlasan || '-',
-            tanggal_handover: rawTanggalHandover.replace(/["']/g, '').trim() || undefined,
-            status_sap: finalStatusSap,
-            status_confirm: finalStatusConfirm,
-            status_handover: finalStatusHandover,
-            status_approval: finalStatusApproval,
-            approved_by: rawApprovedBy || undefined,
-            approved_at: rawApprovedAt || undefined,
-            approval_note: rawApprovalNote || undefined,
-            approval_attachment_1_url: rawAppAtt1 || undefined,
-            approval_attachment_2_url: rawAppAtt2 || undefined,
-            approval_attachment_3_url: rawAppAtt3 || undefined,
-            regional_approval_status: finalRegStatus,
-            regional_approved_by: rawRegBy || undefined,
-            regional_approved_at: rawRegAt || undefined,
-            regional_approval_note: rawRegNote || undefined,
-            division_approval_status: finalDivStatus,
-            division_approved_by: rawDivBy || undefined,
-            division_approved_at: rawDivAt || undefined,
-            division_approval_note: rawDivNote || undefined,
-            status_payment: finalStatusPayment,
-            no_invoice: rawNoInvoice.replace(/["']/g, '').trim() || '-',
-            created_by: rawCreatedBy || undefined,
-            created_at: rawCreatedAt || undefined,
-            updated_at: rawUpdatedAt || undefined,
-            file_bak_url: rawFileBakUrl || undefined,
-            file_handover_aso_sales_url: rawFileHandoverAsoSalesUrl || undefined,
-            file_handover_sales_admin_url: rawFileHandoverSalesAdminUrl || undefined,
-            errors: [] as string[]
+            return '';
           };
 
-          if (!rowObj.customer_name) {
-            rowObj.errors.push('Nama Customer wajib diisi');
-          }
-          if (rowObj.value <= 0) {
-            rowObj.errors.push('Nilai Backcharge harus > 0');
+          const customerRaw = getVal(['nama customer', 'customer', 'customer name', 'nama pelanggan', 'pelanggan']);
+          const plateRaw = getVal(['no polisi', 'no. polisi', 'plat', 'license plate', 'nopol']);
+          const valueRaw = getVal(['nilai backcharge', 'nilai', 'nominal', 'value', 'jumlah', 'biaya']);
+          const cmdRaw = getVal(['no cmd', 'no. cmd', 'cmd', 'nomor cmd']);
+          const categoryRaw = getVal(['kategori', 'category', 'jenis']);
+          const branchRaw = getVal(['cabang', 'branch', 'cabang otoritas']);
+
+          if (!customerRaw && !plateRaw && !valueRaw) {
+            // Empty row, skip
+            return;
           }
 
-          resultList.push(rowObj);
-        }
+          if (!customerRaw) {
+            errs.push(`Baris ${rowNum}: Nama CUSTOMER wajib diisi.`);
+            return;
+          }
 
-        setBulkImportList(resultList);
-        setBulkImportError(null);
+          // Category normalization
+          let category: BackchargeCategory = 'Own Risk';
+          const catLower = categoryRaw.toLowerCase();
+          if (catLower.includes('maintenance')) category = 'Maintenance';
+          else if (catLower.includes('ekspedisi')) category = 'Ekspedisi';
+          else if (catLower.includes('etle') || catLower.includes('tilang')) category = 'ETLE';
+          else if (catLower.includes('tpl')) category = 'TPL';
+          else if (catLower.includes('unclaim')) category = 'Unclaimable Insurance';
+          else if (catLower.includes('dokumen')) category = 'Dokumen Kendaraan';
+
+          // Branch normalization
+          let branch = branchRaw;
+          if (!branch || !ALL_SYSTEM_BRANCHES.includes(branch)) {
+            branch = userBranches[0] || 'Bandung';
+          }
+
+          const parsedVal = Number(String(valueRaw).replace(/[^0-9.-]+/g, '')) || 0;
+
+          // Stage mapping to system fields
+          const tahapRaw = (getVal(['tahap proses', 'tahap', 'stage']) || '').trim().toLowerCase();
+          let statusHandover = 'Diterima Admin';
+          let statusApproval = 'Belum Approval';
+          let regionalApprovalStatus = 'Belum Approval';
+          let divisionApprovalStatus = 'Belum Approval';
+          let statusPayment = getVal(['status bayar', 'status pembayaran', 'status payment']) || 'Belum Bayar';
+
+          if (tahapRaw.includes('serah terima') || tahapRaw.includes('menunggu serah')) {
+            statusHandover = 'Pending';
+            statusApproval = 'Belum Approval';
+          } else if (tahapRaw.includes('berkas di admin')) {
+            statusHandover = 'Diterima Admin';
+            statusApproval = 'Belum Approval';
+          } else if (tahapRaw.includes('belum approve sh') || tahapRaw.includes('approve sh')) {
+            statusHandover = 'Diterima Admin';
+            statusApproval = 'Belum Approval';
+          } else if (tahapRaw.includes('belum approve kacab') || tahapRaw.includes('approve kacab')) {
+            statusHandover = 'Diterima Admin';
+            statusApproval = 'Belum Approval';
+          } else if (tahapRaw.includes('belum approve rh') || tahapRaw.includes('approve rh')) {
+            statusHandover = 'Diterima Admin';
+            statusApproval = 'Disetujui';
+            regionalApprovalStatus = 'Belum Approval';
+          } else if (tahapRaw.includes('belum approve dh') || tahapRaw.includes('approve dh')) {
+            statusHandover = 'Diterima Admin';
+            statusApproval = 'Disetujui';
+            regionalApprovalStatus = 'Disetujui';
+            divisionApprovalStatus = 'Belum Approval';
+          } else if (tahapRaw.includes('cetak & kirim invoice') || tahapRaw.includes('menunggu cetak') || tahapRaw.includes('blm invoice')) {
+            statusHandover = 'Diterima Admin';
+            statusApproval = 'Disetujui';
+            regionalApprovalStatus = 'Disetujui';
+            divisionApprovalStatus = 'Disetujui';
+          } else if (tahapRaw.includes('menunggu pelunasan')) {
+            statusHandover = 'Diterima Admin';
+            statusApproval = 'Disetujui';
+            regionalApprovalStatus = 'Disetujui';
+            divisionApprovalStatus = 'Disetujui';
+            statusPayment = 'Belum Bayar';
+          } else if (tahapRaw.includes('lunas') || tahapRaw.includes('selesai')) {
+            statusHandover = 'Diterima Admin';
+            statusApproval = 'Disetujui';
+            regionalApprovalStatus = 'Disetujui';
+            divisionApprovalStatus = 'Disetujui';
+            statusPayment = 'Lunas';
+          } else if (tahapRaw.includes('reject') || tahapRaw.includes('ditolak')) {
+            statusApproval = 'Ditolak';
+          }
+
+          if (getVal(['status bayar', 'status pembayaran']).toLowerCase() === 'lunas') {
+            statusPayment = 'Lunas';
+          }
+
+          let statusSap = getVal(['status sap (bill/not bill/na)', 'status sap', 'sap status']) || 'Bill';
+          if (statusSap.toLowerCase().includes('not bill')) statusSap = 'Not Bill';
+          else if (statusSap.toLowerCase().includes('n/a') || statusSap.toLowerCase() === 'na') statusSap = 'N/A';
+          else if (statusSap.toLowerCase().includes('bill')) statusSap = 'Bill';
+
+          parsedItems.push({
+            category,
+            branch,
+            no_cmd: cmdRaw || '-',
+            customer_name: customerRaw,
+            license_plate: plateRaw || '-',
+            value: parsedVal,
+            no_bak: getVal(['no bak', 'no. bak', 'bak']) || '-',
+            no_spk: getVal(['no spk', 'no. spk', 'spk']) || '-',
+            no_sap: getVal(['no sap', 'no. sap', 'sap']) || '-',
+            no_tilang: getVal(['no tilang', 'no. tilang', 'tilang']) || '-',
+            nama_bro: getVal(['pic/bro', 'pic / bro', 'pic', 'nama bro', 'bro']) || '-',
+            bro_name: getVal(['pic/bro', 'pic / bro', 'pic', 'nama bro', 'bro']) || '-',
+            tanggal: getVal(['tanggal', 'date', 'tgl']) || new Date().toISOString().split('T')[0],
+            status_sap: statusSap,
+            status_confirm: getVal(['status konfirmasi', 'status confirm']) || 'Belum Konfirmasi',
+            status_handover: statusHandover,
+            status_approval: statusApproval,
+            regional_approval_status: regionalApprovalStatus,
+            division_approval_status: divisionApprovalStatus,
+            status_payment: statusPayment,
+            no_invoice: getVal(['no invoice', 'no. invoice', 'invoice']) || '-',
+            alasan: getVal(['alasan', 'keterangan', 'catatan', 'alasan timbulnya klaim']) || '-'
+          });
+        });
+
+        setImportErrors(errs);
+        setImportPreview(parsedItems);
       } catch (err: any) {
-        setBulkImportError("Gagal membaca file Excel: " + err.message);
+        setImportErrors([`Gagal memproses file: ${err.message}`]);
       }
     };
-    reader.readAsArrayBuffer(file);
+    reader.readAsBinaryString(file);
   };
 
-  const executeBulkImport = async () => {
-    if (!onBulkAddTransactions || bulkImportList.length === 0) return;
-    
-    const hasErrors = bulkImportList.some(item => item.errors && item.errors.length > 0);
-    if (hasErrors) {
-      if (addToast) addToast('Silakan perbaiki data yang error sebelum mengimpor!', 'error');
-      return;
-    }
-
-    setIsProcessingImport(true);
-    setImportProgress({ current: 0, total: bulkImportList.length });
+  const handleConfirmImport = async () => {
+    if (importPreview.length === 0) return;
+    setIsSubmitting(true);
+    setImportProgress({ current: 0, total: importPreview.length, percent: 0 });
     try {
-      const payload = bulkImportList.map(item => {
-        const { errors, ...cleanItem } = item;
-        return cleanItem;
+      await onBulkAddTransactions(importPreview, (current, total) => {
+        const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+        setImportProgress({ current, total, percent });
       });
-
-      await onBulkAddTransactions(payload, (current, total) => {
-        setImportProgress({ current, total });
-      });
-      
-      setBulkImportList([]);
-      setShowBulkImportModal(false);
+      setIsImportModalOpen(false);
+      setImportPreview([]);
+      setImportErrors([]);
       setImportProgress(null);
-      if (addToast) addToast(`Berhasil mengimpor ${payload.length} data Backcharge!`, 'success');
+      if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (err: any) {
-      setBulkImportError(err.message || 'Gagal melakukan import massal.');
-      if (addToast) addToast('Gagal melakukan import massal: ' + err.message, 'error');
+      if (addToast) addToast(`Gagal import: ${err.message}`, 'error');
     } finally {
-      setIsProcessingImport(false);
+      setIsSubmitting(false);
       setImportProgress(null);
     }
   };
 
-  const removeBulkImportRow = (idx: number) => {
-    const updated = [...bulkImportList];
-    updated.splice(idx, 1);
-    setBulkImportList(updated);
+  // ADD / EDIT FORM SUBMISSIONS
+  const handleOpenAdd = () => {
+    setActiveAutocompleteField(null);
+    setFormData({
+      ...initialFormState,
+      branch: userBranches[0] || 'Bandung'
+    });
+    setIsAddModalOpen(true);
   };
 
-  const handleFormSubmit = async (e: React.FormEvent) => {
+  const handleOpenEdit = (tx: Backcharge) => {
+    setActiveAutocompleteField(null);
+    setEditingTransaction(tx);
+    setFormData({
+      category: tx.category,
+      branch: tx.branch,
+      customer_name: tx.customer_name,
+      license_plate: tx.license_plate,
+      value: tx.value,
+      no_bak: tx.no_bak || '',
+      no_spk: tx.no_spk || '',
+      no_cmd: tx.no_cmd || '',
+      no_sap: tx.no_sap || '',
+      no_tilang: tx.no_tilang || '',
+      nama_bro: tx.nama_bro || tx.bro_name || '',
+      tanggal: tx.tanggal || (tx.created_at ? tx.created_at.split('T')[0] : ''),
+      status_sap: tx.status_sap || 'N/A',
+      status_confirm: tx.status_confirm || 'Belum Konfirmasi',
+      status_handover: tx.status_handover || 'Pending',
+      status_payment: tx.status_payment || 'Belum Bayar',
+      no_invoice: tx.no_invoice || '',
+      payment_date: tx.payment_date || '',
+      alasan: tx.alasan || tx.dok_pendukung_alasan || ''
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const validateForm = () => {
+    if (!formData.branch || !formData.branch.trim()) {
+      if (addToast) addToast('Cabang Kota / BSO wajib diisi!', 'error');
+      return false;
+    }
+    if (!formData.category || !formData.category.trim()) {
+      if (addToast) addToast('Kategori Backcharge wajib diisi!', 'error');
+      return false;
+    }
+    if (!formData.tanggal || !formData.tanggal.trim()) {
+      if (addToast) addToast('Tanggal BAK wajib diisi!', 'error');
+      return false;
+    }
+    if (!formData.no_cmd || !formData.no_cmd.trim()) {
+      if (addToast) addToast('No. CMD wajib diisi dan tidak boleh kosong!', 'error');
+      return false;
+    }
+    if (!/^\d+$/.test(formData.no_cmd.trim())) {
+      if (addToast) addToast('No. CMD hanya boleh diisi angka saja!', 'error');
+      return false;
+    }
+    if (formData.no_bak && formData.no_bak.trim() && !/^\d+$/.test(formData.no_bak.trim())) {
+      if (addToast) addToast('No. BAK hanya boleh diisi angka saja!', 'error');
+      return false;
+    }
+    if (formData.no_spk && formData.no_spk.trim() && !/^\d+$/.test(formData.no_spk.trim())) {
+      if (addToast) addToast('No. SPK hanya boleh diisi angka saja!', 'error');
+      return false;
+    }
+    if (!formData.customer_name || !formData.customer_name.trim()) {
+      if (addToast) addToast('Nama CUSTOMER wajib diisi!', 'error');
+      return false;
+    }
+    const plate = (formData.license_plate || '').trim().toUpperCase();
+    if (!plate) {
+      if (addToast) addToast('No. Polisi Kendaraan wajib diisi!', 'error');
+      return false;
+    }
+    const plateRegex = /^[A-Z]{1,2}-[0-9]{1,4}-[A-Z]{1,3}$/;
+    if (!plateRegex.test(plate)) {
+      if (addToast) addToast('No. Polisi harus sesuai kriteria B-1234-ABC (contoh: B-1234-ABC, D-123-XYZ)!', 'error');
+      return false;
+    }
+    if (!formData.nama_bro || !formData.nama_bro.trim()) {
+      if (addToast) addToast('Nama BRO wajib diisi!', 'error');
+      return false;
+    }
+    if (formData.value === undefined || formData.value === null || Number(formData.value) <= 0) {
+      if (addToast) addToast('Nilai Backcharge (Rp) harus lebih besar dari 0!', 'error');
+      return false;
+    }
+    return true;
+  };
+
+  const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
-
-    setFormError(null);
-    setFormSuccess(false);
-
-    if (!customerName.trim()) {
-      setFormError('Nama Customer wajib diisi!');
-      return;
-    }
-    if (!value || Number(value) <= 0) {
-      setFormError('Nilai Backcharge harus lebih besar dari 0!');
-      return;
-    }
-
+    if (!validateForm()) return;
     setIsSubmitting(true);
     try {
       await onAddTransaction({
-        category,
-        branch: (currentUser.branch === 'Nasional' || currentUser.branch === 'Megabranch' || hasRole(currentUser.role, 'Administrator') || hasRole(currentUser.role, 'Division Head') || (userBranchList && userBranchList.length > 0)) ? (branch && branch !== 'Megabranch' ? branch : ALL_SYSTEM_BRANCHES[0]) : (currentUser.branch && currentUser.branch !== 'Megabranch' ? currentUser.branch : ALL_SYSTEM_BRANCHES[0]),
-        no_bak: category === 'Own Risk' ? (noBak.trim() || '-') : '-',
-        no_spk: noSpk.trim() || '-',
-        no_sap: category === 'Own Risk' ? (noSap.trim() || '-') : '-',
-        no_tilang: category === 'ETLE' ? (noTilang.trim() || '-') : '-',
-        customer_name: customerName.trim(),
-        license_plate: licensePlate.trim() || '-',
-        value: Number(value),
-        status_sap: statusSap || 'Bill',
-        status_confirm: 'Telah Dikonfirmasi',
-        status_handover: 'Pending',
-        no_invoice: '-',
-        status_payment: 'Belum Bayar',
-        file_bak_url: fileBak,
-        file_handover_aso_sales_url: fileHandoverAsoSales,
-        file_handover_sales_admin_url: fileHandoverSalesAdmin,
-        tanggal: tanggal || null,
-        bro_name: broName.trim() || '-',
-        nama_bro: broName.trim() || '-',
-        dok_pendukung_alasan: dokPendukungAlasan.trim() || '-',
-        alasan: dokPendukungAlasan.trim() || '-',
-        upload_dok_pendukung: uploadDokPendukung
+        ...formData,
+        no_bak: (formData.no_bak || '').trim(),
+        no_spk: (formData.no_spk || '').trim(),
+        no_cmd: (formData.no_cmd || '').trim(),
+        license_plate: (formData.license_plate || '').trim().toUpperCase()
       });
-
-      // Reset form on success only
-      setNoBak('');
-      setNoSpk('');
-      setNoSap('');
-      setNoTilang('');
-      setCustomerName('');
-      setLicensePlate('');
-      setValue('');
-      setStatusSap('Bill');
-      setBroName('');
-      setDokPendukungAlasan('');
-      setFileBak(null);
-      setFileBakName('');
-      setFileHandoverAsoSales(null);
-      setFileHandoverAsoSalesName('');
-      setFileHandoverSalesAdmin(null);
-      setFileHandoverSalesAdminName('');
-      setUploadDokPendukung(null);
-      setUploadDokPendukungName('');
-      const today = new Date();
-      const yyyy = today.getFullYear();
-      const mm = String(today.getMonth() + 1).padStart(2, '0');
-      const dd = String(today.getDate()).padStart(2, '0');
-      setTanggal(`${yyyy}-${mm}-${dd}`);
-      
-      setFormSuccess(true);
-      setTimeout(() => setFormSuccess(false), 3000);
+      setIsAddModalOpen(false);
     } catch (err: any) {
-      setFormError(err.message || 'Gagal menyimpan transaksi ke database.');
+      if (addToast) addToast(`Gagal: ${err.message}`, 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // ==========================================
-  // EDIT TRANSACTION FEATURE STATES & HANDLERS
-  // ==========================================
-  const [editingTransaction, setEditingTransaction] = useState<Backcharge | null>(null);
-  const [editCategory, setEditCategory] = useState<BackchargeCategory>('Own Risk');
-  const [editBranch, setEditBranch] = useState(ALL_SYSTEM_BRANCHES[0]);
-  const [editNoBak, setEditNoBak] = useState('');
-  const [editNoSpk, setEditNoSpk] = useState('');
-  const [editNoSap, setEditNoSap] = useState('');
-  const [editNoTilang, setEditNoTilang] = useState('');
-  const [editCustomerName, setEditCustomerName] = useState('');
-  const [editLicensePlate, setEditLicensePlate] = useState('');
-  const [editValue, setEditValue] = useState('');
-  const [editStatusSap, setEditStatusSap] = useState('Bill');
-  const [editBroName, setEditBroName] = useState('');
-  const [editDokPendukungAlasan, setEditDokPendukungAlasan] = useState('');
-  const [editTanggal, setEditTanggal] = useState('');
-
-  const [editFileBak, setEditFileBak] = useState<string | null>(null);
-  const [editFileBakName, setEditFileBakName] = useState('');
-  const [editFileHandoverAsoSales, setEditFileHandoverAsoSales] = useState<string | null>(null);
-  const [editFileHandoverAsoSalesName, setEditFileHandoverAsoSalesName] = useState('');
-  const [editFileHandoverSalesAdmin, setEditFileHandoverSalesAdmin] = useState<string | null>(null);
-  const [editFileHandoverSalesAdminName, setEditFileHandoverSalesAdminName] = useState('');
-  const [editUploadDokPendukung, setEditUploadDokPendukung] = useState<string | null>(null);
-  const [editUploadDokPendukungName, setEditUploadDokPendukungName] = useState('');
-
-  const [editError, setEditError] = useState<string | null>(null);
-  const [editSuccess, setEditSuccess] = useState(false);
-  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
-
-  const handleEditFileChange = async (
-    e: React.ChangeEvent<HTMLInputElement>, 
-    setFile: React.Dispatch<React.SetStateAction<string | null>>, 
-    setName: React.Dispatch<React.SetStateAction<string>>,
-    uploadKey: string
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 15 * 1024 * 1024) {
-      if (addToast) {
-        addToast("Ukuran file maksimal adalah 15MB", "error");
-      } else {
-        alert("Ukuran file maksimal adalah 15MB");
-      }
-      return;
-    }
-
-    setName(file.name);
-
-    setUploadingToDrive(prev => ({ ...prev, [uploadKey]: true }));
-    try {
-      const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
-      setFile(driveUrl);
-      if (addToast) {
-        addToast("Dokumen berhasil diunggah dengan URL ringkas!", "success");
-      }
-    } catch (err: any) {
-      console.warn("Auto Drive upload failed, saving as lightweight local file...", err);
-      try {
-        const reader = new FileReader();
-        const base64Data = await new Promise<string>((resolve) => {
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(file);
-        });
-        const uploadRes = await fetch(getApiUrl('/api/upload-file'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ base64: base64Data, filename: file.name })
-        });
-        if (uploadRes.ok) {
-          const uploadJson = await uploadRes.json();
-          if (uploadJson.url) {
-            setFile(uploadJson.url);
-            if (addToast) addToast("Dokumen berhasil dirampingkan ke penyimpanan lokal.", "success");
-            return;
-          }
-        }
-      } catch (convErr) {
-        console.error("Gagal mengonversi file:", convErr);
-      }
-      if (addToast) {
-        addToast("Gagal mengunggah berkas: " + err.message, "error");
-      }
-    } finally {
-      setUploadingToDrive(prev => ({ ...prev, [uploadKey]: false }));
-    }
-  };
-
-  const handleStartEdit = (t: Backcharge) => {
-    setEditingTransaction(t);
-    setEditCategory(t.category);
-    setEditBranch(t.branch);
-    setEditNoBak(t.no_bak === '-' ? '' : t.no_bak);
-    setEditNoSpk(t.no_spk === '-' ? '' : t.no_spk);
-    setEditNoSap(t.no_sap === '-' ? '' : t.no_sap);
-    setEditNoTilang(t.no_tilang === '-' ? '' : t.no_tilang);
-    setEditCustomerName(t.customer_name);
-    setEditLicensePlate(t.license_plate === '-' ? '' : t.license_plate);
-    setEditValue(String(t.value));
-    setEditStatusSap(t.status_sap || 'Bill');
-    setEditBroName(t.bro_name === '-' ? '' : (t.bro_name || ''));
-    setEditDokPendukungAlasan(t.dok_pendukung_alasan === '-' ? '' : (t.dok_pendukung_alasan || ''));
-    
-    const formattedDate = t.tanggal ? (t.tanggal.includes('T') ? t.tanggal.split('T')[0] : t.tanggal.split(' ')[0]) : '';
-    setEditTanggal(formattedDate);
-
-    setEditFileBak(t.file_bak_url || null);
-    setEditFileBakName(t.file_bak_url ? 'file_bak_exist' : '');
-    setEditFileHandoverAsoSales(t.file_handover_aso_sales_url || null);
-    setEditFileHandoverAsoSalesName(t.file_handover_aso_sales_url ? 'file_handover_aso_sales_exist' : '');
-    setEditFileHandoverSalesAdmin(t.file_handover_sales_admin_url || null);
-    setEditFileHandoverSalesAdminName(t.file_handover_sales_admin_url ? 'file_handover_sales_admin_exist' : '');
-    setEditUploadDokPendukung(t.upload_dok_pendukung || null);
-    setEditUploadDokPendukungName(t.upload_dok_pendukung ? 'file_dok_pendukung_exist' : '');
-    
-    setEditError(null);
-    setEditSuccess(false);
-  };
-
-  const handleEditSubmit = async (e: React.FormEvent) => {
+  const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTransaction) return;
-    if (isEditSubmitting) return;
-
-    setEditError(null);
-    setEditSuccess(false);
-
-    if (!isBroOnly && !editCustomerName.trim()) {
-      setEditError('Nama Customer wajib diisi!');
-      return;
-    }
-    if (!editValue || Number(editValue) <= 0) {
-      setEditError('Nilai Backcharge harus lebih besar dari 0!');
-      return;
-    }
-
-    const confirmMsg = isBroOnly 
-      ? `Konfirmasi Perubahan Nominal:\nApakah Anda yakin ingin mengubah Nominal Backcharge transaksi ${editingTransaction.id} (${editingTransaction.customer_name}) dari Rp ${(editingTransaction.value || 0).toLocaleString('id-ID')} menjadi Rp ${Number(editValue).toLocaleString('id-ID')}?`
-      : `Konfirmasi Revisi Data:\nApakah Anda yakin ingin menyimpan perubahan data Backcharge transaksi ${editingTransaction.id} (${editCustomerName.trim()})?`;
-    if (!window.confirm(confirmMsg)) {
-      return;
-    }
-
-    setIsEditSubmitting(true);
+    if (!validateForm()) return;
+    setIsSubmitting(true);
     try {
-      if (onUpdateTransaction) {
-        const updates: Partial<Backcharge> = isBroOnly ? {
-          value: Number(editValue)
-        } : {
-          category: editCategory,
-          branch: editBranch,
-          no_bak: editCategory === 'Own Risk' ? (editNoBak.trim() || '-') : '-',
-          no_spk: editNoSpk.trim() || '-',
-          no_sap: editCategory === 'Own Risk' ? (editNoSap.trim() || '-') : '-',
-          no_tilang: editCategory === 'ETLE' ? (editNoTilang.trim() || '-') : '-',
-          customer_name: editCustomerName.trim(),
-          license_plate: editLicensePlate.trim() || '-',
-          value: Number(editValue),
-          status_sap: editStatusSap || 'Bill',
-          tanggal: editTanggal || null,
-          bro_name: editBroName.trim() || '-',
-          nama_bro: editBroName.trim() || '-',
-          dok_pendukung_alasan: editDokPendukungAlasan.trim() || '-',
-          alasan: editDokPendukungAlasan.trim() || '-',
-          file_bak_url: editFileBak,
-          file_handover_aso_sales_url: editFileHandoverAsoSales,
-          file_handover_sales_admin_url: editFileHandoverSalesAdmin,
-          upload_dok_pendukung: editUploadDokPendukung
-        };
-
-        const logMsg = isBroOnly 
-          ? `Merevisi Nominal Backcharge ${editingTransaction.id} (${editingTransaction.customer_name}) dari Rp ${(editingTransaction.value || 0).toLocaleString('id-ID')} menjadi Rp ${Number(editValue).toLocaleString('id-ID')}`
-          : `Merevisi data Backcharge ${editingTransaction.id} (${editCustomerName})`;
-        await onUpdateTransaction(editingTransaction.id, updates, logMsg);
-        setEditSuccess(true);
-        setTimeout(() => {
-          setEditingTransaction(null);
-        }, 1000);
-      }
+      await onUpdateTransaction(
+        editingTransaction.id,
+        {
+          ...formData,
+          no_bak: (formData.no_bak || '').trim(),
+          no_spk: (formData.no_spk || '').trim(),
+          no_cmd: (formData.no_cmd || '').trim(),
+          license_plate: (formData.license_plate || '').trim().toUpperCase()
+        },
+        `Update informasi transaksi ${editingTransaction.id}`
+      );
+      setIsEditModalOpen(false);
+      setEditingTransaction(null);
     } catch (err: any) {
-      setEditError(err.message || 'Gagal mengubah data');
+      if (addToast) addToast(`Gagal: ${err.message}`, 'error');
     } finally {
-      setIsEditSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
-  // Debounce search query input (350ms) to eliminate excessive D1 calls
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(search);
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [search]);
+  // BULK ACTIONS & HANDLERS (MATCHING image_308f8e6a.png)
+  const handleOpenBulkModal = () => {
+    setBulkHandoverStatus('-- Tidak Diubah --');
+    setBulkHandoverDate(new Date().toISOString().split('T')[0]);
+    setBulkSapStatus('-- Tidak Diubah --');
+    setBulkPaymentStatus('-- Tidak Diubah --');
+    setBulkApprovalStatus('-- Tidak Diubah --');
+    setBulkAuditNote(`Update status massal oleh ${currentUser?.full_name || 'User'} (${currentUser?.role || 'Admin'})`);
+    setBulkFile(null);
+    setIsDraggingFile(false);
+    setIsBulkUpdateModalOpen(true);
+  };
 
-  // Auto reset pagination page when filters or search change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [debouncedSearch, selectedCategory, selectedBranch, filterStartDate, filterEndDate, selectedStage, selectedPaymentStatus, selectedConfirmStatus, selectedSapStatus, activeAlertFilter, activeDashboardFilter]);
-
-  // Server-Side Paginated Query Engine (Scales to 1,000,000+ Records without memory overflow)
-  useEffect(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+  const handleProcessBulkFile = (file: File) => {
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+      if (addToast) addToast('Ukuran file maksimal 20MB!', 'error');
+      return;
     }
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
 
-    const queryParams = new URLSearchParams({
-      page: String(currentPage),
-      limit: String(pageSize),
-      search: debouncedSearch,
-      category: selectedCategory,
-      branch: selectedBranch,
-      userRole: currentUser.role || '',
-      userBranch: currentUser.branch || '',
-      statusPayment: selectedPaymentStatus,
-      statusConfirm: selectedConfirmStatus,
-      statusSap: selectedSapStatus,
-      stage: selectedStage,
-      alert: activeAlertFilter || activeDashboardFilter?.alert || '',
-      startDate: filterStartDate,
-      endDate: filterEndDate,
-      sortBy: sortBy,
-      sortDir: sortDir
-    });
+    const reader = new FileReader();
+    reader.onload = () => {
+      setBulkFile({
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        dataUrl: reader.result as string
+      });
+      if (addToast) addToast(`Berkas "${file.name}" berhasil diunggah!`, 'success');
+    };
+    reader.onerror = () => {
+      if (addToast) addToast('Gagal membaca file berkas.', 'error');
+    };
+    reader.readAsDataURL(file);
+  };
 
-    setIsServerLoading(true);
+  const handleBulkFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleProcessBulkFile(file);
+    }
+  };
 
-    fetch(getApiUrl(`/api/d1/backcharges/page?${queryParams.toString()}`), {
-      signal: controller.signal
-    })
-      .then(res => res.json())
-      .then(d => {
-        if (d.success && Array.isArray(d.data)) {
-          setServerRows(d.data.map(unpackExtraFields));
-          setServerTotalCount(typeof d.pagination?.total === 'number' ? d.pagination.total : d.data.length);
-        } else {
-          setServerRows(null);
-          setServerTotalCount(null);
+  const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingFile(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleProcessBulkFile(file);
+    }
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  };
+
+  const handleConfirmBulkUpdate = async () => {
+    if (selectedIds.size === 0) return;
+
+    // 1. Mandatory audit note check
+    if (!bulkAuditNote.trim()) {
+      if (addToast) addToast('Catatan audit / keterangan update massal wajib diisi!', 'error');
+      return;
+    }
+
+    // 2. Mandatory file/photo attachment check
+    if (!bulkFile) {
+      if (addToast) addToast('Wajib melampirkan foto atau file bukti serah terima / lampiran!', 'error');
+      return;
+    }
+
+    // 3. Status selection verification - require at least one status change
+    const willUpdateHandover = canUpdateHandover && bulkHandoverStatus !== '-- Tidak Diubah --';
+    const willUpdateHandoverDate = canUpdateHandover && Boolean(bulkHandoverDate && bulkHandoverDate.trim());
+    const willUpdateSap = canUpdateSap && bulkSapStatus !== '-- Tidak Diubah --';
+    const willUpdatePayment = canUpdatePayment && bulkPaymentStatus !== '-- Tidak Diubah --';
+    const willUpdateApproval = canUpdateApproval && bulkApprovalStatus !== '-- Tidak Diubah --';
+
+    if (!willUpdateHandover && !willUpdateSap && !willUpdatePayment && !willUpdateApproval) {
+      if (addToast) addToast('Silakan pilih setidaknya satu status yang ingin diperbarui!', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const updatesList: { id: string; updates: Partial<Backcharge> }[] = [];
+      const nowIso = new Date().toISOString();
+      const todayDate = nowIso.split('T')[0];
+      const role = currentUser?.role || '';
+      const approverLabel = `${currentUser?.full_name || 'User'} (${role})`;
+
+      selectedIds.forEach(id => {
+        const u: Partial<Backcharge> = {};
+
+        // Melampirkan file / foto bukti massal ke transaksi
+        if (bulkFile) {
+          u.file_handover_sales_admin_url = bulkFile.dataUrl;
+          u.file_handover_aso_sales_url = bulkFile.dataUrl;
+          u.approval_attachment_1_url = bulkFile.dataUrl;
+          u.upload_dok_pendukung = bulkFile.name;
         }
-      })
-      .catch(err => {
-        if (err.name !== 'AbortError') {
-          setServerRows(null);
-          setServerTotalCount(null);
+
+        // 1. Serah Terima Berkas & Tanggal
+        if (willUpdateHandover) {
+          u.status_handover = bulkHandoverStatus;
         }
-      })
-      .finally(() => {
-        setIsServerLoading(false);
+        if (willUpdateHandoverDate) {
+          u.tanggal_handover = bulkHandoverDate;
+        } else if (willUpdateHandover && !u.tanggal_handover) {
+          u.tanggal_handover = todayDate;
+        }
+
+        // 2. Status SAP / ERP Claim
+        if (willUpdateSap) {
+          u.status_sap = bulkSapStatus;
+        }
+
+        // 3. Status Pelunasan Pembayaran
+        if (willUpdatePayment) {
+          u.status_payment = bulkPaymentStatus;
+          if (bulkPaymentStatus === 'Lunas') {
+            u.payment_date = todayDate;
+          }
+        }
+
+        // 4. Status Approval Backcharge (Strict Category and Nominal Tier Guarding)
+        if (willUpdateApproval) {
+          const existingTx = transactions.find(t => t.id === id);
+          const txVal = Number(existingTx?.value) || 0;
+          const isMaintenance = existingTx?.category === 'Maintenance';
+          const isRhReq = isMaintenance ? (txVal > 7500000) : (txVal > 5000000);
+          const isDhReq = txVal > 15000000;
+          const isKacabCat = ['Maintenance', 'TPL', 'Dokumen Kendaraan', 'Unclaimable Insurance'].includes(existingTx?.category || '');
+          const isShCat = ['Own Risk', 'Ekspedisi', 'ETLE'].includes(existingTx?.category || '');
+
+          if (hasRole(role, 'Administrator') || hasRole(role, 'Admin Head')) {
+            u.status_approval = bulkApprovalStatus;
+            u.approved_by = approverLabel;
+            u.approved_at = nowIso;
+            u.approval_note = bulkAuditNote;
+            if (isRhReq) {
+              u.regional_approval_status = bulkApprovalStatus;
+              u.regional_approved_by = approverLabel;
+              u.regional_approved_at = nowIso;
+              u.regional_approval_note = bulkAuditNote;
+            }
+            if (isDhReq) {
+              u.division_approval_status = bulkApprovalStatus;
+              u.division_approved_by = approverLabel;
+              u.division_approved_at = nowIso;
+              u.division_approval_note = bulkAuditNote;
+            }
+          } else if (hasRole(role, 'Division Head')) {
+            if (isDhReq) {
+              u.division_approval_status = bulkApprovalStatus;
+              u.division_approved_by = approverLabel;
+              u.division_approved_at = nowIso;
+              u.division_approval_note = bulkAuditNote;
+            }
+          } else if (isRegionalHeadRole(role)) {
+            if (isRhReq) {
+              u.regional_approval_status = bulkApprovalStatus;
+              u.regional_approved_by = approverLabel;
+              u.regional_approved_at = nowIso;
+              u.regional_approval_note = bulkAuditNote;
+            }
+          } else if (hasRole(role, 'Kepala Cabang')) {
+            if (isKacabCat) {
+              u.status_approval = bulkApprovalStatus;
+              u.approved_by = approverLabel;
+              u.approved_at = nowIso;
+              u.approval_note = bulkAuditNote;
+            }
+          } else if (hasRole(role, 'Sales Head')) {
+            if (isShCat) {
+              u.status_approval = bulkApprovalStatus;
+              u.approved_by = approverLabel;
+              u.approved_at = nowIso;
+              u.approval_note = bulkAuditNote;
+            }
+          }
+        }
+
+        updatesList.push({ id, updates: u });
       });
 
-    return () => {
-      controller.abort();
-    };
-  }, [
-    debouncedSearch,
-    selectedCategory,
-    selectedBranch,
-    filterStartDate,
-    filterEndDate,
-    selectedStage,
-    selectedPaymentStatus,
-    selectedConfirmStatus,
-    selectedSapStatus,
-    activeAlertFilter,
-    activeDashboardFilter,
-    currentPage,
-    pageSize,
-    sortBy,
-    sortDir,
-    currentUser
-  ]);
-
-  const handleSortColumn = (col: string) => {
-    if (sortBy === col) {
-      setSortDir(prev => prev === 'ASC' ? 'DESC' : 'ASC');
-    } else {
-      setSortBy(col);
-      setSortDir('DESC');
-    }
-    setCurrentPage(1);
-  };
-
-  // Memoized transactions filtering for fallback & offline caching
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter(t => {
-      const searchLower = debouncedSearch.toLowerCase();
-      const cleanPlateSearch = searchLower.replace(/[-\s]/g, '');
-      const cleanTxPlate = (t.license_plate || '').toLowerCase().replace(/[-\s]/g, '');
-      const matchesSearch = 
-        !debouncedSearch ||
-        t.id.toLowerCase().includes(searchLower) || 
-        t.customer_name.toLowerCase().includes(searchLower) ||
-        (t.license_plate || '').toLowerCase().includes(searchLower) ||
-        (cleanPlateSearch.length >= 3 && cleanTxPlate.includes(cleanPlateSearch)) ||
-        t.no_bak.toLowerCase().includes(searchLower) ||
-        (t.no_spk || '').toLowerCase().includes(searchLower) ||
-        t.no_invoice.toLowerCase().includes(searchLower);
-
-      let matchesCategory = !selectedCategory || t.category === selectedCategory;
-      if (selectedCategory === 'Maintenance & ETLE') {
-        matchesCategory = t.category === 'Maintenance' || t.category === 'ETLE';
-      } else if (selectedCategory && selectedCategory.includes(',')) {
-        const catList = selectedCategory.split(',').map(c => c.trim().toLowerCase());
-        matchesCategory = catList.includes((t.category || '').toLowerCase());
-      }
-      const isAllBranch = !selectedBranch || isNationalOrAllBranches(selectedBranch);
-      const selectedBranchList = selectedBranch ? getUserBranches(selectedBranch).map(b => b.toLowerCase()) : [];
-      const matchesBranch = selectedBranch
-        ? (isAllBranch || 
-           (Boolean(t.branch) && selectedBranchList.includes(t.branch.toLowerCase())) ||
-           (Boolean(t.branch) && t.branch.toLowerCase() === selectedBranch.toLowerCase()) || 
-           (selectedBranch.includes(',') && selectedBranch.split(',').map(s => s.trim().toLowerCase()).includes(t.branch ? t.branch.toLowerCase() : '')))
-        : (userBranchList && userBranchList.length > 0
-            ? userBranchList.some(ub => ub.toLowerCase() === (t.branch || '').toLowerCase())
-            : true);
-      const matchesPaymentStatus = !selectedPaymentStatus || t.status_payment === selectedPaymentStatus;
-      const matchesSapStatus = !selectedSapStatus || t.status_sap === selectedSapStatus;
-      
-      let matchesConfirmStatus = true;
-      if (selectedConfirmStatus === 'Ditolak / Negosiasi Ulang') {
-        matchesConfirmStatus = t.status_approval === 'Ditolak' || 
-          t.regional_approval_status === 'Ditolak' || 
-          t.division_approval_status === 'Ditolak' || 
-          t.status_confirm === 'Ditolak / Negosiasi Ulang';
-      } else if (selectedConfirmStatus) {
-        matchesConfirmStatus = t.status_confirm === selectedConfirmStatus;
-      }
-
-      let matchesDateRange = true;
-      if (filterStartDate || filterEndDate) {
-        let tDate = '';
-        if (t.tanggal) {
-          if (t.tanggal.includes('T')) tDate = t.tanggal.split('T')[0];
-          else if (t.tanggal.includes('/')) {
-            const p = t.tanggal.split('/');
-            if (p[0].length === 4) tDate = `${p[0]}-${p[1].padStart(2, '0')}-${p[2].padStart(2, '0')}`;
-            else if (p[2].length === 4) tDate = `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`;
-          } else {
-            tDate = t.tanggal.split(' ')[0];
-          }
-        } else if (t.created_at) {
-          tDate = t.created_at.split('T')[0].split(' ')[0];
-        }
-
-        if (filterStartDate && tDate && tDate < filterStartDate) {
-          matchesDateRange = false;
-        }
-        if (filterEndDate && tDate && tDate > filterEndDate) {
-          matchesDateRange = false;
-        }
-        if (!tDate) {
-          matchesDateRange = false;
-        }
-      }
-
-      let matchesStage = true;
-      if (selectedStage) {
-        const stepInvoice = Boolean(t.no_invoice && typeof t.no_invoice === 'string' && t.no_invoice.trim() !== '' && t.no_invoice.trim() !== '-');
-        const stepPayment = t.status_payment === 'Lunas';
-        const isDocRejected = Boolean(
-          t.status_approval === 'Ditolak' || 
-          t.regional_approval_status === 'Ditolak' || 
-          t.division_approval_status === 'Ditolak' || 
-          t.status_confirm === 'Ditolak / Negosiasi Ulang'
-        );
-
-        if (selectedStage === '1_handover') {
-          matchesStage = t.status_handover === 'Pending';
-        } else if (selectedStage === '2_confirm' || selectedStage === '2_admin') {
-          matchesStage = t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin';
-        } else if (selectedStage === '3_sap_l1' || selectedStage === '3_sap') {
-          const isPendingL1 = !t.status_approval || t.status_approval === 'Belum Approval' || t.status_approval === 'Pending';
-          matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && isPendingL1 && !stepInvoice && !stepPayment && !isDocRejected;
-        } else if (selectedStage === '3_sap_rh') {
-          const val = Number(t.value) || 0;
-          const isMaintenance = t.category === 'Maintenance';
-          const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
-          matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && t.status_approval === 'Disetujui' && isRegionalHeadReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval') && !stepInvoice && !stepPayment && !isDocRejected;
-        } else if (selectedStage === '3_sap_dh') {
-          const val = Number(t.value) || 0;
-          const isMaintenance = t.category === 'Maintenance';
-          const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
-          const isDivisionHeadReq = val > 15000000;
-          const isRegionalApproved = !isRegionalHeadReq || t.regional_approval_status === 'Disetujui';
-          matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && t.status_approval === 'Disetujui' && isRegionalApproved && isDivisionHeadReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval') && !stepInvoice && !stepPayment && !isDocRejected;
-        } else if (selectedStage === '4_invoice') {
-          const isNotBill = t.status_sap === 'Not Bill';
-          if (isNotBill || isDocRejected) {
-            matchesStage = false;
-          } else {
-            const val = Number(t.value) || 0;
-            const isMaintenance = t.category === 'Maintenance';
-            const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
-            const isDivisionHeadReq = val > 15000000;
-            const isL1Approved = t.status_approval === 'Disetujui';
-            const isRegionalApproved = !isRegionalHeadReq || t.regional_approval_status === 'Disetujui';
-            const isDivisionApproved = !isDivisionHeadReq || t.division_approval_status === 'Disetujui';
-            matchesStage = (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && 
-              !stepInvoice && 
-              !stepPayment && 
-              isL1Approved && 
-              isRegionalApproved && 
-              isDivisionApproved;
-          }
-        } else if (selectedStage === '5_payment') {
-          matchesStage = stepInvoice && !stepPayment && !isDocRejected;
-        } else if (selectedStage === '6_done') {
-          matchesStage = stepPayment;
-        } else if (selectedStage === 'rejected') {
-          matchesStage = isDocRejected;
-        }
-      }
-
-      let matchesAlertFilter = true;
-      const combinedAlert = activeAlertFilter || activeDashboardFilter?.alert;
-      if (combinedAlert) {
-        const ageMs = new Date().getTime() - new Date(t.tanggal || t.created_at).getTime();
-        if (combinedAlert === 'due') {
-          matchesAlertFilter = t.status_payment === 'Belum Bayar' && t.status_sap !== 'Not Bill' && ageMs > 15 * 24 * 3600 * 1000;
-        } else if (combinedAlert === 'pending') {
-          matchesAlertFilter = t.status_payment === 'Belum Bayar' && t.status_sap !== 'Not Bill' && ageMs > 7 * 24 * 3600 * 1000;
-        } else if (combinedAlert === 'high_value') {
-          matchesAlertFilter = t.status_payment === 'Belum Bayar' && t.status_sap !== 'Not Bill' && ageMs > 30 * 24 * 3600 * 1000;
-        }
-      }
-
-      return matchesSearch && matchesCategory && matchesBranch && matchesDateRange && matchesStage && matchesPaymentStatus && matchesConfirmStatus && matchesSapStatus && matchesAlertFilter;
-    });
-  }, [transactions, debouncedSearch, selectedCategory, selectedBranch, filterStartDate, filterEndDate, selectedStage, selectedPaymentStatus, selectedConfirmStatus, selectedSapStatus, activeAlertFilter, activeDashboardFilter]);
-
-  // Pagination computations
-  const totalItems = serverTotalCount !== null ? serverTotalCount : filteredTransactions.length;
-  const totalPages = Math.ceil(totalItems / pageSize) || 1;
-  const activePage = Math.min(currentPage, Math.max(1, totalPages));
-  
-  const displayTransactions = serverRows !== null ? serverRows : filteredTransactions.slice(
-    (activePage - 1) * pageSize,
-    activePage * pageSize
-  );
-  const paginatedTransactions = displayTransactions;
-
-  // Bulk selection & update permissions based on role
-  const canUpdateHandover = isAsoUser || isAdminUser || isSuperAdmin;
-  const canUpdateSap = isSalesHeadUser || isSuperAdmin;
-  const canUpdatePayment = isAdminUser || isSuperAdmin;
-  const canUpdateApproval = isSalesHeadUser || isKacabUser || isRegionalHead || isDivisionHead || isSuperAdmin;
-
-  // BRO and read-only roles cannot perform bulk update
-  const canBulkUpdate = !isBroUser && (canUpdateHandover || canUpdateSap || canUpdatePayment || canUpdateApproval);
-
-  // Bulk selection & update handlers
-  const allPaginatedIds = paginatedTransactions.map(t => t.id);
-  const isAllPageSelected = allPaginatedIds.length > 0 && allPaginatedIds.every(id => selectedTxIds.includes(id));
-
-  const handleSelectAllPage = () => {
-    if (isAllPageSelected) {
-      setSelectedTxIds(prev => prev.filter(id => !allPaginatedIds.includes(id)));
-    } else {
-      setSelectedTxIds(prev => Array.from(new Set([...prev, ...allPaginatedIds])));
-    }
-  };
-
-  const handleToggleSelectTx = (id: string, e?: React.MouseEvent | React.ChangeEvent) => {
-    if (e) e.stopPropagation();
-    setSelectedTxIds(prev => 
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-    );
-  };
-
-  const handleSelectAllFiltered = () => {
-    setSelectedTxIds(filteredTransactions.map(t => t.id));
-  };
-
-  const handleClearSelection = () => {
-    setSelectedTxIds([]);
-  };
-
-  // Handle Bulk Status Update Submit
-  const handleBulkSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (selectedTxIds.length === 0 || isBulkSubmitting || !canBulkUpdate) return;
-
-    const hasAnyChange = 
-      (canUpdateHandover && (bulkStatusHandover || bulkFileHandover || bulkTanggalHandover)) ||
-      (canUpdateSap && bulkStatusSap) ||
-      (canUpdatePayment && bulkStatusPayment) ||
-      (canUpdateApproval && bulkStatusApproval);
-
-    if (!hasAnyChange) {
-      setBulkErrorMessage('Pilih setidaknya satu status atau unggah dokumen serah terima sebelum menerapkan perubahan massal.');
-      return;
-    }
-
-    await handleExecuteBulkSubmit();
-  };
-
-  // Execute bulk status update with batching and progress tracking
-  const handleExecuteBulkSubmit = async () => {
-    if (selectedTxIds.length === 0 || isBulkSubmitting || !canBulkUpdate) return;
-
-    const baseUpdates: Partial<Backcharge> = {};
-    if (canUpdateHandover) {
-      if (bulkStatusHandover) baseUpdates.status_handover = bulkStatusHandover;
-      if (bulkFileHandover) {
-        baseUpdates.file_handover_sales_admin_url = bulkFileHandover;
-        baseUpdates.file_handover_aso_sales_url = bulkFileHandover;
-        if (!bulkStatusHandover) {
-          baseUpdates.status_handover = 'Diserahkan ke Admin';
-        }
-      }
-      if (bulkTanggalHandover) {
-        baseUpdates.tanggal_handover = bulkTanggalHandover;
-      } else if (bulkFileHandover || bulkStatusHandover) {
-        baseUpdates.tanggal_handover = new Date().toLocaleString('id-ID');
-      }
-    }
-    if (canUpdateSap && bulkStatusSap) {
-      baseUpdates.status_sap = bulkStatusSap;
-    }
-    if (canUpdatePayment && bulkStatusPayment) {
-      baseUpdates.status_payment = bulkStatusPayment;
-      if (bulkStatusPayment === 'Lunas') {
-        baseUpdates.payment_date = bulkPaymentDate || new Date().toISOString().split('T')[0];
-      } else if (bulkStatusPayment === 'Belum Bayar') {
-        baseUpdates.payment_date = '';
-      }
-    }
-
-    setIsBulkSubmitting(true);
-    setBulkErrorMessage(null);
-    setBulkSuccessMessage(null);
-    setBulkProgress({ current: 0, total: selectedTxIds.length });
-
-    try {
-      const reason = bulkLogReason.trim() || `Update status & dokumen massal (${selectedTxIds.length} transaksi) oleh ${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-      const itemsToUpdate: { id: string; updates: Partial<Backcharge> }[] = [];
-
-      for (const id of selectedTxIds) {
-        const item = transactions.find(t => t.id === id);
-        const itemUpdates: Partial<Backcharge> = { ...baseUpdates };
-
-        if (bulkStatusApproval && item) {
-          const isKacab = hasRole(currentUser.role, 'Kepala Cabang') || hasRole(currentUser.role, 'kacab');
-          const isSH = hasRole(currentUser.role, 'Sales Head') || hasRole(currentUser.role, 'Sales / Sales Head') || hasRole(currentUser.role, 'SM Megabranch');
-          const isAdmin = hasRole(currentUser.role, 'Administrator');
-          const isRH = isRegionalHeadRole(currentUser.role as string);
-          const isDH = hasRole(currentUser.role, 'Division Head') || hasRole(currentUser.role, 'RBU');
-          const val = Number(item.value) || 0;
-          const isMaintenance = item.category === 'Maintenance';
-          const isTPL = item.category === 'TPL';
-
-          const tier1Approved = item.status_approval === 'Disetujui';
-          const isRegionalHeadReq = isMaintenance ? (val > 7500000) : (val > 5000000);
-          const isDivisionHeadReq = val > 15000000;
-          const tier2Approved = !isRegionalHeadReq || item.regional_approval_status === 'Disetujui';
-
-          if (isAdmin) {
-            itemUpdates.status_approval = bulkStatusApproval;
-            itemUpdates.approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-            itemUpdates.approved_at = new Date().toLocaleString('id-ID');
-            if (bulkStatusApproval === 'Disetujui') {
-              if (isRegionalHeadReq) {
-                itemUpdates.regional_approval_status = 'Disetujui';
-                itemUpdates.regional_approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-                itemUpdates.regional_approved_at = new Date().toLocaleString('id-ID');
-              }
-              if (isDivisionHeadReq) {
-                itemUpdates.division_approval_status = 'Disetujui';
-                itemUpdates.division_approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-                itemUpdates.division_approved_at = new Date().toLocaleString('id-ID');
-              }
-            } else if (bulkStatusApproval === 'Ditolak' || bulkStatusApproval === 'Belum Approval') {
-              itemUpdates.regional_approval_status = bulkStatusApproval;
-              itemUpdates.division_approval_status = bulkStatusApproval;
-            }
-          } else if (isKacab && (isMaintenance || isTPL)) {
-            itemUpdates.status_approval = bulkStatusApproval;
-            itemUpdates.approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-            itemUpdates.approved_at = new Date().toLocaleString('id-ID');
-          } else if (isSH && (item.category === 'Own Risk' || item.category === 'Ekspedisi' || item.category === 'ETLE' || item.category === 'Unclaimable Insurance' || item.category === 'Dokumen Kendaraan')) {
-            itemUpdates.status_approval = bulkStatusApproval;
-            itemUpdates.approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-            itemUpdates.approved_at = new Date().toLocaleString('id-ID');
-          } else if (isRH && isRegionalHeadReq && tier1Approved) {
-            itemUpdates.regional_approval_status = bulkStatusApproval;
-            itemUpdates.regional_approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-            itemUpdates.regional_approved_at = new Date().toLocaleString('id-ID');
-          } else if (isDH && isDivisionHeadReq && tier1Approved && tier2Approved) {
-            itemUpdates.division_approval_status = bulkStatusApproval;
-            itemUpdates.division_approved_by = `${currentUser.full_name || currentUser.email} (${currentUser.role})`;
-            itemUpdates.division_approved_at = new Date().toLocaleString('id-ID');
-          }
-        }
-
-        if (Object.keys(itemUpdates).length > 0) {
-          itemsToUpdate.push({ id, updates: itemUpdates });
-        }
-      }
-
-      if (itemsToUpdate.length === 0) {
-        setBulkErrorMessage('Tidak ada transaksi yang memenuhi syarat wewenang role Anda untuk perubahan status yang dipilih.');
-        setIsBulkSubmitting(false);
-        return;
-      }
-
-      if (onBulkUpdateTransactions) {
-        await onBulkUpdateTransactions(itemsToUpdate, reason, (curr, tot) => {
-          setBulkProgress({ current: curr, total: tot });
-        });
-      } else if (onUpdateTransaction) {
-        let done = 0;
-        for (const { id, updates: itemUpdates } of itemsToUpdate) {
-          await onUpdateTransaction(id, itemUpdates, `${reason} - Transaksi ${id}`);
-          done++;
-          setBulkProgress({ current: done, total: itemsToUpdate.length });
-        }
-      }
-
-      setBulkSuccessMessage(`Berhasil memperbarui ${itemsToUpdate.length} transaksi secara massal!`);
-      if (addToast) {
-        addToast(`Berhasil memperbarui status untuk ${itemsToUpdate.length} transaksi.`, 'success');
-      }
-
-      setTimeout(() => {
-        setShowBulkModal(false);
-        setShowBulkConfirmStep(false);
-        setSelectedTxIds([]);
-        setBulkStatusHandover('');
-        setBulkFileHandover(null);
-        setBulkFileHandoverName('');
-        setBulkTanggalHandover('');
-        setBulkStatusSap('');
-        setBulkStatusPayment('');
-        setBulkPaymentDate('');
-        setBulkStatusApproval('');
-        setBulkLogReason('');
-        setBulkProgress(null);
-      }, 1200);
-    } catch (err: any) {
-      console.error("Bulk update error:", err);
-      setBulkErrorMessage(err.message || 'Gagal memperbarui status secara massal.');
-    } finally {
-      setIsBulkSubmitting(false);
-    }
-  };
-
-  // Export visible transactions to Excel (styled XML spreadsheet format)
-  const handleExportExcel = () => {
-    if (filteredTransactions.length === 0) {
-      if (addToast) {
-        addToast("Tidak ada data untuk diexport!", "error");
-      } else {
-        alert("Tidak ada data untuk diexport!");
-      }
-      return;
-    }
-
-    // Calculate Summary Metrics for Management
-    const totalTransactions = filteredTransactions.length;
-    const totalValue = filteredTransactions.reduce((acc, t) => acc + (Number(t.value) || 0), 0);
-    
-    const lunasTx = filteredTransactions.filter(t => t.status_payment === 'Lunas');
-    const totalLunasCount = lunasTx.length;
-    const totalLunasValue = lunasTx.reduce((acc, t) => acc + (Number(t.value) || 0), 0);
-    const pctLunasValue = totalValue > 0 ? Math.round((totalLunasValue / totalValue) * 100) : 0;
-
-    const belumBayarTx = filteredTransactions.filter(t => t.status_payment !== 'Lunas');
-    const totalBelumBayarCount = belumBayarTx.length;
-    const totalBelumBayarValue = totalValue - totalLunasValue;
-
-    const divApprovedCount = filteredTransactions.filter(t => t.division_approval_status === 'Disetujui').length;
-    const pctDivApproved = totalTransactions > 0 ? Math.round((divApprovedCount / totalTransactions) * 100) : 0;
-
-    let excelTemplate = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-      <head>
-        <meta charset="utf-8" />
-        <!--[if gte mso 9]>
-        <xml>
-          <x:ExcelWorkbook>
-            <x:ExcelWorksheets>
-              <x:ExcelWorksheet>
-                <x:Name>Rekap Backcharge ASSA</x:Name>
-                <x:WorksheetOptions>
-                  <x:DisplayGridlines/>
-                </x:WorksheetOptions>
-              </x:ExcelWorksheet>
-            </x:ExcelWorksheets>
-          </x:ExcelWorkbook>
-        </xml>
-        <![endif]-->
-        <style>
-          table { border-collapse: collapse; font-family: 'Segoe UI', Arial, sans-serif; font-size: 10px; }
-          
-          /* Typography */
-          .title-text { font-size: 16px; font-weight: bold; color: #1e3a8a; text-align: left; }
-          .subtitle-text { font-size: 10px; color: #475569; text-align: left; }
-          
-          /* KPI Cards */
-          .kpi-title { background-color: #0f172a; color: #ffffff; font-weight: bold; font-size: 10px; text-align: center; border: 1px solid #1e293b; padding: 6px; }
-          .kpi-value-blue { background-color: #f8fafc; color: #1e40af; font-weight: bold; font-size: 15px; text-align: center; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; padding: 8px; }
-          .kpi-value-green { background-color: #f8fafc; color: #15803d; font-weight: bold; font-size: 15px; text-align: center; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; padding: 8px; }
-          .kpi-value-red { background-color: #f8fafc; color: #b91c1c; font-weight: bold; font-size: 15px; text-align: center; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; padding: 8px; }
-          .kpi-value-orange { background-color: #f8fafc; color: #c2410c; font-weight: bold; font-size: 15px; text-align: center; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; padding: 8px; }
-          .kpi-desc { background-color: #f1f5f9; color: #64748b; font-size: 9px; text-align: center; border: 1px solid #cbd5e1; padding: 4px; }
-          
-          /* Table Formatting */
-          .header-row th { background-color: #1e3a8a; color: #ffffff; font-weight: bold; font-size: 11px; border: 1px solid #0f172a; padding: 12px 6px; text-align: center; }
-          td { border: 1px solid #cbd5e1; padding: 8px 6px; text-align: left; vertical-align: middle; }
-          
-          /* Zebra striping */
-          .row-even { background-color: #f8fafc; }
-          .row-odd { background-color: #ffffff; }
-          
-          /* Cell formatting alignments and formats */
-          .text-center { text-align: center; }
-          .text-right { text-align: right; }
-          .font-mono { font-family: 'Consolas', 'Courier New', monospace; }
-          
-          /* Excel formatting structures */
-          .force-text { mso-number-format: "\\@"; }
-          .currency-format { mso-number-format: "IDR\\ #\\,\\#\\#0"; text-align: right; font-weight: bold; }
-          .number-format { mso-number-format: "\\#\\,\\#\\#0"; text-align: right; }
-          
-          /* Status pill styling in Excel */
-          .status-lunas { background-color: #dcfce7; color: #15803d; font-weight: bold; text-align: center; }
-          .status-belum-bayar { background-color: #fee2e2; color: #b91c1c; font-weight: bold; text-align: center; }
-          
-          .status-approved { background-color: #ecfdf5; color: #047857; font-weight: bold; text-align: center; }
-          .status-pending { background-color: #fffbeb; color: #b45309; font-weight: bold; text-align: center; }
-          .status-rejected { background-color: #fef2f2; color: #b91c1c; font-weight: bold; text-align: center; }
-          
-          .status-handover-done { background-color: #eff6ff; color: #1d4ed8; font-weight: bold; text-align: center; }
-          .status-handover-pending { background-color: #f8fafc; color: #64748b; text-align: center; }
-          
-          .total-row { background-color: #e2e8f0; font-weight: bold; border-top: 2px double #0f172a; border-bottom: 2px double #0f172a; }
-        </style>
-      </head>
-      <body>
-        <table>
-          <!-- TITLE HEADER BLOCK -->
-          <tr>
-            <td colspan="22" class="title-text" style="border: none;">PT ADI SARANA ARMADA, TBK (ASSA)</td>
-          </tr>
-          <tr>
-            <td colspan="22" class="title-text" style="font-size: 14px; color: #475569; border: none;">LAPORAN EXECUTIVE REKAPITULASI DATA BACKCHARGE</td>
-          </tr>
-          <tr>
-            <td colspan="22" class="subtitle-text" style="border: none; padding-bottom: 15px;">
-              Diekspor Oleh: <strong>${currentUser.full_name} (${currentUser.role})</strong> | Tanggal Unduh: ${new Date().toLocaleString('id-ID')} | Total Item: <strong>${totalTransactions}</strong>
-            </td>
-          </tr>
-          <tr><td colspan="22" style="border: none; height: 10px;"></td></tr>
-
-          <!-- EXECUTIVE SUMMARY METRIC CARDS -->
-          <tr>
-            <!-- CARD 1: TOTAL BACKCHARGE PORTFOLIO -->
-            <td colspan="5" class="kpi-title">TOTAL PORTFOLIO BACKCHARGE</td>
-            <td style="border: none;"></td>
-            <!-- CARD 2: RECOVERY/LUNAS RATE -->
-            <td colspan="5" class="kpi-title">STATUS PEMBAYARAN (LUNAS)</td>
-            <td style="border: none;"></td>
-            <!-- CARD 3: OUTSTANDING PORTFOLIO -->
-            <td colspan="5" class="kpi-title">STATUS OUTSTANDING (BELUM BAYAR)</td>
-            <td style="border: none;"></td>
-            <!-- CARD 4: DIVISION APPROVAL -->
-            <td colspan="4" class="kpi-title">APPROVAL STATUS (DIVISI HEAD)</td>
-          </tr>
-          <tr>
-            <!-- CARD 1 -->
-            <td colspan="5" class="kpi-value-blue" style="mso-number-format: 'IDR\\ #\\,\\#\\#0';">${totalValue}</td>
-            <td style="border: none;"></td>
-            <!-- CARD 2 -->
-            <td colspan="5" class="kpi-value-green" style="mso-number-format: 'IDR\\ #\\,\\#\\#0';">${totalLunasValue}</td>
-            <td style="border: none;"></td>
-            <!-- CARD 3 -->
-            <td colspan="5" class="kpi-value-red" style="mso-number-format: 'IDR\\ #\\,\\#\\#0';">${totalBelumBayarValue}</td>
-            <td style="border: none;"></td>
-            <!-- CARD 4 -->
-            <td colspan="4" class="kpi-value-orange">${divApprovedCount} / ${totalTransactions}</td>
-          </tr>
-          <tr>
-            <!-- CARD 1 -->
-            <td colspan="5" class="kpi-desc">Dari Akumulasi <strong>${totalTransactions} Kasus</strong> Backcharge</td>
-            <td style="border: none;"></td>
-            <!-- CARD 2 -->
-            <td colspan="5" class="kpi-desc">Tingkat Kolektabilitas: <strong>${pctLunasValue}%</strong> (${totalLunasCount} Kasus)</td>
-            <td style="border: none;"></td>
-            <!-- CARD 3 -->
-            <td colspan="5" class="kpi-desc">Total Kasus Outstanding: <strong>${totalBelumBayarCount} Item</strong></td>
-            <td style="border: none;"></td>
-            <!-- CARD 4 -->
-            <td colspan="4" class="kpi-desc">Persetujuan Akhir: <strong>${pctDivApproved}% Disetujui</strong></td>
-          </tr>
-          
-          <!-- SPACING -->
-          <tr><td colspan="22" style="border: none; height: 15px;"></td></tr>
-
-          <!-- TABLE HEADER ROW -->
-          <thead>
-            <tr class="header-row">
-              <th style="width: 40px;">No</th>
-              <th style="width: 110px;">ID Transaksi</th>
-              <th style="width: 90px;">Tanggal BAK</th>
-              <th style="width: 100px;">Kategori</th>
-              <th style="width: 90px;">Cabang Kota</th>
-              <th style="width: 120px;">No BAK</th>
-              <th style="width: 110px;">No Surat Tilang</th>
-              <th style="width: 120px;">No SPK</th>
-              <th style="width: 120px;">No SAP</th>
-              <th style="width: 180px;">Nama Customer</th>
-              <th style="width: 90px;">No Polisi</th>
-              <th style="width: 120px;">Nilai Backcharge</th>
-              <th style="width: 80px;">Status SAP</th>
-              <th style="width: 140px;">Penginput</th>
-              <th style="width: 110px;">Serah Terima</th>
-              <th style="width: 120px;">No. Invoice</th>
-              <th style="width: 100px;">Status Bayar</th>
-              <th style="width: 130px;">Nama PIC</th>
-              <th style="width: 180px;">Alasan/Keterangan Backcharge</th>
-              <th style="width: 110px;">Appr. ASO/Sales</th>
-              <th style="width: 110px;">Appr. Regional</th>
-              <th style="width: 110px;">Appr. Divisi</th>
-              <th style="width: 130px;">Tanggal Diinput</th>
-            </tr>
-          </thead>
-          <tbody>
-    `;
-
-    filteredTransactions.forEach((t, index) => {
-      const isEven = index % 2 === 0;
-      const rowClass = isEven ? 'row-even' : 'row-odd';
-
-      // Safe evaluation of statuses
-      const pStatus = t.status_payment === 'Lunas' ? 'status-lunas' : 'status-belum-bayar';
-      
-      const appASO = t.status_approval === 'Disetujui' ? 'status-approved' : 
-                     t.status_approval === 'Ditolak' ? 'status-rejected' : 'status-pending';
-                     
-      const appReg = t.regional_approval_status === 'Disetujui' ? 'status-approved' : 
-                     t.regional_approval_status === 'Ditolak' ? 'status-rejected' : 'status-pending';
-                     
-      const appDiv = t.division_approval_status === 'Disetujui' ? 'status-approved' : 
-                     t.division_approval_status === 'Ditolak' ? 'status-rejected' : 'status-pending';
-                     
-      const hStatus = t.status_handover === 'Diterima Admin' || t.status_handover === 'Diserahkan ke Admin' 
-                      ? 'status-handover-done' : 'status-handover-pending';
-
-      const brokerName = t.nama_bro || t.bro_name || '-';
-      const reasonText = t.alasan || '-';
-
-      excelTemplate += `
-        <tr class="${rowClass}">
-          <td class="text-center number-format">${index + 1}</td>
-          <td class="force-text" style="font-weight: bold; color: #1e3a8a;">${t.id}</td>
-          <td class="text-center">${formatDateOnly(t.tanggal)}</td>
-          <td>${t.category}</td>
-          <td class="text-center" style="font-weight: 500;">${t.branch}</td>
-          <td class="force-text">${t.no_bak || '-'}</td>
-          <td class="force-text">${t.no_tilang || '-'}</td>
-          <td class="force-text">${t.no_spk || '-'}</td>
-          <td class="force-text">${t.no_sap || '-'}</td>
-          <td style="font-weight: 500;">${t.customer_name}</td>
-          <td class="font-mono text-center force-text" style="font-weight: bold;">${t.license_plate || '-'}</td>
-          <td class="currency-format">${t.value}</td>
-          <td class="text-center force-text" style="font-weight: 500;">${t.status_sap || '-'}</td>
-          <td class="force-text" style="font-weight: 500;">${t.created_by || '-'}</td>
-          <td class="${hStatus}">${t.status_handover}</td>
-          <td class="force-text">${t.no_invoice || '-'}</td>
-          <td class="${pStatus}">${t.status_payment}</td>
-          <td>${brokerName}</td>
-          <td>${reasonText}</td>
-          <td class="${appASO}">${t.status_approval || 'Belum Approval'}</td>
-          <td class="${appReg}">${t.regional_approval_status || 'Belum Approval'}</td>
-          <td class="${appDiv}">${t.division_approval_status || 'Belum Approval'}</td>
-          <td class="text-center subtitle-text">${t.created_at ? new Date(t.created_at).toLocaleString('id-ID') : '-'}</td>
-        </tr>
-      `;
-    });
-
-    // FOOTER RECAP ROW (GRAND TOTAL)
-    excelTemplate += `
-            <tr class="total-row">
-              <td colspan="11" style="text-align: right; padding: 10px; font-size: 11px;">GRAND TOTAL REKAPITULASI:</td>
-              <td class="currency-format" style="font-size: 11px;">${totalValue}</td>
-              <td colspan="11" style="background-color: #e2e8f0;"></td>
-            </tr>
-          </tbody>
-        </table>
-      </body>
-      </html>
-    `;
-
-    const blob = new Blob([excelTemplate], { type: 'application/vnd.ms-excel;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `Rekap_Backcharge_${new Date().toISOString().split('T')[0]}.xls`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  const formatRupiah = (num: number) => {
-    const safeNum = Number(num);
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0
-    }).format(isNaN(safeNum) ? 0 : safeNum);
-  };
-
-  const formatPenginput = (createdBy?: string): string => {
-    if (!createdBy || createdBy === '-' || createdBy === '') return '-';
-    const cleanCreatedBy = createdBy.trim();
-
-    // 1. Search in profiles from props
-    if (profiles && profiles.length > 0) {
-      const found = profiles.find(p => 
-        (p.email && p.email.toLowerCase().trim() === cleanCreatedBy.toLowerCase()) ||
-        (p.id && String(p.id) === cleanCreatedBy) ||
-        (p.full_name && p.full_name.toLowerCase().trim() === cleanCreatedBy.toLowerCase())
+      await onBulkUpdateTransactions(
+        updatesList,
+        bulkAuditNote
       );
-      if (found && found.full_name && found.full_name.trim() !== '') {
-        return found.full_name.trim();
-      }
+
+      setIsBulkUpdateModalOpen(false);
+      setSelectedIds(new Set());
+      setBulkFile(null);
+    } catch (err: any) {
+      if (addToast) addToast(`Gagal bulk update: ${err.message}`, 'error');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // 2. Search in currentUser
-    if (currentUser) {
-      if (
-        (currentUser.email && currentUser.email.toLowerCase().trim() === cleanCreatedBy.toLowerCase()) ||
-        (currentUser.id && String(currentUser.id) === cleanCreatedBy) ||
-        (currentUser.full_name && currentUser.full_name.toLowerCase().trim() === cleanCreatedBy.toLowerCase())
-      ) {
-        if (currentUser.full_name && currentUser.full_name.trim() !== '') {
-          return currentUser.full_name.trim();
-        }
-      }
-    }
-
-    // 3. Search in localStorage profiles cache
-    try {
-      const stored = localStorage.getItem('bc_profiles');
-      if (stored) {
-        const parsed: Profile[] = JSON.parse(stored);
-        const found = parsed.find(p => 
-          (p.email && p.email.toLowerCase().trim() === cleanCreatedBy.toLowerCase()) ||
-          (p.full_name && p.full_name.toLowerCase().trim() === cleanCreatedBy.toLowerCase())
-        );
-        if (found && found.full_name && found.full_name.trim() !== '') {
-          return found.full_name.trim();
-        }
-      }
-    } catch (e) {}
-
-    // 4. If it's already a full name (not email format)
-    if (!cleanCreatedBy.includes('@')) {
-      return cleanCreatedBy;
-    }
-
-    // 5. Fallback from email prefix if no profile record found
-    const prefix = cleanCreatedBy.split('@')[0];
-    return prefix.replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   };
 
+  const handleDeleteClick = async (id: string) => {
+    if (!canDelete) return;
+    const reason = window.prompt('KONFIRMASI PENGHAPUSAN:\n\nMasukkan alasan / keterangan mengapa data transaksi ini dihapus:');
+    if (reason === null) return;
+    if (!reason.trim()) {
+      if (addToast) addToast('Alasan penghapusan wajib diisi!', 'error');
+      return;
+    }
+    try {
+      await onDeleteTransaction(id);
+      if (addToast) addToast(`Transaksi ${id} berhasil dihapus. Alasan: ${reason}`, 'success');
+    } catch (err: any) {
+      if (addToast) addToast(`Gagal hapus transaksi: ${err.message}`, 'error');
+    }
+  };
 
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0 || !canDelete) return;
+    const count = selectedIds.size;
+    const reason = window.prompt(`HAPUS ${count} TRANSAKSI SEKALIGUS:\n\nMasukkan alasan / keterangan mengapa ${count} transaksi ini dihapus:`);
+    if (reason === null) return;
+    if (!reason.trim()) {
+      if (addToast) addToast('Alasan penghapusan massal wajib diisi!', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      for (const id of Array.from(selectedIds) as string[]) {
+        await onDeleteTransaction(id);
+      }
+      setSelectedIds(new Set());
+      if (addToast) addToast(`Berhasil menghapus ${count} transaksi! Alasan: ${reason}`, 'success');
+    } catch (err: any) {
+      if (addToast) addToast(`Gagal hapus transaksi: ${err.message}`, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-      
-      {/* LEFT COLUMN: TRANSACTION INPUT FORM (GUARDS ACCORDING TO ROLE) */}
-      <div className={`lg:col-span-4 ${canShowInputForm ? 'block' : 'hidden lg:hidden'} bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4`}>
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <h3 className="text-sm font-extrabold text-slate-900 flex items-center space-x-2">
-            <span className="w-2.5 h-2.5 bg-blue-600 rounded-full"></span>
-            <span>Input Backcharge Baru</span>
-          </h3>
-          <span className="text-[9px] bg-blue-100 text-blue-700 font-extrabold px-1.5 py-0.5 rounded uppercase">
-            {currentUser.role}
-          </span>
+    <div className="space-y-6 animate-in fade-in duration-300">
+      {/* 1. TOP HEADER & KPI METRICS */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">Data Backcharge</h1>
+            <span className="px-3 py-1 bg-blue-50 text-blue-700 font-extrabold text-xs rounded-full border border-blue-200">
+              {filteredTransactions.length} dari {transactions.length} Total
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 font-medium mt-1">
+            Pencatatan transaksi, tracking progres Backcharge, dan audit berkas terpusat.
+          </p>
         </div>
 
-        {formSuccess && (
-          <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs rounded-xl font-medium flex items-center space-x-2 animate-bounce">
-            <Check className="w-4 h-4 flex-shrink-0" />
-            <span>Data Backcharge sukses disimpan & ditransmisikan!</span>
-          </div>
-        )}
-
-        {formError && (
-          <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs rounded-xl font-medium flex items-center space-x-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{formError}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleFormSubmit} className="space-y-4">
-          {currentUser.branch === 'Nasional' || hasRole(currentUser.role, 'Administrator') || hasRole(currentUser.role, 'Division Head') ? (
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota / BSO</label>
-              <select 
-                value={branch} 
-                onChange={(e) => setBranch(e.target.value)}
-                className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {ALL_SYSTEM_BRANCHES.map(b => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
-            </div>
-          ) : userBranchList && userBranchList.length > 0 ? (
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota / BSO</label>
-              <select 
-                value={branch} 
-                onChange={(e) => setBranch(e.target.value)}
-                className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {userBranchList.map(b => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota</label>
-              <input 
-                type="text" 
-                disabled 
-                value={currentUser.branch} 
-                className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-100 font-bold text-slate-500" 
-              />
-            </div>
-          )}
-
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Kategori Backcharge</label>
-            <select 
-              value={category} 
-              onChange={(e) => setCategory(e.target.value as BackchargeCategory)}
-              className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+        <div className="flex items-center flex-wrap gap-2.5">
+          {canAdd && (
+            <button
+              onClick={handleOpenAdd}
+              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              title="Input Data Backcharge Baru"
             >
-              <option value="Own Risk">Own Risk</option>
-              <option value="Maintenance">Maintenance</option>
-              <option value="Ekspedisi">Ekspedisi</option>
-              <option value="ETLE">ETLE</option>
-              <option value="TPL">TPL</option>
-              <option value="Unclaimable Insurance">Unclaimable Insurance</option>
-              <option value="Dokumen Kendaraan">Dokumen Kendaraan</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tanggal BAK</label>
-            <input 
-              type="date" 
-              value={tanggal}
-              onChange={(e) => setTanggal(e.target.value)}
-              className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-bold bg-slate-50/50"
-            />
-          </div>
-
-          {category === 'Own Risk' && (
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">No. BAK (Berita Acara Kejadian)</label>
-              <input 
-                type="text" 
-                value={noBak}
-                onChange={(e) => setNoBak(e.target.value)}
-                placeholder="BAK/2026/XI/102" 
-                className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-              />
-            </div>
+              <Plus className="w-4 h-4" />
+              <span>Input Data Baru</span>
+            </button>
           )}
 
-          {category === 'ETLE' && (
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">No. Surat Tilang</label>
-              <input 
-                type="text" 
-                value={noTilang}
-                onChange={(e) => setNoTilang(e.target.value)}
-                placeholder="TILANG/ETLE/9281" 
-                className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-              />
-            </div>
+          {canAdd && (
+            <button
+              onClick={() => setIsImportModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all border border-slate-200/60"
+              title="Impor Massal Data Transaksi Excel"
+            >
+              <Upload className="w-4 h-4 text-slate-600" />
+              <span>Impor Massal</span>
+            </button>
           )}
 
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-              {category === 'TPL' ? 'No. Dokumen' : 'No. SPK (Surat Perintah Kerja)'}
-            </label>
-            <input 
-              type="text" 
-              value={noSpk}
-              onChange={(e) => setNoSpk(e.target.value)}
-              placeholder={category === 'TPL' ? 'Masukkan No. Dokumen' : '500101010'} 
-              className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nama Customer</label>
-            <input 
-              type="text" 
-              required
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="PT Indonesia Gemilang" 
-              className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">No. Polisi Kendaraan</label>
-            <input 
-              type="text" 
-              value={licensePlate}
-              onChange={(e) => setLicensePlate(e.target.value)}
-              placeholder="B-1234-ABC" 
-              className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono uppercase"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nama BRO</label>
-            <input 
-              type="text" 
-              value={broName}
-              onChange={(e) => setBroName(e.target.value)}
-              placeholder="Nama BRO..." 
-              className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nilai Backcharge (Rp)</label>
-            <input 
-              type="number" 
-              required
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="Nominal" 
-              className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono font-bold"
-            />
-          </div>
-
-          {/* ATTACHMENT PICKS SECTION REMOVED - MOVED TO HANDOVER STEP */}
-          <button 
-            type="submit" 
-            disabled={isSubmitting}
-            className={`w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-350 disabled:cursor-not-allowed text-white text-xs font-bold py-3 px-4 rounded-xl shadow-md transition-all flex items-center justify-center space-x-2 ${isSubmitting ? '' : 'animate-pulse hover:animate-none'}`}
+          <button
+            onClick={handleExportExcel}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+            title="Unduh Rekap Data Transaksi ke File Excel"
           >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Menyimpan &amp; Sinkronisasi...</span>
-              </>
-            ) : (
-              <span>Simpan &amp; Kirim Notifikasi</span>
-            )}
+            <Download className="w-4 h-4" />
+            <span>Ekspor Rekap Excel</span>
           </button>
-        </form>
+        </div>
       </div>
 
-      {/* RIGHT COLUMN: LIST AND FILTER TABLE */}
-      <div className={`col-span-1 ${canShowInputForm ? 'lg:col-span-8' : 'lg:col-span-12'} space-y-4`}>
-        
-        {(activeAlertFilter || activeDashboardFilter) && (
-          <div className="bg-indigo-50 border border-indigo-200 text-indigo-900 p-3.5 rounded-2xl text-xs font-semibold flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-2">
-            <div className="flex items-center space-x-2">
-              <span className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
-              </span>
-              <span>
-                Menampilkan data terfilter dari Dashboard:{' '}
-                <strong className="font-extrabold uppercase text-indigo-950">
-                  {activeAlertFilter === 'due' && 'Jatuh Tempo 15 Hari'}
-                  {activeAlertFilter === 'pending' && 'Jatuh Tempo 7 Hari'}
-                  {activeAlertFilter === 'high_value' && 'Jatuh Tempo 30 Hari'}
-                  {activeDashboardFilter?.category && `Kategori: ${activeDashboardFilter.category}`}
-                  {activeDashboardFilter?.stage && `Tahap: ${activeDashboardFilter.stage === '1_handover' ? 'Fisik di ASO' : activeDashboardFilter.stage === '2_confirm' || activeDashboardFilter.stage === '2_admin' ? 'Berkas di Admin' : activeDashboardFilter.stage === '3_sap_l1' || activeDashboardFilter.stage === '3_sap' ? 'Belum Approve SH / KACAB' : activeDashboardFilter.stage === '3_sap_rh' ? 'Belum Approve RH' : activeDashboardFilter.stage === '3_sap_dh' ? 'Belum Approve DH' : activeDashboardFilter.stage === '4_invoice' ? 'Belum Cetak Invoice' : activeDashboardFilter.stage === '5_payment' ? 'Menunggu Pelunasan' : activeDashboardFilter.stage === 'rejected' ? 'Dokumen Ditolak' : 'Selesai (Lunas)'}`}
-                  {activeDashboardFilter?.branch && `Cabang: ${activeDashboardFilter.branch}`}
-                  {activeDashboardFilter?.statusPayment && `Status Bayar: ${activeDashboardFilter.statusPayment}`}
-                  {activeDashboardFilter?.statusConfirm && `Status Konfirmasi: ${activeDashboardFilter.statusConfirm}`}
-                  {activeDashboardFilter?.alert && `Alert: ${activeDashboardFilter.alert === 'due' ? 'Jatuh Tempo 15 Hari' : activeDashboardFilter.alert === 'pending' ? 'Jatuh Tempo 7 Hari' : 'Jatuh Tempo 30 Hari'}`}
-                </strong>
-              </span>
+      {/* 2. DASHBOARD / ALERT ACTIVE FILTER NOTIFICATION BANNER */}
+      {(activeDashboardFilter || activeAlertFilter) && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gradient-to-r from-orange-50 via-amber-50 to-blue-50 border border-orange-200/90 rounded-2xl shadow-sm text-xs gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-orange-500 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+              <Filter className="w-4 h-4" />
             </div>
-            <button 
-              onClick={() => {
-                onClearAlertFilter?.();
-                onClearDashboardFilter?.();
-                setSearch('');
-                setSelectedCategory('');
-                setSelectedBranch(isNasional ? '' : currentUser.branch);
-                setSelectedStage('');
-                setSelectedPaymentStatus('');
-                setSelectedConfirmStatus('');
+            <div>
+              <div className="flex items-center flex-wrap gap-2">
+                <span className="font-extrabold text-slate-900">Filter Aktif dari Dashboard:</span>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 bg-orange-100 text-orange-900 rounded-full border border-orange-200">
+                  {filteredTransactions.length} Transaksi Sesuai
+                </span>
+              </div>
+              <div className="text-slate-600 mt-1 flex flex-wrap items-center gap-1.5 font-medium text-[11px]">
+                {activeAlertFilter === 'high_value' && <span className="bg-white px-2 py-0.5 rounded-md border border-slate-200 text-slate-800 font-bold">Nominal Tinggi (≥ Rp 15jt)</span>}
+                {activeAlertFilter === 'pending' && <span className="bg-white px-2 py-0.5 rounded-md border border-slate-200 text-slate-800 font-bold">Status Pending</span>}
+                {activeAlertFilter === 'due' && <span className="bg-white px-2 py-0.5 rounded-md border border-slate-200 text-slate-800 font-bold">Jatuh Tempo (&gt; 30 Hari)</span>}
+                {activeDashboardFilter && (
+                  <>
+                    {activeDashboardFilter.category && (
+                      <span className="bg-white px-2 py-0.5 rounded-md border border-slate-200 text-slate-800 font-bold">
+                        Kategori: {activeDashboardFilter.category}
+                      </span>
+                    )}
+                    {activeDashboardFilter.branch && (
+                      <span className="bg-white px-2 py-0.5 rounded-md border border-slate-200 text-slate-800 font-bold">
+                        Cabang: {activeDashboardFilter.branch}
+                      </span>
+                    )}
+                    {activeDashboardFilter.stage && (
+                      <span className="bg-orange-100 text-orange-900 border border-orange-300 px-2 py-0.5 rounded-md font-bold">
+                        {activeDashboardFilter.stage === '2_confirm' || activeDashboardFilter.stage === '2_at_admin'
+                          ? 'Tahap: Berkas di Admin (Belum Selesai Approval)'
+                          : activeDashboardFilter.stage === '1_handover' || activeDashboardFilter.stage === '1_in_aso'
+                          ? 'Tahap: Berkas ASO (Menunggu Serah Terima)'
+                          : activeDashboardFilter.stage === '3_sap_sh'
+                          ? 'Tahap: Belum Approve SH'
+                          : activeDashboardFilter.stage === '3_sap_kacab'
+                          ? 'Tahap: Belum Approve KACAB'
+                          : activeDashboardFilter.stage === '3_sap_rh'
+                          ? 'Tahap: Belum Approve RH'
+                          : activeDashboardFilter.stage === '3_sap_dh'
+                          ? 'Tahap: Belum Approve DH'
+                          : activeDashboardFilter.stage === '4_invoice'
+                          ? 'Tahap: Menunggu Cetak & Kirim Invoice'
+                          : activeDashboardFilter.stage === '5_payment'
+                          ? 'Tahap: Menunggu Pelunasan Backcharge'
+                          : activeDashboardFilter.stage === '6_reject'
+                          ? 'Tahap: Dokumen Ditolak (Reject)'
+                          : `Tahap: ${activeDashboardFilter.stage}`}
+                      </span>
+                    )}
+                    {activeDashboardFilter.statusPayment && (
+                      <span className="bg-white px-2 py-0.5 rounded-md border border-slate-200 text-slate-800 font-bold">
+                        Status Bayar: {activeDashboardFilter.statusPayment}
+                      </span>
+                    )}
+                    {activeDashboardFilter.statusSap && (
+                      <span className="bg-white px-2 py-0.5 rounded-md border border-slate-200 text-slate-800 font-bold">
+                        Status SAP: {activeDashboardFilter.statusSap}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={handleResetFilters}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-xl font-bold shadow-xs transition-all hover:scale-[1.02] active:scale-[0.98] self-end sm:self-center shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Hapus Filter</span>
+          </button>
+        </div>
+      )}
+
+
+      {/* 4. FILTER CONTROLS & SEARCH */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        {/* Row 1: Search & Branch Filter */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+          <div className="md:col-span-5 relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
               }}
-              className="flex items-center gap-1.5 bg-white hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl text-[10px] font-black border border-indigo-200 transition-all cursor-pointer shadow-sm"
+              placeholder="Cari ID, Customer, Plat Nomor, No BAK, SPK, SAP, Tilang, BRO..."
+              className="w-full pl-10 pr-4 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="md:col-span-4">
+            <MultiSelect
+              options={userBranches}
+              selected={selectedBranches}
+              onChange={(branches) => {
+                setSelectedBranches(branches);
+                setCurrentPage(1);
+              }}
+              placeholder="Pilih Cabang Otoritas"
+              className="w-full text-xs"
+            />
+          </div>
+
+          <div className="md:col-span-3 flex items-center gap-2">
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-1/2 py-2 px-2 text-[11px] bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-medium"
+              title="Tanggal Awal"
+            />
+            <span className="text-slate-400 text-xs">-</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-1/2 py-2 px-2 text-[11px] bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-medium"
+              title="Tanggal Akhir"
+            />
+          </div>
+        </div>
+
+        {/* Row 2: Category, Payment, Approval, Handover, SAP, Tahap Proses Multi-Selects with Checkboxes & Reset button */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 pt-2 border-t border-slate-100">
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Kategori</label>
+            <MultiSelect
+              options={CATEGORIES}
+              selected={selectedCategories}
+              onChange={(cats) => {
+                setSelectedCategories(cats);
+                setCurrentPage(1);
+              }}
+              placeholder="Semua Kategori"
+              variant="rounded-xl"
+              className="w-full"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Status Bayar</label>
+            <MultiSelect
+              options={PAYMENT_STATUS_OPTIONS}
+              selected={selectedPaymentStatuses}
+              onChange={(statuses) => {
+                setSelectedPaymentStatuses(statuses);
+                setCurrentPage(1);
+              }}
+              placeholder="Semua Bayar"
+              variant="rounded-xl"
+              className="w-full"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Status Approval</label>
+            <MultiSelect
+              options={APPROVAL_STATUS_OPTIONS}
+              selected={selectedApprovalStatuses}
+              onChange={(statuses) => {
+                setSelectedApprovalStatuses(statuses);
+                setCurrentPage(1);
+              }}
+              placeholder="Semua Approval"
+              variant="rounded-xl"
+              className="w-full"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Serah Terima</label>
+            <MultiSelect
+              options={HANDOVER_STATUS_OPTIONS}
+              selected={selectedHandoverStatuses}
+              onChange={(statuses) => {
+                setSelectedHandoverStatuses(statuses);
+                setCurrentPage(1);
+              }}
+              placeholder="Semua Serah Terima"
+              variant="rounded-xl"
+              className="w-full"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Status SAP</label>
+            <MultiSelect
+              options={SAP_STATUS_OPTIONS}
+              selected={selectedSapStatuses}
+              onChange={(statuses) => {
+                setSelectedSapStatuses(statuses);
+                setCurrentPage(1);
+              }}
+              placeholder="Semua SAP"
+              variant="rounded-xl"
+              className="w-full"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Tahap Proses</label>
+            <MultiSelect
+              options={PROCESS_STAGES}
+              selected={selectedProcessStages}
+              onChange={(stages) => {
+                setSelectedProcessStages(stages);
+                setCurrentPage(1);
+              }}
+              placeholder="Semua Tahap Proses"
+              variant="rounded-xl"
+              align="right"
+              className="w-full"
+            />
+          </div>
+
+          <div className="flex items-end">
+            <button
+              onClick={handleResetFilters}
+              className="w-full py-2 px-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-[0.98]"
+              title="Reset semua filter ke kondisi awal"
             >
-              <X className="w-3.5 h-3.5" />
-              Reset Saringan
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Reset Filter</span>
+              {activeFiltersCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-slate-700 text-white text-[9px] font-black leading-none ml-0.5">
+                  {activeFiltersCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Active Filter Chips / Pills */}
+        {activeFiltersCount > 0 && (
+          <div className="pt-2 border-t border-slate-100 flex items-center flex-wrap gap-1.5">
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider mr-1">
+              Filter Aktif ({activeFiltersCount}):
+            </span>
+            {selectedCategories.map(cat => (
+              <span key={cat} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-200 rounded-lg text-[10.5px] font-bold">
+                <span>{cat}</span>
+                <X className="w-3 h-3 hover:text-rose-600 cursor-pointer" onClick={() => setSelectedCategories(prev => prev.filter(c => c !== cat))} />
+              </span>
+            ))}
+            {selectedPaymentStatuses.map(st => (
+              <span key={st} className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-[10.5px] font-bold">
+                <span>{st}</span>
+                <X className="w-3 h-3 hover:text-rose-600 cursor-pointer" onClick={() => setSelectedPaymentStatuses(prev => prev.filter(p => p !== st))} />
+              </span>
+            ))}
+            {selectedApprovalStatuses.map(ap => (
+              <span key={ap} className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-[10.5px] font-bold">
+                <span>Appr: {ap}</span>
+                <X className="w-3 h-3 hover:text-rose-600 cursor-pointer" onClick={() => setSelectedApprovalStatuses(prev => prev.filter(a => a !== ap))} />
+              </span>
+            ))}
+            {selectedHandoverStatuses.map(ho => (
+              <span key={ho} className="inline-flex items-center gap-1 px-2 py-0.5 bg-cyan-50 text-cyan-800 border border-cyan-200 rounded-lg text-[10.5px] font-bold">
+                <span>ST: {ho}</span>
+                <X className="w-3 h-3 hover:text-rose-600 cursor-pointer" onClick={() => setSelectedHandoverStatuses(prev => prev.filter(h => h !== ho))} />
+              </span>
+            ))}
+            {selectedSapStatuses.map(sap => (
+              <span key={sap} className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-800 border border-purple-200 rounded-lg text-[10.5px] font-bold">
+                <span>SAP: {sap}</span>
+                <X className="w-3 h-3 hover:text-rose-600 cursor-pointer" onClick={() => setSelectedSapStatuses(prev => prev.filter(s => s !== sap))} />
+              </span>
+            ))}
+            {selectedProcessStages.map(stg => (
+              <span key={stg} className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-50 text-orange-900 border border-orange-200 rounded-lg text-[10.5px] font-bold">
+                <span>Tahap: {stg}</span>
+                <X className="w-3 h-3 hover:text-rose-600 cursor-pointer" onClick={() => setSelectedProcessStages(prev => prev.filter(s => s !== stg))} />
+              </span>
+            ))}
+            <button
+              onClick={handleResetFilters}
+              className="text-[10px] font-bold text-rose-600 hover:text-rose-800 hover:underline ml-1 cursor-pointer"
+            >
+              Hapus Semua
             </button>
           </div>
         )}
+      </div>
 
-        {/* Filters Panel */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div className="flex flex-wrap items-end gap-2 flex-grow">
-            {/* Debounced search */}
-            <div className="relative flex-grow max-w-md animate-in fade-in duration-350">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
-                <Search className="w-4 h-4" />
-              </span>
-              <input 
-                type="text" 
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Cari ID, Customer, No Invoice, BAK..." 
-                className="w-full text-xs border border-slate-200 rounded-full pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-slate-50 hover:bg-slate-100/50 transition-all font-semibold text-slate-700 placeholder-slate-400 shadow-sm"
-              />
-            </div>
-
-            <select 
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="text-xs border border-slate-200 rounded-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-slate-700 cursor-pointer shadow-sm transition-all"
+      {/* 5. BULK ACTION FLOATING BAR */}
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between p-3.5 bg-slate-900 text-white rounded-2xl shadow-lg border border-slate-800 animate-in slide-in-from-bottom-2">
+          <div className="flex items-center gap-3">
+            <span className="px-3 py-1 bg-blue-600 text-white font-extrabold text-xs rounded-xl">
+              {selectedIds.size} Dipilih
+            </span>
+            <button
+              onClick={handleSelectAllFiltered}
+              className="text-xs text-slate-300 hover:text-white underline font-semibold"
             >
-              <option value="">Semua Kategori</option>
-              <option value="Maintenance & ETLE">Maintenance &amp; ETLE</option>
-              <option value="Own Risk">Own Risk</option>
-              <option value="Maintenance">Maintenance</option>
-              <option value="Ekspedisi">Ekspedisi</option>
-              <option value="ETLE">ETLE</option>
-              <option value="TPL">TPL</option>
-              <option value="Unclaimable Insurance">Unclaimable Insurance</option>
-              <option value="Dokumen Kendaraan">Dokumen Kendaraan</option>
-            </select>
+              Pilih semua {filteredTransactions.length} data terfilter
+            </button>
+          </div>
 
-            {showBranchFilter && (
-              <select 
-                value={selectedBranch}
-                onChange={(e) => setSelectedBranch(e.target.value)}
-                className="text-xs border border-slate-200 rounded-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-slate-700 cursor-pointer shadow-sm transition-all"
+          <div className="flex items-center flex-wrap gap-2 mt-2 sm:mt-0">
+            {canBulkAction && (
+              <button
+                onClick={handleOpenBulkModal}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
               >
-                <option value="">
-                  {isNasional 
-                    ? 'Semua Cabang (Nasional)' 
-                    : currentUser.branch === 'Megabranch' || hasRole(currentUser.role, 'ASO Megabranch') 
-                    ? 'ALL BSO (Megabranch)' 
-                    : isRegionalHeadRole(currentUser.role as string)
-                    ? `Semua Cabang Wilayah (${availableBranchOptions.length} Cabang)`
-                    : `Semua Cabang Otoritas (${availableBranchOptions.length} Cabang)`}
-                </option>
-                {availableBranchOptions.map(b => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Update Status Massal ({selectedIds.size})</span>
+              </button>
             )}
 
-            <select 
-              value={
-                selectedStage === '2_admin' ? '2_confirm' : 
-                selectedStage === '3_sap' ? '3_sap_l1' : 
-                selectedStage
-              }
-              onChange={(e) => setSelectedStage(e.target.value)}
-              className="text-xs border border-slate-200 rounded-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-slate-700 cursor-pointer shadow-sm transition-all"
+            {canDelete && (
+              <button
+                onClick={handleBulkDelete}
+                className="flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-xs font-bold rounded-xl transition-all"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Hapus Terpilih</span>
+              </button>
+            )}
+
+            <button
+              onClick={handleClearSelection}
+              className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-xs font-bold rounded-xl transition-all text-slate-200"
             >
-              <option value="">Semua Tahap Proses</option>
-              <option value="1_handover">1. Menunggu Serah Terima Berkas</option>
-              <option value="2_confirm">2. Berkas di Admin</option>
-              <option value="3_sap_l1">3. Belum Approve SH / KACAB</option>
-              <option value="3_sap_rh">4. Belum Approve RH</option>
-              <option value="3_sap_dh">5. Belum Approve DH</option>
-              <option value="4_invoice">6. Menunggu Cetak &amp; Kirim Invoice</option>
-              <option value="5_payment">7. Menunggu Pelunasan Backcharge</option>
-              <option value="6_done">8. Selesai (Lunas)</option>
-              <option value="rejected">❌ Dokumen Ditolak (Reject)</option>
-            </select>
-
-            <select 
-              value={selectedPaymentStatus}
-              onChange={(e) => setSelectedPaymentStatus(e.target.value)}
-              className="text-xs border border-slate-200 rounded-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-slate-700 cursor-pointer shadow-sm transition-all"
-            >
-              <option value="">Semua Status Bayar</option>
-              <option value="Belum Bayar">Belum Bayar</option>
-              <option value="Lunas">Lunas</option>
-            </select>
-
-            <select 
-              value={selectedSapStatus}
-              onChange={(e) => setSelectedSapStatus(e.target.value)}
-              className="text-xs border border-slate-200 rounded-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100/50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-slate-700 cursor-pointer shadow-sm transition-all"
-            >
-              <option value="">Semua Status SAP</option>
-              <option value="Bill">Bill</option>
-              <option value="Not Bill">Not Bill</option>
-              <option value="N/A">N/A</option>
-            </select>
-
-            {/* Date Range Filter */}
-            <div className="flex flex-col gap-1 w-full sm:w-auto">
-              <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider mb-0.5">Filter Tanggal BAK</span>
-              <div className="flex items-center gap-2 w-full">
-                {/* Mulai */}
-                <div className="flex-1 min-w-[120px] sm:w-36">
-                  <input 
-                    type="date" 
-                    value={filterStartDate}
-                    onChange={(e) => setFilterStartDate(e.target.value)}
-                    className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-full px-4 py-2.5 text-[11px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer shadow-sm text-center"
-                    title="Mulai Tanggal"
-                  />
-                </div>
-                
-                <span className="text-slate-400 font-bold text-[10px] px-1">s/d</span>
-
-                {/* Sampai */}
-                <div className="flex-1 min-w-[120px] sm:w-36">
-                  <input 
-                    type="date" 
-                    value={filterEndDate}
-                    onChange={(e) => setFilterEndDate(e.target.value)}
-                    className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-full px-4 py-2.5 text-[11px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer shadow-sm text-center"
-                    title="Sampai Tanggal"
-                  />
-                </div>
-
-                {(filterStartDate || filterEndDate) && (
-                  <button 
-                    type="button"
-                    onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }}
-                    className="text-slate-400 hover:text-red-500 transition-all p-2 hover:bg-red-50 rounded-full cursor-pointer flex-shrink-0"
-                    title="Hapus Filter Tanggal"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
- 
-          {(isSuperAdmin || isAdminUser || isAsoUser) && (
-            <button 
-              type="button"
-              onClick={() => setShowBulkImportModal(true)}
-              className="flex items-center justify-center space-x-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-bold px-5 py-2.5 rounded-full shadow-sm transition-all flex-shrink-0 cursor-pointer self-stretch sm:self-auto"
-              title="Import Data secara Massal via Excel/CSV"
-            >
-              <Upload className="w-4 h-4 text-blue-600" />
-              <span>Import Massal</span>
+              Batal
             </button>
-          )}
+          </div>
+        </div>
+      )}
 
-          <button 
-            onClick={handleExportExcel}
-            className="flex items-center justify-center space-x-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800 text-xs font-bold px-5 py-2.5 rounded-full shadow-sm transition-all flex-shrink-0 cursor-pointer self-stretch sm:self-auto"
-            title="Export Spreadsheet Rekap Excel"
-          >
-            <Download className="w-4 h-4 text-emerald-600" />
-            <span>Unduh Rekap Excel</span>
-          </button>
+      {/* 6. MAIN TRANSACTIONS TABLE */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-black text-slate-600 uppercase tracking-wider">
+                <th className="py-3.5 px-4 w-10 text-center">
+                  <button
+                    onClick={handleSelectAllOnPage}
+                    className="flex items-center justify-center text-slate-400 hover:text-slate-700"
+                  >
+                    {paginatedTransactions.length > 0 && paginatedTransactions.every(t => selectedIds.has(t.id)) ? (
+                      <CheckSquare className="w-4 h-4 text-blue-600" />
+                    ) : (
+                      <Square className="w-4 h-4" />
+                    )}
+                  </button>
+                </th>
+                <th
+                  onClick={() => handleSort('id')}
+                  className="py-3.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    <span>ID Transaksi</span>
+                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('tanggal')}
+                  className="py-3.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Tanggal</span>
+                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('branch')}
+                  className="py-3.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Cabang</span>
+                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                  </div>
+                </th>
+                <th className="py-3.5 px-3">Kategori</th>
+                <th className="py-3.5 px-4">Customer / Nopol / No. CMD</th>
+                <th className="py-3.5 px-3">Penginput</th>
+                <th className="py-3.5 px-3">Nama BRO</th>
+                <th
+                  onClick={() => handleSort('value')}
+                  className="py-3.5 px-4 text-right cursor-pointer hover:bg-slate-100 transition-colors"
+                >
+                  <div className="flex items-center justify-end gap-1">
+                    <span>Nominal (Rp)</span>
+                    <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                  </div>
+                </th>
+                <th className="py-3.5 px-3">No. BAK / SPK</th>
+                <th className="py-3.5 px-3 text-center">Status SAP</th>
+                <th className="py-3.5 px-3 text-center">Approval</th>
+                <th className="py-3.5 px-3 text-center">Serah Terima</th>
+                <th className="py-3.5 px-3 text-center">Status Bayar</th>
+                <th className="py-3.5 px-4 text-center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={15} className="py-16 text-center text-slate-500">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <RefreshCw className="w-6 h-6 text-blue-600 animate-spin" />
+                      <span className="font-bold text-xs">Memuat data transaksi Backcharge...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : paginatedTransactions.length === 0 ? (
+                <tr>
+                  <td colSpan={15} className="py-16 text-center text-slate-500">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <FileSpreadsheet className="w-10 h-10 text-slate-300" />
+                      <p className="font-bold text-slate-700 text-sm">Tidak ada transaksi yang cocok</p>
+                      <p className="text-slate-400 text-xs">Coba ubah kata kunci pencarian atau reset filter</p>
+                      <button
+                        onClick={handleResetFilters}
+                        className="mt-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl font-bold text-xs hover:bg-blue-100 transition-colors"
+                      >
+                        Reset Semua Filter
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                paginatedTransactions.map((tx) => {
+                  const isSelected = selectedIds.has(tx.id);
+                  const isPaid = tx.status_payment === 'Lunas';
+
+                  return (
+                    <tr
+                      key={tx.id}
+                      className={`hover:bg-slate-50/80 transition-colors ${isSelected ? 'bg-blue-50/50' : ''}`}
+                    >
+                      <td className="py-3 px-4 text-center">
+                        <button
+                          onClick={() => handleToggleSelectRow(tx.id)}
+                          className="flex items-center justify-center text-slate-400 hover:text-slate-700"
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="w-4 h-4 text-blue-600" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
+                      </td>
+
+                      <td className="py-3 px-3 font-mono font-bold text-blue-700 whitespace-nowrap">
+                        <button
+                          onClick={() => onSelectTransaction(tx.id)}
+                          className="hover:underline flex items-center gap-1 text-left"
+                        >
+                          {tx.id}
+                        </button>
+                      </td>
+
+                      <td className="py-3 px-3 text-slate-600 whitespace-nowrap font-medium text-[11px]">
+                        {(() => {
+                          const dateVal = tx.tanggal || tx.created_at;
+                          const leadDays = getLeadTimeDays(dateVal, tx.payment_date, tx.status_payment === 'Lunas');
+                          const color = getLeadTimeColorClass(leadDays);
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold text-slate-800">{formatDate(dateVal)}</span>
+                              <span 
+                                className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-md border ${color.bg} ${color.text} ${color.border}`}
+                                title={`Leadtime: ${leadDays} hari atas Tanggal BAK`}
+                              >
+                                ({leadDays} hari)
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </td>
+
+                      <td className="py-3 px-3 font-semibold text-slate-800 whitespace-nowrap">
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md text-[11px] font-bold">
+                          {tx.branch}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${getCategoryColor(tx.category)}`}>
+                          {tx.category}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-4 max-w-[240px]">
+                        <div className="font-bold text-slate-900 truncate" title={tx.customer_name}>
+                          {tx.customer_name}
+                        </div>
+                        <div className="flex items-center flex-wrap gap-1.5 font-mono text-[10px] text-slate-500 mt-0.5">
+                          <span className="font-medium">{tx.license_plate || '-'}</span>
+                          {tx.no_cmd && tx.no_cmd !== '-' && (
+                            <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 font-bold border border-blue-200/80 text-[9px]">
+                              CMD: {tx.no_cmd}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-3 text-slate-700 font-medium whitespace-nowrap text-[11px]">
+                        {getCreatorName(tx.created_by)}
+                      </td>
+
+                      <td className="py-3 px-3 text-slate-700 font-semibold whitespace-nowrap text-[11px]">
+                        {tx.nama_bro || tx.bro_name || '-'}
+                      </td>
+
+                      <td className="py-3 px-4 text-right font-bold text-slate-900 whitespace-nowrap">
+                        {formatCurrency(tx.value)}
+                      </td>
+
+                      <td className="py-3 px-3 whitespace-nowrap text-[11px] text-slate-600 font-mono">
+                        <div>BAK: <span className="font-bold text-slate-800">{tx.no_bak || '-'}</span></div>
+                        <div className="text-[10px] text-slate-400">SPK: {tx.no_spk || '-'}</div>
+                      </td>
+
+                      <td className="py-3 px-3 text-center whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          tx.status_sap === 'Bill' 
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                            : tx.status_sap === 'Not Bill'
+                            ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                            : 'bg-gray-50 text-gray-500 border border-gray-200'
+                        }`}>
+                          {tx.status_sap || 'N/A'}
+                        </span>
+                      </td>
+
+                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        {(() => {
+                          const summary = getApprovalSummary(tx);
+
+                          // 1. Ada yang DITOLAK
+                          if (summary.isRejected) {
+                            const rejLabels = summary.rejectedTiers.map(t => t.label).join(', ');
+                            return (
+                              <div className="flex flex-col items-center justify-center gap-1">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200 inline-flex items-center gap-1 shadow-xs">
+                                  Ditolak {rejLabels}
+                                </span>
+                                {summary.rejectedTiers.map(t => (
+                                  <div
+                                    key={t.role}
+                                    className="text-[9.5px] text-rose-700 font-semibold leading-tight max-w-[170px] truncate"
+                                    title={`Ditolak oleh ${t.label}: ${t.by || '-'}${t.at ? ` (${t.at})` : ''}`}
+                                  >
+                                    Oleh: <span className="font-bold underline decoration-rose-300">{getShortApproverName(t.by)}</span>
+                                  </div>
+                                ))}
+                                {summary.approvedTiers.length > 0 && (
+                                  <div className="flex flex-col items-center gap-0.5 mt-0.5">
+                                    {summary.approvedTiers.map(t => (
+                                      <div
+                                        key={t.role}
+                                        className="text-[9px] text-slate-500 font-medium leading-tight max-w-[170px] truncate"
+                                        title={`Sebelumnya disetujui ${t.label}: ${t.by || '-'}`}
+                                      >
+                                        ✓ {t.label}: {getShortApproverName(t.by)}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          // 2. SEMUA TIER BELUM APPROVAL
+                          if (summary.isAllPending) {
+                            const pendingLabels = summary.tiers.map(t => t.label).join(', ');
+                            return (
+                              <div className="flex flex-col items-center justify-center gap-1">
+                                <span 
+                                  className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-800 border border-amber-200 inline-flex items-center gap-1 shadow-xs"
+                                  title={`Memerlukan approval dari: ${pendingLabels}`}
+                                >
+                                  Belum Appr. {pendingLabels}
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          // 3. SEBAGIAN DISETUJUI, SEBAGIAN BELUM
+                          if (summary.isPartiallyApproved) {
+                            const pendingLabels = summary.pendingTiers.map(t => t.label).join(', ');
+                            return (
+                              <div className="flex flex-col items-center justify-center gap-1">
+                                <span 
+                                  className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-800 border border-amber-200 inline-flex items-center gap-1 shadow-xs"
+                                  title={`Persetujuan masih pending untuk: ${pendingLabels}`}
+                                >
+                                  Belum Appr. {pendingLabels}
+                                </span>
+                                <div className="flex flex-col items-center gap-0.5 mt-0.5">
+                                  {summary.approvedTiers.map(t => (
+                                    <div
+                                      key={t.role}
+                                      className="text-[9.5px] text-emerald-700 font-semibold leading-tight max-w-[170px] truncate"
+                                      title={`Disetujui oleh ${t.label}: ${t.by || '-'}${t.at ? ` (${t.at})` : ''}`}
+                                    >
+                                      ✓ <span className="font-bold text-emerald-800">{t.label}:</span> {getShortApproverName(t.by)}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          // 4. SEMUA TIER LENGKAP DISETUJUI
+                          if (summary.isFullyApproved) {
+                            return (
+                              <div className="flex flex-col items-center justify-center gap-1">
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1 shadow-xs">
+                                  Disetujui
+                                </span>
+                                <div className="flex flex-col items-center gap-0.5 mt-0.5">
+                                  {summary.approvedTiers.map(t => (
+                                    <div
+                                      key={t.role}
+                                      className="text-[9.5px] text-emerald-700 font-semibold leading-tight max-w-[170px] truncate"
+                                      title={`Disetujui oleh ${t.label}: ${t.by || '-'}${t.at ? ` (${t.at})` : ''}`}
+                                    >
+                                      ✓ <span className="font-bold text-emerald-800">{t.label}:</span> {getShortApproverName(t.by)}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          // Fallback jika tidak sesuai kondisi di atas
+                          return (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-600 border border-slate-200">
+                              {tx.status_approval || 'Belum Approval'}
+                            </span>
+                          );
+                        })()}
+                      </td>
+
+                      <td className="py-3 px-3 text-center whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          tx.status_handover === 'Diterima Admin' || tx.status_handover === 'Diserahkan ke Admin'
+                            ? 'bg-cyan-50 text-cyan-700 border border-cyan-200'
+                            : 'bg-slate-100 text-slate-600 border border-slate-200'
+                        }`}>
+                          {tx.status_handover === 'Diserahkan ke Admin' || tx.status_handover === 'Diterima Admin' ? 'Diterima Admin' : (tx.status_handover || 'Pending')}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 text-center whitespace-nowrap">
+                        {(() => {
+                          const hasInvoice = Boolean(tx.no_invoice && typeof tx.no_invoice === 'string' && tx.no_invoice.trim() !== '' && tx.no_invoice.trim() !== '-');
+                          const invDate = tx.tanggal_invoice || (hasInvoice ? (tx.updated_at || tx.tanggal || tx.created_at) : null);
+                          const invLeadDays = hasInvoice ? getLeadTimeDays(invDate, tx.payment_date, isPaid) : 0;
+                          const invColor = getLeadTimeColorClass(invLeadDays);
+
+                          return (
+                            <div className="flex flex-col items-center justify-center gap-1">
+                              {/* Status Bayar Pill */}
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 ${
+                                isPaid
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}>
+                                {isPaid ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                                <span>{tx.status_payment || 'Belum Bayar'}</span>
+                              </span>
+
+                              {/* Informasi Nomor Invoice & Leadtime Belum Bayar */}
+                              {hasInvoice && (
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <span 
+                                    className="text-[10px] font-mono font-bold text-slate-700 bg-slate-50 border border-slate-200 px-1.5 py-0.2 rounded" 
+                                    title={`Nomor Invoice: ${tx.no_invoice}`}
+                                  >
+                                    Inv: {tx.no_invoice}
+                                  </span>
+                                  <span 
+                                    className={`text-[9.5px] font-bold px-1.5 py-0.2 rounded border ${invColor.bg} ${invColor.text} ${invColor.border}`}
+                                    title={isPaid 
+                                      ? `Lunas dalam ${invLeadDays} hari setelah invoice diterbitkan` 
+                                      : `Belum bayar selama ${invLeadDays} hari setelah invoice diterbitkan`}
+                                  >
+                                    ({invLeadDays} hari)
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </td>
+
+                      <td className="py-3 px-4 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => { console.log('Clicked detail for:', tx.id); onSelectTransaction(tx.id); }}
+                            title="Lihat Detail Transaksi"
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            onClick={() => handleOpenEdit(tx)}
+                            title="Edit Transaksi"
+                            className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+
+                          {canDelete && (
+                            <button
+                              onClick={() => handleDeleteClick(tx.id)}
+                              title="Hapus Transaksi"
+                              className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
 
-        {/* Database List Table */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-          
-          {/* Skeleton Sync Bar */}
-          {isLoading && (
-            <div className="bg-blue-50/80 border-b border-blue-100 px-4 py-2.5 flex items-center justify-between text-blue-700 text-xs font-bold animate-pulse">
-              <div className="flex items-center space-x-2">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600 shrink-0" />
-                <span>Menyinkronkan data transaksi dari server...</span>
-              </div>
-              <span className="text-[10px] bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded-full font-extrabold shrink-0">
-                Singkronisasi Real-Time
-              </span>
+        {/* 7. PAGINATION FOOTER */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 bg-slate-50/60 border-t border-slate-200 text-xs text-slate-600">
+          <div className="flex items-center gap-3">
+            <span>
+              Menampilkan {sortedTransactions.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} -{' '}
+              {Math.min(currentPage * pageSize, sortedTransactions.length)} dari {sortedTransactions.length} data
+            </span>
+            <div className="flex items-center gap-1.5 ml-2">
+              <span className="text-[11px] text-slate-400">Baris:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="py-1 px-2 text-xs bg-white border border-slate-200 rounded-lg font-bold text-slate-700 focus:outline-none"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
             </div>
-          )}
+          </div>
 
-          {/* Floating Bulk Action Bar */}
-          {selectedTxIds.length > 0 && (
-            <div className="bg-slate-900 text-white p-3.5 px-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
-              <div className="flex items-center space-x-3">
-                <span className="bg-blue-600 text-white text-xs font-black px-2.5 py-1 rounded-lg">
-                  {selectedTxIds.length} Terpilih
-                </span>
-                <span className="text-xs font-bold text-slate-200">
-                  {selectedTxIds.length} transaksi dipilih untuk tindakan massal
-                </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+            >
+              Awal
+            </button>
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="p-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <span className="px-3 py-1 font-bold text-xs text-slate-800">
+              Hal {currentPage} / {totalPages}
+            </span>
+
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="p-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+            >
+              Akhir
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 8. MODAL: TAMBAH / EDIT TRANSAKSI */}
+      {(isAddModalOpen || isEditModalOpen) && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xl w-full max-w-lg my-auto flex flex-col overflow-hidden animate-in zoom-in-95">
+            {/* Header: matching image_5707ecb1.png */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 bg-white">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+                <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                  {isAddModalOpen ? 'Input Backcharge Baru' : `Edit Transaksi ${editingTransaction?.id}`}
+                </h3>
               </div>
-              <div className="flex items-center space-x-2">
-                {filteredTransactions.length > selectedTxIds.length && (
-                  <button
-                    type="button"
-                    onClick={handleSelectAllFiltered}
-                    className="px-3 py-1.5 text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition-all cursor-pointer"
-                  >
-                    Pilih Semua ({filteredTransactions.length})
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleClearSelection}
-                  className="px-3 py-1.5 text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-all cursor-pointer"
-                >
-                  Batal
-                </button>
+              <div className="flex items-center gap-2.5">
+                <span className="px-2.5 py-1 bg-blue-50 text-blue-700 font-extrabold text-[10px] sm:text-[11px] rounded-lg border border-blue-200 uppercase tracking-wider">
+                  {currentUser?.role || 'ADMINISTRATOR'}
+                </span>
                 <button
                   type="button"
                   onClick={() => {
-                    setBulkStatusHandover('');
-                    setBulkStatusSap('');
-                    setBulkStatusPayment('');
-                    setBulkStatusApproval('');
-                    setBulkLogReason('');
-                    setBulkFileHandover(null);
-                    setBulkFileHandoverName('');
-                    setBulkTanggalHandover('');
-                    setBulkErrorMessage(null);
-                    setBulkSuccessMessage(null);
-                    setShowBulkModal(true);
+                    setIsAddModalOpen(false);
+                    setIsEditModalOpen(false);
+                    setEditingTransaction(null);
                   }}
-                  className="px-4 py-2 text-xs font-extrabold bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center space-x-1.5 cursor-pointer"
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors"
                 >
-                  <Edit className="w-3.5 h-3.5" />
-                  <span>Update Status Massal ({selectedTxIds.length})</span>
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
-          )}
 
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider select-none text-[11px]">
-                  <th className="p-3 text-center w-10">
-                    <input 
-                      type="checkbox"
-                      checked={isAllPageSelected}
-                      onChange={handleSelectAllPage}
-                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                      title="Pilih/Batal Semua di halaman ini"
-                    />
-                  </th>
-                  <th className="p-3 whitespace-nowrap cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('id')}>
-                    <div className="flex items-center space-x-1">
-                      <span>ID / Kota</span>
-                      {sortBy === 'id' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                    </div>
-                  </th>
-                  <th className="p-3 whitespace-nowrap text-slate-500 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('tanggal')}>
-                    <div className="flex items-center space-x-1">
-                      <span>TGL BAK</span>
-                      {sortBy === 'tanggal' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                    </div>
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('category')}>
-                    <div className="flex items-center space-x-1">
-                      <span>Kategori</span>
-                      {sortBy === 'category' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                    </div>
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('customer_name')}>
-                    <div className="flex items-center space-x-1">
-                      <span>Customer</span>
-                      {sortBy === 'customer_name' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                    </div>
-                  </th>
-                  <th className="p-3 whitespace-nowrap cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('license_plate')}>
-                    <div className="flex items-center space-x-1">
-                      <span>Nopol</span>
-                      {sortBy === 'license_plate' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                    </div>
-                  </th>
-                  <th className="p-3 whitespace-nowrap cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('no_bak')}>
-                    <div className="flex items-center space-x-1">
-                      <span>No. BAK</span>
-                      {sortBy === 'no_bak' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                    </div>
-                  </th>
-                  <th className="p-3 whitespace-nowrap cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('no_spk')}>
-                    <div className="flex items-center space-x-1">
-                      <span>No. SPK</span>
-                      {sortBy === 'no_spk' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                    </div>
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('value')}>
-                    <div className="flex items-center space-x-1">
-                      <span>Backcharge (Rp)</span>
-                      {sortBy === 'value' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                    </div>
-                  </th>
-                  <th className="p-3 text-center whitespace-nowrap cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('status_sap')}>
-                    <div className="flex items-center justify-center space-x-1">
-                      <span>Status SAP</span>
-                      {sortBy === 'status_sap' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                    </div>
-                  </th>
-                  <th className="p-3 whitespace-nowrap">Penginput</th>
-                  <th className="p-3">Fisik Berkas</th>
-                  <th className="p-3">Invoice</th>
-                  <th className="p-3 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => handleSortColumn('status_payment')}>
-                    <div className="flex items-center space-x-1">
-                      <span>Pembayaran</span>
-                      {sortBy === 'status_payment' ? (sortDir === 'ASC' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
-                    </div>
-                  </th>
-                  {canWrite && <th className="p-3 text-center">Aksi</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                {isLoading ? (
-                  Array.from({ length: pageSize > 10 ? 10 : Math.max(pageSize, 5) }).map((_, idx) => (
-                    <tr key={`skel-row-${idx}`} className="animate-pulse border-b border-slate-100/80 bg-white">
-                      <td className="p-3 text-center">
-                        <div className="w-4 h-4 bg-slate-200/80 rounded mx-auto" />
-                      </td>
-                      <td className="p-3 whitespace-nowrap">
-                        <div className="flex items-center space-x-1.5">
-                          <div className="h-4 bg-slate-200/80 rounded w-20" />
-                          <span className="text-slate-200">/</span>
-                          <div className="h-3 bg-slate-200/60 rounded w-10" />
-                        </div>
-                      </td>
-                      <td className="p-3 whitespace-nowrap">
-                        <div className="h-4 bg-slate-200/70 rounded w-16" />
-                      </td>
-                      <td className="p-3">
-                        <div className="h-5 bg-slate-200/80 rounded-md w-16" />
-                      </td>
-                      <td className="p-3">
-                        <div className="h-4 bg-slate-200/80 rounded w-28" />
-                      </td>
-                      <td className="p-3">
-                        <div className="h-4 bg-slate-200/80 rounded w-20" />
-                      </td>
-                      <td className="p-3">
-                        <div className="h-4 bg-slate-200/80 rounded w-20" />
-                      </td>
-                      <td className="p-3">
-                        <div className="h-4 bg-slate-200/80 rounded w-20" />
-                      </td>
-                      <td className="p-3">
-                        <div className="h-4 bg-slate-200/80 rounded w-24" />
-                      </td>
-                      <td className="p-3 text-center">
-                        <div className="h-5 bg-slate-200/70 rounded-full w-14 mx-auto" />
-                      </td>
-                      <td className="p-3">
-                        <div className="h-4 bg-slate-200/70 rounded w-20" />
-                      </td>
-                      <td className="p-3">
-                        <div className="h-5 bg-slate-200/70 rounded w-16" />
-                      </td>
-                      <td className="p-3">
-                        <div className="h-5 bg-slate-200/70 rounded w-20" />
-                      </td>
-                      <td className="p-3">
-                        <div className="h-5 bg-slate-200/70 rounded w-14" />
-                      </td>
-                      {canWrite && (
-                        <td className="p-3 text-center">
-                          <div className="flex items-center justify-center space-x-1.5">
-                            <div className="w-6 h-6 bg-slate-200/70 rounded-lg" />
-                            {hasRole(currentUser.role, 'Administrator') && (
-                              <div className="w-6 h-6 bg-slate-200/70 rounded-lg" />
-                            )}
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                ) : (
-                  paginatedTransactions.map((t) => {
-                    const refDate = new Date(t.tanggal || t.created_at).getTime();
-                    const ageDays = Math.floor((new Date().getTime() - refDate) / (1000 * 60 * 60 * 24));
-                    const isUnpaid = t.status_payment === 'Belum Bayar';
-                    const isOver30DaysUnpaid = isUnpaid && ageDays > 30;
-                    const isOver7DaysUnpaid = isUnpaid && ageDays > 7;
-
-                    const transVal = Number(t.value) || 0;
-                    const isMaint = t.category === 'Maintenance';
-                    const isRegReq = isMaint ? (transVal > 7500000) : (transVal > 5000000);
-                    const isDivReq = transVal > 15000000;
-                    const isPendingL1 = !t.status_approval || t.status_approval === 'Belum Approval' || t.status_approval === 'Pending';
-                    const isL1Approved = t.status_approval === 'Disetujui';
-                    const isPendingRH = isL1Approved && isRegReq && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval');
-                    const isPendingDH = isL1Approved && (!isRegReq || t.regional_approval_status === 'Disetujui') && isDivReq && (!t.division_approval_status || t.division_approval_status === 'Belum Approval');
-
-                    const isDocRejected = Boolean(
-                      t.status_approval === 'Ditolak' || 
-                      t.regional_approval_status === 'Ditolak' || 
-                      t.division_approval_status === 'Ditolak' || 
-                      t.status_confirm === 'Ditolak / Negosiasi Ulang'
-                    );
-
-                    let rejectRoleLabel = '';
-                    let rejectNote = '';
-                    let rejectUser = '';
-
-                    if (t.status_approval === 'Ditolak') {
-                      rejectRoleLabel = 'SH / Kacab';
-                      rejectNote = t.approval_note || '';
-                      rejectUser = t.approved_by || '';
-                    } else if (t.regional_approval_status === 'Ditolak') {
-                      rejectRoleLabel = 'Regional Head';
-                      rejectNote = t.regional_approval_note || '';
-                      rejectUser = t.regional_approved_by || '';
-                    } else if (t.division_approval_status === 'Ditolak') {
-                      rejectRoleLabel = 'Division Head';
-                      rejectNote = t.division_approval_note || '';
-                      rejectUser = t.division_approved_by || '';
-                    } else if (t.status_confirm === 'Ditolak / Negosiasi Ulang') {
-                      rejectRoleLabel = 'Konfirmasi';
-                      rejectNote = t.dok_pendukung_alasan || t.alasan || '';
-                    }
-
-                    let handoverBadge = (
-                      <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-slate-100 text-slate-600">
-                        Pending
-                      </span>
-                    );
-                    if (t.status_handover === 'Diserahkan ke Admin') {
-                      handoverBadge = (
-                        <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-indigo-50 text-indigo-600">
-                          Diserahkan
-                        </span>
-                      );
-                    } else if (t.status_handover === 'Diterima Admin') {
-                      handoverBadge = (
-                        <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-emerald-50 text-emerald-600">
-                          Diterima
-                        </span>
-                      );
-                    }
-
-                    const invoiceText = isDocRejected ? (
-                      <span className="text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 inline-flex items-center gap-1 shadow-2xs" title="Dokumen ditolak / dibatalkan, tidak diterbitkan invoice">
-                        <XCircle className="w-2.5 h-2.5 text-rose-500 flex-shrink-0" />
-                        Batal / Ditolak
-                      </span>
-                    ) : t.no_invoice && t.no_invoice !== '-' ? (
-                      <span className="text-[10px] font-bold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
-                        {t.no_invoice}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-semibold text-slate-400">Belum Terbit</span>
-                    );
-
-                    let paymentBadge = (
-                      <span 
-                        className={`px-2 py-0.5 text-[9px] font-bold rounded ${
-                          isOver30DaysUnpaid 
-                            ? 'bg-rose-100 text-rose-700 border border-rose-300 font-extrabold inline-flex items-center gap-1 shadow-sm' 
-                            : isOver7DaysUnpaid
-                              ? 'bg-amber-100 text-amber-800 border border-amber-300 font-extrabold inline-flex items-center gap-1 shadow-sm'
-                              : 'bg-amber-50 text-amber-600 border border-amber-100'
-                        }`}
-                        title={
-                          isOver30DaysUnpaid 
-                            ? `PERINGATAN TINGGI: Belum Bayar > 30 Hari (${ageDays} Hari)` 
-                            : isOver7DaysUnpaid 
-                              ? `PERINGATAN: Belum Bayar > 7 Hari (${ageDays} Hari)` 
-                              : undefined
-                        }
-                      >
-                        {isOver30DaysUnpaid && <AlertTriangle className="w-3 h-3 text-rose-600 animate-pulse flex-shrink-0" />}
-                        {!isOver30DaysUnpaid && isOver7DaysUnpaid && <AlertCircle className="w-3 h-3 text-amber-600 animate-pulse flex-shrink-0" />}
-                        <span>{isUnpaid && ageDays > 7 ? `Belum (${ageDays}hr)` : 'Belum'}</span>
-                      </span>
-                    );
-                    if (t.status_payment === 'Lunas') {
-                      paymentBadge = (
-                        <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-emerald-100 text-emerald-700 whitespace-nowrap">
-                          {t.payment_date ? `Lunas (${t.payment_date})` : 'Lunas'}
-                        </span>
-                      );
-                    } else if (isDocRejected) {
-                      paymentBadge = (
-                        <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-rose-100 text-rose-700 border border-rose-200 inline-flex items-center gap-1">
-                          <XCircle className="w-2.5 h-2.5 text-rose-500" />
-                          Tidak Tertagih (Ditolak)
-                        </span>
-                      );
-                    }
-
-                    const isSelected = selectedTxIds.includes(t.id);
-
-                    return (
-                      <tr 
-                        key={t.id} 
-                        onClick={() => onSelectTransaction(t.id)}
-                        className={`hover:bg-slate-50/70 cursor-pointer transition-all duration-150 border-b border-slate-100 ${
-                          isSelected 
-                            ? 'bg-blue-50/40 hover:bg-blue-50/60' 
-                            : isDocRejected
-                              ? 'border-l-4 border-l-rose-500 bg-rose-50/30 hover:bg-rose-50/50'
-                              : isOver30DaysUnpaid 
-                                ? 'bg-rose-50/20 hover:bg-rose-50/40' 
-                                : isOver7DaysUnpaid
-                                  ? 'bg-amber-50/20 hover:bg-amber-50/40'
-                                  : ''
-                        }`}
-                      >
-                        <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
-                          <input 
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={(e) => handleToggleSelectTx(t.id, e)}
-                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                          />
-                        </td>
-                        <td className="p-3 whitespace-nowrap">
-                          <div className="flex items-center space-x-1.5 whitespace-nowrap">
-                            {isDocRejected ? (
-                              <span 
-                                title={`Dokumen Ditolak: ${rejectRoleLabel}${rejectNote ? ` - "${rejectNote}"` : ''}`}
-                                className="inline-flex items-center text-rose-600 flex-shrink-0"
-                              >
-                                <XCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                              </span>
-                            ) : isOver30DaysUnpaid ? (
-                              <span 
-                                title={`PERINGATAN TINGGI: Belum Bayar > 30 Hari (${ageDays} Hari)`} 
-                                className="inline-flex items-center text-rose-600 animate-bounce"
-                              >
-                                <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                              </span>
-                            ) : isOver7DaysUnpaid ? (
-                              <span 
-                                title={`PERINGATAN: Belum Bayar > 7 Hari (${ageDays} Hari)`} 
-                                className="inline-flex items-center text-amber-600"
-                              >
-                                <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                              </span>
-                            ) : null}
-                            <span className={`font-extrabold ${isDocRejected ? 'text-rose-700 font-mono' : isOver30DaysUnpaid ? 'text-rose-700 font-mono' : isOver7DaysUnpaid ? 'text-amber-800 font-mono' : 'text-slate-950'}`}>
-                              {t.id}
-                            </span>
-                            <span className="text-slate-300">/</span>
-                            <span className="text-[10px] text-slate-500 font-bold">{t.branch}</span>
-                            {isDocRejected && (
-                              <span 
-                                className="ml-1 px-1.5 py-0.2 text-[7.5px] font-black rounded bg-rose-600 text-white uppercase tracking-wider inline-flex items-center gap-0.5 shadow-2xs"
-                                title={`Dokumen Ditolak oleh ${rejectRoleLabel}`}
-                              >
-                                Ditolak
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3 whitespace-nowrap text-slate-950 font-bold">
-                          {formatDateOnly(t.tanggal)}
-                        </td>
-                        <td className="p-3">
-                          <span className="text-[9px] font-extrabold bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded uppercase">
-                            {t.category}
-                          </span>
-                        </td>
-                        <td className="p-3 font-bold text-slate-950 truncate max-w-[120px]" title={t.customer_name}>
-                          {t.customer_name}
-                        </td>
-                        <td className="p-3 font-mono text-[11px] font-bold text-slate-700 whitespace-nowrap" title={t.license_plate}>
-                          {t.license_plate ? (
-                            <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm uppercase">{t.license_plate}</span>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
-                        </td>
-                        <td className="p-3 font-mono text-[11px] font-bold text-slate-700 whitespace-nowrap" title={t.no_bak}>
-                          {t.no_bak && t.no_bak !== '-' ? (
-                            <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">{t.no_bak}</span>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
-                        </td>
-                        <td className="p-3 font-mono text-[11px] font-bold text-slate-700 whitespace-nowrap" title={t.no_spk}>
-                          {t.no_spk && t.no_spk !== '-' ? (
-                            <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">{t.no_spk}</span>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
-                        </td>
-                        <td className="p-3 font-mono font-bold text-slate-950">
-                          {formatRupiah(t.value)}
-                        </td>
-                        <td className="p-3 text-center whitespace-nowrap">
-                          {t.status_sap === 'Bill' ? (
-                            <span className="px-2 py-0.5 text-[9px] font-extrabold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1 shadow-2xs">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              Bill
-                            </span>
-                          ) : t.status_sap === 'Not Bill' ? (
-                            <span className="px-2 py-0.5 text-[9px] font-extrabold rounded-full bg-rose-50 text-rose-700 border border-rose-200 inline-flex items-center gap-1 shadow-2xs">
-                              <XCircle className="w-3 h-3 text-rose-600" />
-                              Not Bill
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 text-[9px] font-bold rounded-full bg-slate-100 text-slate-500 border border-slate-200">
-                              {t.status_sap || 'N/A'}
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3 whitespace-nowrap" title={t.created_by || '-'}>
-                          <div className="flex items-center space-x-1.5">
-                            <div className="w-5 h-5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-                              <User className="w-3 h-3 text-blue-600" />
-                            </div>
-                            <div className="flex flex-col min-w-0">
-                              <span className="text-[11px] font-bold text-slate-800 leading-tight truncate max-w-[130px]">
-                                {formatPenginput(t.created_by)}
-                              </span>
-                              {t.created_by && t.created_by.includes('@') && (
-                                <span className="text-[9px] text-slate-400 font-medium truncate max-w-[130px] leading-tight font-mono">
-                                  {t.created_by}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <div className="flex flex-col gap-1 items-start">
-                            {handoverBadge}
-                            {isDocRejected ? (
-                              <div className="flex flex-col gap-0.5 mt-0.5">
-                                <span 
-                                  className="px-2 py-0.5 text-[8.5px] font-black rounded-md bg-rose-100 text-rose-800 border border-rose-300 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" 
-                                  title={`Dokumen Ditolak oleh ${rejectRoleLabel}${rejectUser ? ` (${rejectUser})` : ''}${rejectNote ? `: "${rejectNote}"` : ''}`}
-                                >
-                                  <XCircle className="w-3 h-3 text-rose-600 flex-shrink-0" />
-                                  Ditolak ({rejectRoleLabel})
-                                </span>
-                                {rejectNote && (
-                                  <span 
-                                    className="text-[8px] font-semibold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200/80 truncate max-w-[140px] inline-flex items-center gap-1"
-                                    title={`Alasan Penolakan: ${rejectNote}`}
-                                  >
-                                    <span className="font-black text-[7.5px] uppercase tracking-wider text-rose-800">Alasan:</span>
-                                    <span className="truncate">{rejectNote}</span>
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <>
-                                {isPendingRH && (
-                                  <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full bg-orange-100 text-orange-800 border border-orange-200 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" title="Menunggu Approval Regional Head">
-                                    <Clock className="w-2.5 h-2.5 text-orange-600 flex-shrink-0" />
-                                    Belum Appr. RH
-                                  </span>
-                                )}
-                                {isPendingDH && (
-                                  <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full bg-rose-100 text-rose-800 border border-rose-200 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" title="Menunggu Approval Division Head">
-                                    <Clock className="w-2.5 h-2.5 text-rose-600 flex-shrink-0" />
-                                    Belum Appr. DH
-                                  </span>
-                                )}
-                                {isPendingL1 && (t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin') && (
-                                  <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap inline-flex items-center gap-1 shadow-2xs" title="Menunggu Approval Sales Head / Kacab">
-                                    <Clock className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
-                                    Belum Appr. SH/Kacab
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3">{invoiceText}</td>
-                        <td className="p-3">{paymentBadge}</td>
-                        {canWrite && (
-                          <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-center space-x-1.5">
-                              <button
-                                type="button"
-                                onClick={() => handleStartEdit(t)}
-                                className="p-1.5 hover:bg-amber-50 text-amber-600 rounded-lg transition-all cursor-pointer"
-                                title="Edit Data Backcharge"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              {(hasRole(currentUser.role, 'Administrator') || isAsoUser || hasRole(currentUser.role, 'ASO Megabranch') || hasRole(currentUser.role, 'Maintenance Center')) && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (onDeleteTransaction) {
-                                      onDeleteTransaction(t.id);
-                                    }
-                                  }}
-                                  className="p-1.5 hover:bg-red-50 text-red-600 rounded-lg transition-all cursor-pointer"
-                                  title="Hapus Data Backcharge"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })
-                )}
-
-                {!isLoading && filteredTransactions.length === 0 && (
-                  <tr>
-                    <td colSpan={canWrite ? 13 : 12} className="p-8 text-center text-slate-400 italic font-medium">
-                      Tidak ada data transaksi ditemukan matching kriteria pencarian Anda.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination Controls bar */}
-          <div className="bg-slate-50 px-4 py-3 border-t border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3 text-slate-600 font-bold text-xs select-none">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center space-x-1.5">
-                <span className="text-slate-500">Tampilkan:</span>
-                <select 
-                  value={pageSize} 
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                  className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-slate-800 font-extrabold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-2xs"
+            <form onSubmit={isAddModalOpen ? handleSubmitAdd : handleSubmitEdit} className="p-6 overflow-y-auto max-h-[82vh] space-y-4">
+              {/* 1. CABANG KOTA / BSO */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">
+                  CABANG KOTA / BSO
+                </label>
+                <select
+                  value={formData.branch}
+                  onChange={(e) => setFormData({ ...formData, branch: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
+                  required
                 >
-                  {[25, 50, 100, 200, 250].map(size => (
-                    <option key={size} value={size}>
-                      {size} per halaman
-                    </option>
+                  {userBranches.map(b => (
+                    <option key={b} value={b}>{b}</option>
                   ))}
                 </select>
               </div>
-              <span className="text-slate-400">|</span>
-              <span className="text-slate-700 font-extrabold">
-                Menampilkan <span className="text-blue-600 font-black">{totalItems > 0 ? ((activePage - 1) * pageSize + 1).toLocaleString('id-ID') : 0}</span> - <span className="text-blue-600 font-black">{Math.min(activePage * pageSize, totalItems).toLocaleString('id-ID')}</span> dari <span className="text-slate-900 font-black">{totalItems.toLocaleString('id-ID')}</span> data Backcharge
-              </span>
-              {isServerLoading && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded-full animate-pulse border border-blue-200">
-                  <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Memuat data...
-                </span>
-              )}
-            </div>
 
-            <div className="flex items-center space-x-1">
-              <button
-                type="button"
-                disabled={activePage === 1 || isServerLoading}
-                onClick={() => setCurrentPage(1)}
-                className={`p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 transition-all ${activePage === 1 ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
-                title="Halaman Pertama"
-              >
-                <ChevronsLeft className="w-4 h-4 text-slate-700" />
-              </button>
-
-              <button
-                type="button"
-                disabled={activePage === 1 || isServerLoading}
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                className={`px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 transition-all flex items-center gap-1 font-bold ${activePage === 1 ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
-                title="Halaman Sebelumnya"
-              >
-                <ChevronLeft className="w-4 h-4 text-slate-700" />
-                <span className="hidden sm:inline">Prev</span>
-              </button>
-              
-              <div className="flex items-center space-x-1 px-1">
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum = i + 1;
-                  if (activePage > 3 && totalPages > 5) {
-                    pageNum = activePage - 3 + i;
-                    if (pageNum + (4 - i) > totalPages) {
-                      pageNum = totalPages - 4 + i;
-                    }
-                  }
-                  if (pageNum < 1) pageNum = 1;
-                  return (
-                    <button
-                      key={pageNum}
-                      type="button"
-                      disabled={isServerLoading}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg border font-black text-xs transition-all ${activePage === pageNum ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'}`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                type="button"
-                disabled={activePage === totalPages || totalPages === 0 || isServerLoading}
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                className={`px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 transition-all flex items-center gap-1 font-bold ${activePage === totalPages || totalPages === 0 ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
-                title="Halaman Berikutnya"
-              >
-                <span className="hidden sm:inline">Next</span>
-                <ChevronRight className="w-4 h-4 text-slate-700" />
-              </button>
-
-              <button
-                type="button"
-                disabled={activePage === totalPages || totalPages === 0 || isServerLoading}
-                onClick={() => setCurrentPage(totalPages)}
-                className={`p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 transition-all ${activePage === totalPages || totalPages === 0 ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
-                title="Halaman Terakhir"
-              >
-                <ChevronsRight className="w-4 h-4 text-slate-700" />
-              </button>
-
-              {totalPages > 5 && (
-                <div className="hidden lg:flex items-center space-x-1 pl-2 border-l border-slate-200 text-slate-500 text-[11px]">
-                  <span>Ke Hal:</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={totalPages}
-                    defaultValue={activePage}
-                    key={`jump-${activePage}`}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const val = parseInt((e.target as HTMLInputElement).value, 10);
-                        if (!isNaN(val) && val >= 1 && val <= totalPages) {
-                          setCurrentPage(val);
-                        }
-                      }
-                    }}
-                    className="w-12 px-1.5 py-1 bg-white border border-slate-300 rounded text-center font-bold text-slate-800"
-                  />
-                  <span>/ {totalPages}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      {/* EDIT MODAL FOR REVISING DATA */}
-      {editingTransaction && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[99] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 my-8 flex flex-col max-h-[90vh]">
-            
-            {/* Header */}
-            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-3xl sticky top-0 z-10 flex-shrink-0">
+              {/* 2. KATEGORI BACKCHARGE */}
               <div>
-                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse"></span>
-                  Revisi Data Backcharge - {editingTransaction.id}
-                </h3>
-                <p className="text-[10px] text-slate-400 font-bold mt-1">Revisi data apabila terjadi kesalahan input awal.</p>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setEditingTransaction(null)}
-                className="p-1.5 hover:bg-slate-200 text-slate-400 hover:text-slate-600 rounded-xl transition-all"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Scrollable Form Body */}
-            <form onSubmit={handleEditSubmit} className="flex-grow overflow-y-auto p-6 space-y-4 custom-scrollbar">
-              {editSuccess && (
-                <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs rounded-xl font-medium flex items-center space-x-2 animate-bounce">
-                  <Check className="w-4 h-4 flex-shrink-0" />
-                  <span>Perubahan data sukses disimpan!</span>
-                </div>
-              )}
-
-              {editError && (
-                <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs rounded-xl font-medium flex items-center space-x-2">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  <span>{editError}</span>
-                </div>
-              )}
-
-              {isBroOnly && (
-                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-2xl font-medium flex items-start space-x-2.5 shadow-sm">
-                  <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-extrabold block text-amber-900">Akses Role {currentUser.role}:</span>
-                    <span>Anda hanya diizinkan untuk mengubah <strong>Nilai Backcharge (Nominal)</strong> jika terjadi perubahan harga. Field informasi transaksi lainnya dikunci.</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Cabang */}
-              {currentUser.branch === 'Nasional' || hasRole(currentUser.role, 'Administrator') || hasRole(currentUser.role, 'Division Head') ? (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota</label>
-                  <select 
-                    value={editBranch} 
-                    disabled={isBroOnly}
-                    onChange={(e) => setEditBranch(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                  >
-                    {BRANCH_LIST.map(b => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                  </select>
-                </div>
-              ) : userBranchList && userBranchList.length > 0 ? (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota</label>
-                  <select 
-                    value={editBranch} 
-                    disabled={isBroOnly}
-                    onChange={(e) => setEditBranch(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                  >
-                    {ALL_SYSTEM_BRANCHES.filter(b => userBranchList.some(ub => ub.toLowerCase() === b.toLowerCase())).map(b => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cabang Kota</label>
-                  <input 
-                    type="text" 
-                    disabled 
-                    value={editBranch} 
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-100 font-bold text-slate-500 cursor-not-allowed" 
-                  />
-                </div>
-              )}
-
-              {/* Kategori */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Kategori Backcharge</label>
-                <select 
-                  value={editCategory} 
-                  disabled={isBroOnly}
-                  onChange={(e) => setEditCategory(e.target.value as BackchargeCategory)}
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">
+                  KATEGORI BACKCHARGE
+                </label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value as BackchargeCategory })}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
+                  required
                 >
-                  <option value="Own Risk">Own Risk</option>
-                  <option value="Maintenance">Maintenance</option>
-                  <option value="Ekspedisi">Ekspedisi</option>
-                  <option value="ETLE">ETLE</option>
-                  <option value="TPL">TPL</option>
-                  <option value="Unclaimable Insurance">Unclaimable Insurance</option>
-                  <option value="Dokumen Kendaraan">Dokumen Kendaraan</option>
+                  {CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
                 </select>
               </div>
 
-              {/* Tanggal BAK */}
+              {/* 3. TANGGAL BAK */}
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tanggal BAK</label>
-                <input 
-                  type="date" 
-                  value={editTanggal}
-                  disabled={isBroOnly}
-                  onChange={(e) => setEditTanggal(e.target.value)}
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-bold bg-slate-50/50 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                />
-              </div>
-
-              {/* No. BAK (Own Risk only) */}
-              {editCategory === 'Own Risk' && (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">No. BAK (Berita Acara Kejadian)</label>
-                  <input 
-                    type="text" 
-                    value={editNoBak}
-                    disabled={isBroOnly}
-                    onChange={(e) => setEditNoBak(e.target.value)}
-                    placeholder="BAK/2026/XI/102" 
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                  />
-                </div>
-              )}
-
-              {/* No. Tilang (ETLE only) */}
-              {editCategory === 'ETLE' && (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">No. Surat Tilang</label>
-                  <input 
-                    type="text" 
-                    value={editNoTilang}
-                    disabled={isBroOnly}
-                    onChange={(e) => setEditNoTilang(e.target.value)}
-                    placeholder="TILANG/ETLE/9281" 
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                  />
-                </div>
-              )}
-
-              {/* No. SPK */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{editCategory === 'TPL' ? 'No. Dokumen' : 'No. SPK (Surat Perintah Kerja)'}</label>
-                <input 
-                  type="text" 
-                  value={editNoSpk}
-                  disabled={isBroOnly}
-                  onChange={(e) => setEditNoSpk(e.target.value)}
-                  placeholder="500101010" 
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                />
-              </div>
-
-              {/* Nama Customer */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nama Customer</label>
-                <input 
-                  type="text" 
+                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">
+                  TANGGAL BAK
+                </label>
+                <input
+                  type="date"
+                  value={formData.tanggal}
+                  onChange={(e) => setFormData({ ...formData, tanggal: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   required
-                  value={editCustomerName}
-                  disabled={isBroOnly}
-                  onChange={(e) => setEditCustomerName(e.target.value)}
-                  placeholder="PT Indonesia Gemilang" 
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-bold text-slate-900 bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 />
               </div>
 
-              {/* No Polisi */}
+              {/* 4. NO. BAK (BERITA ACARA KEJADIAN) */}
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">No. Polisi Kendaraan</label>
-                <input 
-                  type="text" 
-                  value={editLicensePlate}
-                  disabled={isBroOnly}
-                  onChange={(e) => setEditLicensePlate(e.target.value)}
-                  placeholder="B-1234-ABC" 
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold font-mono uppercase disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                />
-              </div>
-
-              {/* Nama BRO */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nama BRO</label>
-                <input 
-                  type="text" 
-                  value={editBroName}
-                  disabled={isBroOnly}
-                  onChange={(e) => setEditBroName(e.target.value)}
-                  placeholder="Nama BRO..." 
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                />
-              </div>
-
-              {/* Nilai Backcharge */}
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-[10px] font-extrabold text-slate-700 uppercase">Nilai Backcharge (Rp)</label>
-                  {isBroOnly && (
-                    <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full border border-emerald-300 animate-pulse">
-                      Dapat Diubah oleh BRO
-                    </span>
-                  )}
-                </div>
-                <input 
-                  type="number" 
-                  required
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  placeholder="Nominal" 
-                  className={`w-full text-xs border rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono font-bold ${
-                    isBroOnly ? 'border-amber-400 bg-amber-50/50 ring-2 ring-amber-300 text-amber-950 font-black' : 'border-slate-200 bg-white'
-                  }`}
-                />
-              </div>
-
-              {/* Status SAP (Bill / Not Bill) */}
-              {!isBroOnly && (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Status Billing SAP</label>
-                  <select 
-                    value={editStatusSap} 
-                    onChange={(e) => setEditStatusSap(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
-                  >
-                    <option value="Bill">Bill (Ditagihkan ke Customer)</option>
-                    <option value="Not Bill">Not Bill (Non-Invoice / Tidak Ditagihkan)</option>
-                    <option value="N/A">N/A (Belum Ditentukan)</option>
-                  </select>
-                  {editStatusSap === 'Not Bill' && (
-                    <p className="text-[10px] text-rose-600 font-semibold mt-1">
-                      ℹ️ Transaksi berstatus <strong>Not Bill</strong> tidak akan muncul sebagai outstanding di antrean Belum Cetak Invoice Admin.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Dokumen Pendukung & Alasan */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Dokumen Pendukung & Alasan Konfirmasi Dokumen Sah</label>
-                <textarea 
-                  value={editDokPendukungAlasan}
-                  disabled={isBroOnly}
-                  onChange={(e) => setEditDokPendukungAlasan(e.target.value)}
-                  placeholder="Tuliskan detail dokumen pendukung beserta penjelasan mengapa dokumen dianggap sah..." 
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-sans disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                  rows={3}
-                />
-              </div>
-
-              {/* File Uploads */}
-              {!isBroOnly && (
-                <div className="border-t border-slate-100 pt-3 space-y-3">
-                  <span className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Berkas Lampiran Pendukung (Optional)</span>
-                  
-                  {/* 1. File BAK */}
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="block text-[10px] font-bold text-slate-500">Scan Berkas Berita Acara (BAK)</label>
-                      {editFileBak && (
-                        <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded uppercase">Eksis</span>
-                      )}
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input 
-                        type="file" 
-                        accept="application/pdf,image/*"
-                        onChange={(e) => handleEditFileChange(e, setEditFileBak, setEditFileBakName, 'editFileBak')}
-                        className="hidden" 
-                        id="edit-file-bak-input" 
-                      />
-                      <label 
-                        htmlFor="edit-file-bak-input" 
-                        className={`flex-grow border ${uploadingToDrive['editFileBak'] ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 bg-slate-50/50'} border-dashed rounded-xl px-3 py-2.5 text-center cursor-pointer hover:bg-slate-50 hover:border-blue-400 transition-all text-xs font-semibold text-slate-500 flex items-center justify-center space-x-1.5`}
-                      >
-                        {uploadingToDrive['editFileBak'] ? (
-                          <>
-                            <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
-                            <span>Mengupload ke Drive...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="w-4 h-4 text-blue-500" />
-                            <span className="truncate max-w-[200px]">{editFileBakName || 'Ganti Berkas Scan BAK'}</span>
-                          </>
-                        )}
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* 2. File Handover Aso Admin */}
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="block text-[10px] font-bold text-slate-500">Scan Tanda Terima Berkas ASO ke Admin</label>
-                      {editFileHandoverAsoSales && (
-                        <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded uppercase">Eksis</span>
-                      )}
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input 
-                        type="file" 
-                        accept="application/pdf,image/*"
-                        onChange={(e) => handleEditFileChange(e, setEditFileHandoverAsoSales, setEditFileHandoverAsoSalesName, 'editFileHandoverAsoSales')}
-                        className="hidden" 
-                        id="edit-file-handover-aso-sales-input" 
-                      />
-                      <label 
-                        htmlFor="edit-file-handover-aso-sales-input" 
-                        className={`flex-grow border ${uploadingToDrive['editFileHandoverAsoSales'] ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 bg-slate-50/50'} border-dashed rounded-xl px-3 py-2.5 text-center cursor-pointer hover:bg-slate-50 hover:border-blue-400 transition-all text-xs font-semibold text-slate-500 flex items-center justify-center space-x-1.5`}
-                      >
-                        {uploadingToDrive['editFileHandoverAsoSales'] ? (
-                          <>
-                            <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
-                            <span>Mengupload ke Drive...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="w-4 h-4 text-blue-500" />
-                            <span className="truncate max-w-[200px]">{editFileHandoverAsoSalesName || 'Ganti Berkas ASO ke Admin'}</span>
-                          </>
-                        )}
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* 4. Dokumen Pendukung */}
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="block text-[10px] font-bold text-slate-500">Berkas/Foto Dokumen Pendukung</label>
-                      {editUploadDokPendukung && (
-                        <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded uppercase">Eksis</span>
-                      )}
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input 
-                        type="file" 
-                        accept="application/pdf,image/*"
-                        onChange={(e) => handleEditFileChange(e, setEditUploadDokPendukung, setEditUploadDokPendukungName, 'editUploadDokPendukung')}
-                        className="hidden" 
-                        id="edit-upload-dok-pendukung-input" 
-                      />
-                      <label 
-                        htmlFor="edit-upload-dok-pendukung-input" 
-                        className={`flex-grow border ${uploadingToDrive['editUploadDokPendukung'] ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 bg-slate-50/50'} border-dashed rounded-xl px-3 py-2.5 text-center cursor-pointer hover:bg-slate-50 hover:border-blue-400 transition-all text-xs font-semibold text-slate-500 flex items-center justify-center space-x-1.5`}
-                      >
-                        {uploadingToDrive['editUploadDokPendukung'] ? (
-                          <>
-                            <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
-                            <span>Mengupload ke Drive...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="w-4 h-4 text-blue-500" />
-                            <span className="truncate max-w-[200px]">{editUploadDokPendukungName === 'file_dok_pendukung_exist' ? 'Dokumen Pendukung Tersimpan' : (editUploadDokPendukungName || 'Ganti Dokumen Pendukung')}</span>
-                          </>
-                        )}
-                      </label>
-                    </div>
-                  </div>
-
-                </div>
-              )}
-            </form>
-
-            {/* Footer Buttons */}
-            <div className="p-5 border-t border-slate-100 flex justify-end space-x-2 bg-slate-50 rounded-b-3xl sticky bottom-0 z-10 flex-shrink-0">
-              <button 
-                type="button"
-                onClick={() => setEditingTransaction(null)}
-                className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-all"
-              >
-                Batal
-              </button>
-              <button 
-                type="button"
-                onClick={handleEditSubmit}
-                disabled={isEditSubmitting || Object.values(uploadingToDrive).some(Boolean)}
-                className="px-5 py-2.5 text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all flex items-center gap-1.5 shadow-lg shadow-blue-500/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isEditSubmitting ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Menyimpan...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Simpan Perubahan</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* BULK STATUS UPDATE MODAL */}
-      {showBulkModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[99] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 my-8 flex flex-col max-h-[90vh]">
-            
-            {/* Header */}
-            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-3xl sticky top-0 z-10 flex-shrink-0">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-pulse"></span>
-                  Update Status Massal ({selectedTxIds.length} Transaksi)
-                </h3>
-                <p className="text-[10px] text-slate-400 font-bold mt-1">Ubah status beberapa transaksi sekaligus secara cepat dan aman.</p>
-              </div>
-              <button 
-                type="button"
-                onClick={() => {
-                  if (!isBulkSubmitting) setShowBulkModal(false);
-                }}
-                disabled={isBulkSubmitting}
-                className="p-1.5 hover:bg-slate-200 text-slate-400 hover:text-slate-600 rounded-xl transition-all cursor-pointer disabled:opacity-40"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Scrollable Form Body */}
-            <form onSubmit={handleBulkSubmit} className="flex-grow overflow-y-auto p-6 space-y-4 custom-scrollbar">
-              {bulkProgress && (
-                <div className="p-3.5 bg-blue-50/90 border border-blue-200 rounded-2xl space-y-2 animate-in fade-in">
-                  <div className="flex justify-between items-center text-xs font-extrabold text-blue-900">
-                    <span className="flex items-center gap-1.5">
-                      <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                      Memproses Pembaruan Status Massal...
-                    </span>
-                    <span className="font-mono bg-blue-200/70 text-blue-900 px-2 py-0.5 rounded-lg text-[10px]">
-                      {bulkProgress.current} / {bulkProgress.total} ({Math.round((bulkProgress.current / Math.max(1, bulkProgress.total)) * 100)}%)
-                    </span>
-                  </div>
-                  <div className="w-full bg-blue-200/80 rounded-full h-2.5 overflow-hidden">
-                    <div 
-                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out shadow-xs"
-                      style={{ width: `${(bulkProgress.current / Math.max(1, bulkProgress.total)) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {bulkSuccessMessage && (
-                <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs rounded-xl font-medium flex items-center space-x-2 animate-bounce">
-                  <Check className="w-4 h-4 flex-shrink-0" />
-                  <span>{bulkSuccessMessage}</span>
-                </div>
-              )}
-
-              {bulkErrorMessage && (
-                <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs rounded-xl font-medium flex items-center space-x-2">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  <span>{bulkErrorMessage}</span>
-                </div>
-              )}
-
-              <div className="p-3.5 bg-blue-50/80 border border-blue-100 rounded-2xl text-xs font-semibold text-blue-900 space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <p className="font-extrabold">Transaksi Terpilih ({selectedTxIds.length}):</p>
-                  <span className="text-[9px] bg-blue-200 text-blue-800 font-extrabold px-2 py-0.5 rounded-full uppercase">
-                    Role: {currentUser.role}
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                    NO. BAK (BERITA ACARA KEJADIAN)
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-semibold bg-slate-100 px-1.5 py-0.5 rounded">
+                    Khusus Angka
                   </span>
                 </div>
-                <div className="text-[10px] text-blue-700 font-mono flex flex-wrap gap-1 max-h-20 overflow-y-auto custom-scrollbar pt-1">
-                  {selectedTxIds.map(id => (
-                    <span key={id} className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-bold border border-blue-200/60">{id}</span>
-                  ))}
-                </div>
-                <p className="text-[10px] text-blue-600 italic mt-1 font-normal">* Hanya bidang status sesuai wewenang role Anda yang akan diproses.</p>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={formData.no_bak}
+                  onChange={(e) => setFormData({ ...formData, no_bak: e.target.value.replace(/\D/g, '') })}
+                  placeholder="Contoh: 1002026102"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                />
               </div>
 
-              {!canBulkUpdate && (
-                <div className="p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl text-xs space-y-1">
-                  <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
-                    <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                    Otorisasi Tidak Mencukupi
-                  </p>
-                  <p className="text-[11px] text-amber-700">
-                    Role Anda (<strong>{currentUser.role}</strong>) tidak memiliki wewenang untuk melakukan perubahan status transaksi.
-                  </p>
-                </div>
-              )}
-
-              {/* 1. Status Fisik Berkas / Handover & Dokumen Lampiran Massal */}
-              {canUpdateHandover && (
-                <div className="p-4 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-3 shadow-xs">
-                  <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
-                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5 uppercase tracking-wide">
-                      <FileText className="w-4 h-4 text-blue-600" />
-                      Serah Terima Berkas & Dokumen Lampiran Massal
-                    </span>
-                    <span className="text-[9px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-extrabold">
-                      Otorisasi ASO / Admin
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Select Status Handover */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                        Status Serah Terima
-                      </label>
-                      <select 
-                        value={bulkStatusHandover}
-                        onChange={(e) => setBulkStatusHandover(e.target.value)}
-                        className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
-                      >
-                        <option value="">-- Tidak Diubah --</option>
-                        <option value="Diserahkan ke Admin">Diserahkan ke Admin</option>
-                        <option value="Diterima Admin">Diterima Admin</option>
-                        <option value="Pending">Pending (Berkas Masih di ASO)</option>
-                        <option value="Selesai">Selesai</option>
-                      </select>
-                    </div>
-
-                    {/* Select Tanggal Handover */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                        Tanggal Serah Terima
-                      </label>
-                      <input 
-                        type="date"
-                        value={bulkTanggalHandover}
-                        onChange={(e) => setBulkTanggalHandover(e.target.value)}
-                        className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Upload Dokumen Serah Terima Massal */}
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
-                      <span>Upload Dokumen / Berkas Bukti Serah Terima Massal</span>
-                      <span className="text-[9px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
-                        {selectedTxIds.length} Transaksi Terpilih
-                      </span>
-                    </label>
-
-                    {bulkFileHandover ? (
-                      <div className="flex items-center justify-between p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl text-xs">
-                        <div className="flex items-center space-x-2.5 truncate">
-                          <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                          <div className="truncate">
-                            <p className="font-bold text-slate-900 truncate">{bulkFileHandoverName || 'Dokumen Serah Terima Massal Terlampir'}</p>
-                            <p className="text-[10px] text-emerald-700 font-medium">Dokumen siap dilampirkan ke seluruh {selectedTxIds.length} transaksi</p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setBulkFileHandover(null);
-                            setBulkFileHandoverName('');
-                          }}
-                          className="p-1.5 hover:bg-emerald-100 rounded-lg text-slate-500 hover:text-red-600 transition-colors cursor-pointer flex-shrink-0"
-                          title="Hapus Lampiran Dokumen"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className={`relative border-2 border-dashed ${uploadingToDrive['bulk_handover'] ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200 hover:border-blue-400 bg-white'} rounded-xl p-3 text-center transition-all group`}>
-                        <input 
-                          type="file" 
-                          accept="image/*,application/pdf"
-                          onChange={(e) => handleFileChange(e, setBulkFileHandover, setBulkFileHandoverName, 'bulk_handover')}
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
-                        />
-                        <div className="flex flex-col items-center justify-center space-y-1 py-1">
-                          {uploadingToDrive['bulk_handover'] ? (
-                            <>
-                              <RefreshCw className="w-5 h-5 text-amber-500 animate-spin" />
-                              <p className="text-xs font-bold text-amber-700">Mengunggah ke Google Drive...</p>
-                            </>
-                          ) : (
-                            <>
-                              <Upload className="w-5 h-5 text-blue-500 group-hover:scale-110 transition-transform" />
-                              <p className="text-xs font-bold text-slate-700">Pilih / Unggah Berkas Bukti Serah Terima (PDF / Foto)</p>
-                              <p className="text-[10px] text-slate-400">File ini akan otomatis dilampirkan ke {selectedTxIds.length} transaksi yang dipilih sekaligus</p>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* 2. Status SAP (Sales Head & Administrator) */}
-              {canUpdateSap && (
-                <div className="p-4 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-2">
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase flex items-center justify-between">
-                    <span>Status SAP / ERP Claim</span>
-                    <span className="text-[8px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-extrabold">Wewenang Sales Head</span>
+              {/* 5. NO. SPK (SURAT PERINTAH KERJA) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                    NO. SPK (SURAT PERINTAH KERJA)
                   </label>
-                  <select 
-                    value={bulkStatusSap}
-                    onChange={(e) => setBulkStatusSap(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
-                  >
-                    <option value="">-- Tidak Diubah --</option>
-                    <option value="Bill">Bill (Dapat Ditagihkan)</option>
-                    <option value="Not Bill">Not Bill (Tidak Ditagihkan)</option>
-                    <option value="N/A">N/A</option>
-                  </select>
+                  <span className="text-[10px] text-slate-400 font-semibold bg-slate-100 px-1.5 py-0.5 rounded">
+                    Khusus Angka
+                  </span>
                 </div>
-              )}
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={formData.no_spk}
+                  onChange={(e) => setFormData({ ...formData, no_spk: e.target.value.replace(/\D/g, '') })}
+                  placeholder="Contoh: 500101010"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                />
+              </div>
 
-              {/* 3. Status Pembayaran (Admin & Administrator) */}
-              {canUpdatePayment && (
-                <div className="p-4 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-slate-800 uppercase tracking-wide">Status Pelunasan Pembayaran</span>
-                    <span className="text-[8px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-extrabold">Wewenang Admin</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                        Status Pelunasan
-                      </label>
-                      <select 
-                        value={bulkStatusPayment}
-                        onChange={(e) => setBulkStatusPayment(e.target.value)}
-                        className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
-                      >
-                        <option value="">-- Tidak Diubah --</option>
-                        <option value="Lunas">Lunas</option>
-                        <option value="Belum Bayar">Belum Bayar</option>
-                      </select>
-                    </div>
-
-                    {bulkStatusPayment === 'Lunas' && (
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                          Tanggal Pelunasan (Opsional)
-                        </label>
-                        <input 
-                          type="date"
-                          value={bulkPaymentDate}
-                          onChange={(e) => setBulkPaymentDate(e.target.value)}
-                          placeholder="Hari ini jika kosong"
-                          className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* 4. Status Approval Backcharge (Sales Head, Kacab & Administrator) */}
-              {canUpdateApproval && (
-                <div className="p-4 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-2">
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase flex items-center justify-between">
-                    <span>Status Approval Backcharge</span>
-                    <span className="text-[8px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-extrabold">
-                      {isSalesHeadUser && !isSuperAdmin ? 'Wewenang Sales Head (OR, Ekspedisi, ETLE, UI, Dok)' :
-                       isKacabUser && !isSuperAdmin ? 'Wewenang Kacab (Maintenance & TPL)' :
-                       'Wewenang RH / DH / Kacab / Sales Head'}
-                    </span>
+              {/* 6. NO. CMD (BARU DITAMBAHKAN SESUAI PERMINTAAN) */}
+              <div className={`relative ${activeAutocompleteField === 'no_cmd' ? 'z-30' : 'z-20'}`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                    NO. CMD <span className="text-rose-500">*</span>
                   </label>
-                  <select 
-                    value={bulkStatusApproval}
-                    onChange={(e) => setBulkStatusApproval(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
-                  >
-                    <option value="">-- Tidak Diubah --</option>
-                    <option value="Disetujui">✅ Disetujui (Approved)</option>
-                    <option value="Ditolak">❌ Tidak Disetujui (Not Approved)</option>
-                    <option value="Belum Approval">⏳ Belum Approval (Reset)</option>
-                  </select>
-                  <p className="text-[9px] text-slate-400 mt-1 font-medium">
-                    {isSalesHeadUser && !isSuperAdmin && '* Pilihan ini memproses Backcharge kategori Own Risk, Ekspedisi, ETLE, Unclaimable Insurance, & Dokumen Kendaraan.'}
-                    {isKacabUser && !isSuperAdmin && '* Pilihan ini memproses Backcharge kategori Maintenance (<=7.5jt) & TPL (<=5jt).'}
-                    {isSuperAdmin && '* Memproses status approval dan menyinkronkan seluruh tier wewenang nominal yang berlaku.'}
-                  </p>
+                  <span className="text-[10px] text-slate-400 font-semibold bg-slate-100 px-1.5 py-0.5 rounded">
+                    Khusus Angka
+                  </span>
                 </div>
-              )}
-
-              {/* 5. Catatan Log */}
-              {canBulkUpdate && (
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                    Catatan Audit / Keterangan Update Massal
-                  </label>
-                  <input 
+                <div className="relative">
+                  <input
                     type="text"
-                    value={bulkLogReason}
-                    onChange={(e) => setBulkLogReason(e.target.value)}
-                    placeholder={`Update status massal oleh ${currentUser.full_name || currentUser.email} (${currentUser.role})`}
-                    className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={formData.no_cmd || ''}
+                    onFocus={() => setActiveAutocompleteField('no_cmd')}
+                    onBlur={() => setTimeout(() => setActiveAutocompleteField(prev => prev === 'no_cmd' ? null : prev), 200)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setActiveAutocompleteField(null); }}
+                    onChange={(e) => {
+                      setFormData({ ...formData, no_cmd: e.target.value.replace(/\D/g, '') });
+                      setActiveAutocompleteField('no_cmd');
+                    }}
+                    placeholder="Contoh: 2026001"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all pr-8"
+                    required
+                  />
+                  {formData.no_cmd && (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, no_cmd: '' }); }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                      title="Hapus"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                {activeAutocompleteField === 'no_cmd' && renderAutocompleteDropdown('no_cmd', formData.no_cmd || '')}
+              </div>
+
+              {/* 7. NAMA CUSTOMER */}
+              <div className={`relative ${activeAutocompleteField === 'customer_name' ? 'z-30' : 'z-15'}`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                    NAMA CUSTOMER <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-medium">Auto-suggest riwayat</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={formData.customer_name}
+                    onFocus={() => setActiveAutocompleteField('customer_name')}
+                    onBlur={() => setTimeout(() => setActiveAutocompleteField(prev => prev === 'customer_name' ? null : prev), 200)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setActiveAutocompleteField(null); }}
+                    onChange={(e) => {
+                      setFormData({ ...formData, customer_name: e.target.value });
+                      setActiveAutocompleteField('customer_name');
+                    }}
+                    placeholder="PT Indonesia Gemilang"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all pr-8"
+                    required
+                  />
+                  {formData.customer_name && (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, customer_name: '' }); }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                      title="Hapus"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                {activeAutocompleteField === 'customer_name' && renderAutocompleteDropdown('customer_name', formData.customer_name)}
+              </div>
+
+              {/* 8. NO. POLISI KENDARAAN */}
+              <div className={`relative ${activeAutocompleteField === 'license_plate' ? 'z-30' : 'z-10'}`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                    NO. POLISI KENDARAAN <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                    Kriteria: B-1234-ABC
+                  </span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={formData.license_plate}
+                    onFocus={() => setActiveAutocompleteField('license_plate')}
+                    onBlur={() => setTimeout(() => setActiveAutocompleteField(prev => prev === 'license_plate' ? null : prev), 200)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setActiveAutocompleteField(null); }}
+                    onChange={(e) => {
+                      let val = e.target.value.toUpperCase().replace(/\s+/g, '-').replace(/[^A-Z0-9-]/g, '').replace(/-+/g, '-');
+                      if (!val.includes('-') && /^([A-Z]{1,2})([0-9]{1,4})([A-Z]{1,3})$/.test(val)) {
+                        val = val.replace(/^([A-Z]{1,2})([0-9]{1,4})([A-Z]{1,3})$/, '$1-$2-$3');
+                      }
+                      setFormData({ ...formData, license_plate: val });
+                      setActiveAutocompleteField('license_plate');
+                    }}
+                    placeholder="B-1234-ABC"
+                    pattern="^[A-Za-z]{1,2}-[0-9]{1,4}-[A-Za-z]{1,3}$"
+                    title="Format kriteria: B-1234-ABC (contoh: B-1234-ABC, D-123-XYZ)"
+                    className={`w-full px-3.5 py-2.5 bg-white border rounded-xl text-xs font-mono font-bold tracking-wider transition-all focus:outline-none pr-8 ${
+                      !formData.license_plate
+                        ? 'border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800'
+                        : /^[A-Z]{1,2}-[0-9]{1,4}-[A-Z]{1,3}$/.test(formData.license_plate.trim())
+                        ? 'border-emerald-500 bg-emerald-50/20 text-emerald-950 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500'
+                        : 'border-amber-400 bg-amber-50/20 text-amber-950 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500'
+                    }`}
+                    required
+                  />
+                  {formData.license_plate && (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, license_plate: '' }); }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                      title="Hapus"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Autocomplete Dropdown */}
+                {activeAutocompleteField === 'license_plate' && renderAutocompleteDropdown('license_plate', formData.license_plate)}
+
+                {/* Status Validasi Real-time */}
+                {formData.license_plate ? (
+                  <div className="mt-1.5">
+                    {/^[A-Z]{1,2}-[0-9]{1,4}-[A-Z]{1,3}$/.test(formData.license_plate.trim()) ? (
+                      <p className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Format kriteria valid: <strong className="font-mono text-emerald-800">{formData.license_plate.trim()}</strong></span>
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-amber-700 font-medium flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>Harus sesuai kriteria <strong className="font-mono text-amber-800">B-1234-ABC</strong> (contoh: B-1234-ABC, D-567-XYZ)</span>
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Format harus menggunakan tanda hubung (-), contoh: <strong className="font-mono text-slate-600">B-1234-ABC</strong>
+                  </p>
+                )}
+              </div>
+
+              {/* 9. NAMA BRO */}
+              <div className={`relative ${activeAutocompleteField === 'nama_bro' ? 'z-30' : 'z-5'}`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                    NAMA BRO <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-medium">Auto-suggest riwayat</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={formData.nama_bro}
+                    onFocus={() => setActiveAutocompleteField('nama_bro')}
+                    onBlur={() => setTimeout(() => setActiveAutocompleteField(prev => prev === 'nama_bro' ? null : prev), 200)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setActiveAutocompleteField(null); }}
+                    onChange={(e) => {
+                      setFormData({ ...formData, nama_bro: e.target.value });
+                      setActiveAutocompleteField('nama_bro');
+                    }}
+                    placeholder="Nama BRO..."
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all pr-8"
+                    required
+                  />
+                  {formData.nama_bro && (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); setFormData({ ...formData, nama_bro: '' }); }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                      title="Hapus"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                {activeAutocompleteField === 'nama_bro' && renderAutocompleteDropdown('nama_bro', formData.nama_bro)}
+              </div>
+
+              {/* 10. NILAI BACKCHARGE (RP) */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">
+                  NILAI BACKCHARGE (RP)
+                </label>
+                <input
+                  type="number"
+                  value={formData.value || ''}
+                  onChange={(e) => setFormData({ ...formData, value: Number(e.target.value) || 0 })}
+                  placeholder="Nominal"
+                  min="0"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  required
+                />
+              </div>
+
+              {/* Khusus ETLE: Nomor Tilang */}
+              {formData.category === 'ETLE' && (
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">
+                    NO. TILANG / REFERENSI ETLE
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.no_tilang}
+                    onChange={(e) => setFormData({ ...formData, no_tilang: e.target.value })}
+                    placeholder="Contoh: TLG-2026-9921"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
               )}
 
+
+
+              {/* Catatan / Alasan */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">
+                  CATATAN / ALASAN (OPSIONAL)
+                </label>
+                <textarea
+                  rows={2}
+                  value={formData.alasan}
+                  onChange={(e) => setFormData({ ...formData, alasan: e.target.value })}
+                  placeholder="Catatan tambahan atau rincian administratif..."
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                />
+              </div>
+
+              {/* Tombol Aksi: Persis seperti image_5707ecb1.png */}
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-extrabold shadow-md shadow-blue-500/25 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {isSubmitting && <RefreshCw className="w-4 h-4 animate-spin" />}
+                  <span>{isAddModalOpen ? 'Simpan & Kirim Notifikasi' : 'Perbarui Transaksi'}</span>
+                </button>
+              </div>
             </form>
-
-            {/* Footer Buttons */}
-            <div className="p-5 border-t border-slate-100 flex justify-end space-x-2 bg-slate-50 rounded-b-3xl sticky bottom-0 z-10 flex-shrink-0">
-              <button 
-                type="button"
-                onClick={() => setShowBulkModal(false)}
-                disabled={isBulkSubmitting}
-                className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-all cursor-pointer disabled:opacity-50"
-              >
-                Batal
-              </button>
-              <button 
-                type="button"
-                onClick={handleBulkSubmit}
-                disabled={isBulkSubmitting || !canBulkUpdate}
-                className="px-5 py-2.5 text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all flex items-center gap-1.5 shadow-lg shadow-blue-500/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isBulkSubmitting ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Memproses ({bulkProgress ? `${bulkProgress.current}/${bulkProgress.total}` : selectedTxIds.length})...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Terapkan Ke {selectedTxIds.length} Transaksi</span>
-                  </>
-                )}
-              </button>
-            </div>
-
           </div>
         </div>
       )}
 
-      {/* BULK IMPORT MODAL FOR ADMINISTRATOR */}
-      {showBulkImportModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[99] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 my-8 flex flex-col max-h-[90vh]">
-            
-            {/* Header */}
-            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-3xl sticky top-0 z-10 flex-shrink-0">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-pulse"></span>
-                  Import Massal Data Backcharge
-                </h3>
-                <p className="text-[10px] text-slate-400 font-bold mt-1">Impor data dalam jumlah banyak secara massal menggunakan template spreadsheet Microsoft Excel yang disediakan.</p>
+      {/* 9. MODAL: IMPOR EXCEL (BULK UPLOAD) */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center shadow-inner">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Import Massal Data Backcharge</h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Import data dalam jumlah banyak secara massal menggunakan template spreadsheet Microsoft Excel yang disediakan.
+                  </p>
+                </div>
               </div>
-              <button 
-                type="button"
+              <button
                 onClick={() => {
-                  setShowBulkImportModal(false);
-                  setBulkImportList([]);
-                  setBulkImportError(null);
+                  setIsImportModalOpen(false);
+                  setImportPreview([]);
+                  setImportErrors([]);
+                  setImportProgress(null);
                 }}
-                className="p-1.5 hover:bg-slate-200 text-slate-400 hover:text-slate-600 rounded-xl transition-all"
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Content */}
-            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-slate-700">
-              
-              {/* Template Download and Upload Action Card */}
-              <div className="bg-slate-50 border border-slate-200/80 rounded-3xl p-6 text-center space-y-4 max-w-2xl mx-auto my-2 shadow-sm">
-                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto shadow-md shadow-blue-500/10">
-                  <FileText className="w-6 h-6" />
-                </div>
-                
-                <div className="space-y-1.5">
-                  <h4 className="text-sm font-extrabold text-slate-800">
-                    Sistem Import Massal berformat Excel (.xlsx)
-                  </h4>
-                  <p className="text-[11px] text-slate-500 font-medium max-w-lg mx-auto leading-relaxed">
+            <div className="p-6 overflow-y-auto space-y-6">
+              {/* Main Box matching design */}
+              <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-6 space-y-5">
+                <div className="text-center space-y-1.5">
+                  <h4 className="text-sm font-black text-slate-900">Sistem Import Massal berformat Excel (.xlsx)</h4>
+                  <p className="text-xs text-slate-500 max-w-xl mx-auto">
                     Silakan unduh template Excel resmi di bawah ini, isi data transaksi sesuai format kolom yang telah ditentukan, lalu unggah kembali file Excel tersebut.
                   </p>
                 </div>
 
-                {/* Column Structure Pills Guide */}
-                <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 text-left space-y-2.5">
+                {/* Structure 16 Columns Header & Pills */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-sm">
                   <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="text-[10px] font-black uppercase text-slate-600 tracking-wider flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                      <span>Struktur 16 Kolom Template:</span>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                      <span className="text-xs font-bold text-slate-800">STRUKTUR 16 KOLOM TEMPLATE:</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1 text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        Dropdown Validation Aktif
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <Check className="w-3 h-3" /> Dropdown Validation Aktif
                       </span>
-                      <span className="inline-flex items-center gap-1 text-[9px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
-                        <Info className="w-3 h-3 text-blue-600" />
-                        Safe Sample Auto-Ignore
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">
+                        <HelpCircle className="w-3 h-3" /> Safe Sample Auto-Ignore
                       </span>
                     </div>
                   </div>
-                  
-                  <div className="flex flex-wrap gap-1.5">
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-1.5 pt-1 text-[11px] font-medium">
                     {[
-                      { name: "1. Tanggal", dropdown: false },
-                      { name: "2. Kategori", dropdown: true },
-                      { name: "3. Cabang", dropdown: true },
-                      { name: "4. Nama Customer", dropdown: false },
-                      { name: "5. No Polisi", dropdown: false },
-                      { name: "6. Nilai Backcharge", dropdown: false },
-                      { name: "7. No BAK", dropdown: false },
-                      { name: "8. No SPK", dropdown: false },
-                      { name: "9. No SAP", dropdown: false },
-                      { name: "10. No Tilang", dropdown: false },
-                      { name: "11. PIC", dropdown: false },
-                      { name: "12. Alasan", dropdown: false },
-                      { name: "13. Tahap Proses", dropdown: true },
-                      { name: "14. No Invoice", dropdown: false },
-                      { name: "15. Status Bayar", dropdown: true },
-                      { name: "16. Status SAP (Bill/Not Bill/NA)", dropdown: true }
-                    ].map((col, cIdx) => (
-                      <span 
-                        key={cIdx} 
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 border ${
-                          col.dropdown 
-                            ? 'bg-blue-50 text-blue-800 border-blue-200/80 shadow-xs' 
-                            : 'bg-slate-100/80 text-slate-700 border-slate-200'
-                        }`}
-                      >
-                        {col.name}
-                        {col.dropdown && <ChevronDown className="w-2.5 h-2.5 text-blue-500 opacity-70" />}
-                      </span>
+                      '1. Tanggal', '2. Kategori ▾', '3. Cabang ▾', '4. No CMD',
+                      '5. Nama Customer', '6. No Polisi', '7. Nilai Backcharge', '8. No BAK',
+                      '9. No SPK', '10. No Tilang', '11. PIC/BRO', '12. Alasan',
+                      '13. Tahap Proses ▾', '14. No Invoice', '15. Status Bayar ▾', '16. Status SAP ▾'
+                    ].map((col, idx) => (
+                      <div key={idx} className="bg-slate-50 border border-slate-200/70 rounded-lg px-2.5 py-1.5 text-slate-700 text-center truncate" title={col}>
+                        {col}
+                      </div>
                     ))}
                   </div>
 
-                  <div className="text-[10px] text-slate-500 bg-slate-50 rounded-xl p-2 border border-slate-100 flex items-start gap-2">
-                    <Info className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" />
-                    <span>
-                      Kolom dengan tanda panah (<strong>Kategori, Cabang, Tahap Proses, Status Bayar, Status SAP</strong>) telah dilengkapi <strong>menu dropdown bawaan Excel</strong> agar pengisian data selalu seragam dan bebas dari typo.
-                    </span>
+                  <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl flex items-start gap-2 text-[11px] text-blue-900">
+                    <HelpCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block mb-0.5">Template Multi-Sheet Resmi (.xlsx):</span>
+                      <p>
+                        File Excel dilengkapi 2 sheet: <strong>Sheet 1: Template Backcharge</strong> (area entri data) dan <strong>Sheet 2: Petunjuk &amp; Contoh Pengisian</strong>. Dropdown validation aktif pada kolom Kategori, Cabang, Tahap Proses (sesuai sistem web), Status Bayar, dan Status SAP.
+                      </p>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-                  {/* Download Template Button */}
+                {/* Download and Upload Action Buttons */}
+                <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                   <button
                     type="button"
-                    onClick={downloadTemplate}
-                    className="w-full sm:w-auto px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-slate-950/5 cursor-pointer"
+                    onClick={handleDownloadTemplate}
+                    className="flex items-center gap-2 px-5 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-md shadow-slate-900/20 transition-all"
                   >
-                    <Download className="w-4 h-4 text-amber-400" />
+                    <Download className="w-4 h-4" />
                     <span>Unduh Template Excel (.xlsx)</span>
                   </button>
 
-                  {/* Upload File Button */}
-                  <label className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-500/10 cursor-pointer">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    accept=".xlsx, .xls, .csv"
+                    className="hidden"
+                    id="excel-file-input"
+                  />
+                  <label
+                    htmlFor="excel-file-input"
+                    className="cursor-pointer flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all"
+                  >
                     <Upload className="w-4 h-4" />
                     <span>Unggah File Excel</span>
-                    <input 
-                      type="file" 
-                      accept=".xlsx,.xls" 
-                      onChange={handleBulkFileChange}
-                      className="hidden" 
-                    />
                   </label>
                 </div>
               </div>
 
-              {/* Loading Progress State */}
-              {isProcessingImport && importProgress && (
-                <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl shadow-sm space-y-2.5 animate-fadeIn">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <Loader2 className="w-4 h-4 animate-spin text-blue-600 flex-shrink-0" />
-                      <span className="text-xs font-black text-slate-800">
-                        Mengimpor Data Backcharge...
-                      </span>
-                    </div>
-                    <span className="text-xs font-black text-blue-700 bg-blue-100 px-2.5 py-1 rounded-full">
-                      {importProgress.current} dari {importProgress.total} Data ({Math.round((importProgress.current / (importProgress.total || 1)) * 100)}%)
+              {/* Progress Bar during Import */}
+              {importProgress && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl space-y-2 animate-in fade-in">
+                  <div className="flex items-center justify-between text-xs font-bold text-blue-900">
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin text-blue-600" />
+                      <span>Sedang Mengimpor Data ke Database...</span>
                     </span>
+                    <span>{importProgress.percent}% ({importProgress.current} dari {importProgress.total} data)</span>
                   </div>
-
-                  {/* Progress Bar */}
-                  <div className="w-full bg-slate-200/80 rounded-full h-3 overflow-hidden p-0.5">
+                  <div className="w-full bg-blue-200 rounded-full h-2.5 overflow-hidden">
                     <div 
-                      className="bg-gradient-to-r from-blue-600 to-indigo-600 h-2 rounded-full transition-all duration-200 ease-out shadow-sm"
-                      style={{ width: `${Math.min(100, Math.max(0, Math.round((importProgress.current / (importProgress.total || 1)) * 100)))}%` }}
-                    />
-                  </div>
-
-                  <div className="flex justify-between items-center text-[10px] text-slate-500 font-semibold pt-0.5">
-                    <span>Sedang menyimpan data ke database... Mohon tunggu hingga selesai.</span>
-                    <span className="font-extrabold text-blue-800">{importProgress.current} / {importProgress.total} Baris</span>
+                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                      style={{ width: `${importProgress.percent}%` }}
+                    ></div>
                   </div>
                 </div>
               )}
 
-              {/* Error Parsed State */}
-              {bulkImportError && (
-                <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs rounded-xl font-medium flex items-center space-x-2">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  <span>{bulkImportError}</span>
+              {importErrors.length > 0 && (
+                <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <AlertCircle className="w-4 h-4 text-rose-600" />
+                    <span>Terdapat kendala pada file:</span>
+                  </div>
+                  <ul className="list-disc list-inside space-y-0.5 text-[11px] text-rose-700">
+                    {importErrors.slice(0, 5).map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                    {importErrors.length > 5 && (
+                      <li>Dan {importErrors.length - 5} kendala lainnya...</li>
+                    )}
+                  </ul>
                 </div>
               )}
 
-              {/* Parsed List Preview */}
-              {bulkImportList.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                      <span>Pratinjau Data Hasil Parse</span>
-                      <span className="text-[10px] bg-blue-100 text-blue-700 font-extrabold px-2 py-0.5 rounded-full">
-                        {bulkImportList.length} Baris Data Ditemukan
-                      </span>
+              {importPreview.length > 0 && !importProgress && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-bold text-slate-800">
+                      Pratinjau Impor ({importPreview.length} Data Siap Ditambahkan):
                     </h4>
-                    <div className="flex items-center gap-4">
-                      {bulkImportList.some(item => item.errors && item.errors.length > 0) && (
-                        <button 
-                          type="button"
-                          onClick={() => {
-                            const updated = bulkImportList.filter(item => !item.errors || item.errors.length === 0);
-                            setBulkImportList(updated);
-                            if (addToast) {
-                              const deletedCount = bulkImportList.length - updated.length;
-                              addToast(`Berhasil menghapus ${deletedCount} baris data yang error.`, 'success');
-                            }
-                          }}
-                          className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-[10px] font-extrabold px-2.5 py-1 rounded-lg flex items-center gap-1 transition-all cursor-pointer"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          <span>Hapus Semua Data Error</span>
-                        </button>
-                      )}
-                      <button 
-                        type="button"
-                        onClick={() => setBulkImportList([])}
-                        className="text-slate-500 hover:text-slate-700 text-[10px] font-bold hover:underline cursor-pointer"
-                      >
-                        Hapus Semua Data
-                      </button>
-                    </div>
                   </div>
-
-                  {/* Summary Metric Badges */}
-                  <div className="grid grid-cols-3 gap-3 bg-slate-50 border border-slate-200 p-3 rounded-2xl">
-                    <div className="text-center">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase">Total Baris</div>
-                      <div className="text-base font-extrabold text-slate-800">{bulkImportList.length}</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase">Valid</div>
-                      <div className="text-base font-extrabold text-emerald-600">
-                        {bulkImportList.filter(item => !item.errors || item.errors.length === 0).length}
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase">Error</div>
-                      <div className="text-base font-extrabold text-red-600">
-                        {bulkImportList.filter(item => item.errors && item.errors.length > 0).length}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Table View */}
-                  <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-[300px] overflow-y-auto bg-white">
-                    <table className="w-full text-left text-[11px] border-collapse">
-                      <thead className="bg-slate-50 text-slate-400 font-black uppercase tracking-wider text-[9px] border-b border-slate-200 sticky top-0 z-10">
+                  <div className="border border-slate-200 rounded-xl overflow-x-auto max-h-60 text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-100 font-bold text-[10px] uppercase text-slate-600 sticky top-0">
                         <tr>
-                          <th className="p-3 text-center w-12">No</th>
-                          <th className="p-3">Tanggal</th>
-                          <th className="p-3">Kategori</th>
-                          <th className="p-3">Cabang</th>
-                          <th className="p-3">Customer</th>
-                          <th className="p-3">No Polisi</th>
-                          <th className="p-3 text-right">Nilai Backcharge</th>
-                          <th className="p-3 text-center">Status Data</th>
-                          <th className="p-3 text-center w-16">Aksi</th>
+                          <th className="py-2 px-3">No</th>
+                          <th className="py-2 px-3">Kategori</th>
+                          <th className="py-2 px-3">Cabang</th>
+                          <th className="py-2 px-3">CUSTOMER</th>
+                          <th className="py-2 px-3">No. Polisi</th>
+                          <th className="py-2 px-3 text-right">Nilai (Rp)</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium">
-                        {bulkImportList.map((item, idx) => {
-                          const isInvalid = item.errors && item.errors.length > 0;
-                          return (
-                            <tr key={idx} className={`${isInvalid ? 'bg-red-50/40 hover:bg-red-50/60' : 'hover:bg-slate-50/50'} transition-all`}>
-                              <td className="p-3 text-center text-slate-400 font-bold">{idx + 1}</td>
-                              <td className="p-3 font-semibold text-slate-800">{item.tanggal}</td>
-                              <td className="p-3">
-                                <span className="bg-slate-100 text-slate-700 font-extrabold text-[9px] px-2 py-0.5 rounded uppercase">
-                                  {item.category}
-                                </span>
-                              </td>
-                              <td className="p-3 font-semibold">{item.branch}</td>
-                              <td className="p-3 font-bold text-slate-800">{item.customer_name || <em className="text-red-400 font-bold">Kosong</em>}</td>
-                              <td className="p-3 font-bold text-slate-600">{item.license_plate}</td>
-                              <td className="p-3 text-right font-extrabold text-blue-700">{formatRupiah(item.value)}</td>
-                              <td className="p-3 text-center">
-                                {isInvalid ? (
-                                  <div className="text-[10px] text-red-600 font-bold flex flex-col items-center">
-                                    {item.errors.map((e: string, i: number) => (
-                                      <span key={i} className="bg-red-100 text-red-700 font-extrabold text-[8px] px-1.5 py-0.5 rounded uppercase my-0.5 whitespace-nowrap">
-                                        {e}
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <span className="bg-emerald-100 text-emerald-700 font-extrabold text-[9px] px-2 py-0.5 rounded uppercase">
-                                    Valid
-                                  </span>
-                                )}
-                              </td>
-                              <td className="p-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => removeBulkImportRow(idx)}
-                                  className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
-                                  title="Hapus baris ini"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
+                      <tbody className="divide-y divide-slate-100">
+                        {importPreview.slice(0, 15).map((row, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="py-2 px-3 text-slate-400">{idx + 1}</td>
+                            <td className="py-2 px-3">{row.category}</td>
+                            <td className="py-2 px-3">{row.branch}</td>
+                            <td className="py-2 px-3 font-semibold">{row.customer_name}</td>
+                            <td className="py-2 px-3 font-mono">{row.license_plate}</td>
+                            <td className="py-2 px-3 text-right font-bold">{formatCurrency(row.value)}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
-
+                  {importPreview.length > 15 && (
+                    <p className="text-[11px] text-slate-400 mt-1 italic text-center">
+                      ...menampilkan 15 dari {importPreview.length} total baris data yang akan diimpor.
+                    </p>
+                  )}
                 </div>
               )}
-
             </div>
 
-            {/* Footer */}
-            <div className="p-5 border-t border-slate-100 flex justify-end space-x-2 bg-slate-50 rounded-b-3xl sticky bottom-0 z-10 flex-shrink-0">
-              <button 
-                type="button"
-                onClick={() => {
-                  setShowBulkImportModal(false);
-                  setBulkImportList([]);
-                  setBulkImportError(null);
-                }}
-                className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
-              >
-                Tutup
-              </button>
-              <button 
-                type="button"
-                onClick={executeBulkImport}
-                disabled={isProcessingImport || bulkImportList.length === 0 || bulkImportList.some(item => item.errors && item.errors.length > 0)}
-                className="px-5 py-2.5 text-xs font-extrabold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all flex items-center gap-1.5 shadow-lg shadow-blue-500/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isProcessingImport ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>
-                      Mengimpor {importProgress ? `${importProgress.current}/${importProgress.total}` : bulkImportList.length} Data...
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Mulai Import Massal ({bulkImportList.length} Baris)</span>
-                  </>
-                )}
-              </button>
+            <div className="flex items-center justify-between p-6 border-t border-slate-100 bg-slate-50/50">
+              <span className="text-xs font-bold text-slate-600">
+                {importPreview.length > 0 ? `${importPreview.length} Baris data terdeteksi siap diimpor` : 'Belum ada file yang diunggah'}
+              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsImportModalOpen(false);
+                    setImportPreview([]);
+                    setImportErrors([]);
+                    setImportProgress(null);
+                  }}
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  disabled={importPreview.length === 0 || isSubmitting || importProgress !== null}
+                  onClick={handleConfirmImport}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all flex items-center gap-2"
+                >
+                  {isSubmitting && <RefreshCw className="w-4 h-4 animate-spin" />}
+                  <span>Mulai Import Massal ({importPreview.length} Baris)</span>
+                </button>
+              </div>
             </div>
-
           </div>
         </div>
       )}
 
+      {/* 10. MODAL: BULK UPDATE STATUS (MATCHING DESIGN image_308f8e6a.png) */}
+      {isBulkUpdateModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-2xl my-auto overflow-hidden animate-in zoom-in-95">
+            {/* Header */}
+            <div className="flex items-start justify-between p-5 sm:p-6 border-b border-slate-100">
+              <div className="flex items-start gap-3">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-600 mt-2 shrink-0" />
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900">
+                    Update Status Massal ({selectedIds.size} Transaksi)
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Ubah status beberapa transaksi sekaligus secara cepat dan aman.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBulkUpdateModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-1.5 rounded-xl transition-colors cursor-pointer"
+                title="Tutup Modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 sm:p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+              {/* Selected Transactions & Role Information Box */}
+              <div className="p-4 bg-blue-50/70 border border-blue-200/90 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-xs font-black text-slate-900">
+                    Transaksi Terpilih ({selectedIds.size}):
+                  </span>
+                  <span className="px-3 py-1 bg-blue-100 text-blue-700 text-[10.5px] font-black uppercase rounded-lg tracking-wider">
+                    ROLE: {currentUser?.role?.toUpperCase() || 'ADMINISTRATOR'}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                  {Array.from(selectedIds).map(id => (
+                    <span
+                      key={id}
+                      className="px-2.5 py-1 bg-white border border-blue-200 text-blue-700 text-xs font-mono font-bold rounded-lg shadow-2xs"
+                    >
+                      {id}
+                    </span>
+                  ))}
+                </div>
+
+                <p className="text-[11px] text-blue-600 font-medium italic">
+                  * Hanya bidang status sesuai wewenang role Anda yang akan diproses.
+                </p>
+              </div>
+
+              {/* Section 1: SERAH TERIMA BERKAS & DOKUMEN LAMPIRAN MASSAL */}
+              <div className="p-4 sm:p-5 rounded-2xl border transition-all bg-white border-slate-200 shadow-2xs space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
+                      SERAH TERIMA BERKAS &amp; DOKUMEN LAMPIRAN MASSAL
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {!canUpdateHandover && (
+                      <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-slate-400" />
+                        Terkunci
+                      </span>
+                    )}
+                    <span className="px-3 py-1 bg-purple-100 text-purple-700 text-[10.5px] font-black rounded-full">
+                      Otorisasi ASO
+                    </span>
+                  </div>
+                </div>
+
+                <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${!canUpdateHandover ? 'opacity-60' : ''}`}>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      STATUS SERAH TERIMA
+                    </label>
+                    <select
+                      disabled={!canUpdateHandover}
+                      value={bulkHandoverStatus}
+                      onChange={(e) => setBulkHandoverStatus(e.target.value)}
+                      className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      <option value="-- Tidak Diubah --">-- Tidak Diubah --</option>
+                      <option value="Diterima Admin">Diterima Admin</option>
+                      <option value="Pending">Pending</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      TANGGAL SERAH TERIMA
+                    </label>
+                    <input
+                      type="date"
+                      disabled={!canUpdateHandover}
+                      value={bulkHandoverDate}
+                      onChange={(e) => setBulkHandoverDate(e.target.value)}
+                      className="w-full text-xs py-2 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                    />
+                  </div>
+                </div>
+
+                {/* Sub-upload: UPLOAD DOKUMEN / BERKAS BUKTI SERAH TERIMA MASSAL */}
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-600">
+                      UPLOAD DOKUMEN / BERKAS BUKTI SERAH TERIMA MASSAL <span className="text-rose-500">*</span>
+                    </span>
+                    <span className="px-2.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-black rounded-full uppercase">
+                      {selectedIds.size} TRANSAKSI TERPILIH
+                    </span>
+                  </div>
+
+                  <input
+                    type="file"
+                    ref={bulkFileInputRef}
+                    onChange={handleBulkFileInputChange}
+                    accept="image/*,application/pdf"
+                    className="hidden"
+                    id="bulk-file-upload-input"
+                  />
+
+                  {!bulkFile ? (
+                    <div
+                      onClick={() => bulkFileInputRef.current?.click()}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDraggingFile(true);
+                      }}
+                      onDragLeave={() => setIsDraggingFile(false)}
+                      onDrop={handleFileDrop}
+                      className={`border-2 border-dashed ${
+                        isDraggingFile ? 'border-blue-500 bg-blue-100/50' : 'border-blue-200 bg-blue-50/30 hover:bg-blue-50/70'
+                      } rounded-2xl p-5 text-center cursor-pointer transition-all group`}
+                    >
+                      <Upload className="w-6 h-6 text-blue-500 mx-auto mb-1.5 group-hover:scale-110 transition-transform" />
+                      <p className="text-xs font-bold text-slate-800">
+                        Pilih / Unggah Berkas Bukti Serah Terima (PDF / Foto)
+                      </p>
+                      <p className="text-[10.5px] text-slate-400 mt-0.5">
+                        File ini akan otomatis dilampirkan ke {selectedIds.size} transaksi yang dipilih sekaligus
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center justify-between gap-3 animate-in fade-in">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {bulkFile.type.startsWith('image/') ? (
+                          <img
+                            src={bulkFile.dataUrl}
+                            alt="Preview"
+                            className="w-10 h-10 object-cover rounded-lg border border-blue-200 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
+                            PDF
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-800 truncate" title={bulkFile.name}>
+                            {bulkFile.name}
+                          </p>
+                          <div className="flex items-center gap-2 text-[10.5px] text-slate-500 mt-0.5">
+                            <span>{formatFileSize(bulkFile.size)}</span>
+                            <span>•</span>
+                            <span className="text-emerald-700 font-bold flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Siap Dilampirkan
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => bulkFileInputRef.current?.click()}
+                          className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                        >
+                          Ganti
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBulkFile(null)}
+                          className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                          title="Hapus file"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Section 2: STATUS SAP / ERP CLAIM */}
+              <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+                canUpdateSap ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50/80 border-slate-200/70 opacity-60'
+              } space-y-2`}>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
+                    STATUS SAP / ERP CLAIM
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {!canUpdateSap && (
+                      <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-slate-400" />
+                        Terkunci
+                      </span>
+                    )}
+                    <span className="text-[11px] font-black text-purple-600 uppercase tracking-wider">
+                      WEWENANG SALES HEAD
+                    </span>
+                  </div>
+                </div>
+
+                <select
+                  disabled={!canUpdateSap}
+                  value={bulkSapStatus}
+                  onChange={(e) => setBulkSapStatus(e.target.value)}
+                  className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <option value="-- Tidak Diubah --">-- Tidak Diubah --</option>
+                  <option value="Bill">Bill</option>
+                  <option value="Not Bill">Not Bill</option>
+                  <option value="N/A">N/A</option>
+                </select>
+              </div>
+
+              {/* Section 3: STATUS PELUNASAN PEMBAYARAN */}
+              <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+                canUpdatePayment ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50/80 border-slate-200/70 opacity-60'
+              } space-y-2`}>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
+                    STATUS PELUNASAN PEMBAYARAN
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {!canUpdatePayment && (
+                      <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-slate-400" />
+                        Terkunci
+                      </span>
+                    )}
+                    <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">
+                      Wewenang Admin
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                    STATUS PELUNASAN
+                  </label>
+                  <select
+                    disabled={!canUpdatePayment}
+                    value={bulkPaymentStatus}
+                    onChange={(e) => setBulkPaymentStatus(e.target.value)}
+                    className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <option value="-- Tidak Diubah --">-- Tidak Diubah --</option>
+                    <option value="Lunas">Lunas</option>
+                    <option value="Belum Bayar">Belum Bayar</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Section 4: STATUS APPROVAL BACKCHARGE */}
+              <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+                canUpdateApproval ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50/80 border-slate-200/70 opacity-60'
+              } space-y-2`}>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
+                    STATUS APPROVAL BACKCHARGE
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {!canUpdateApproval && (
+                      <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-slate-400" />
+                        Terkunci
+                      </span>
+                    )}
+                    <span className="text-[11px] font-black text-amber-600 uppercase tracking-wider">
+                      WEWENANG RH / DH / KACAB / SALES HEAD
+                    </span>
+                  </div>
+                </div>
+
+                <select
+                  disabled={!canUpdateApproval}
+                  value={bulkApprovalStatus}
+                  onChange={(e) => setBulkApprovalStatus(e.target.value)}
+                  className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <option value="-- Tidak Diubah --">-- Tidak Diubah --</option>
+                  <option value="Disetujui">Disetujui</option>
+                  <option value="Ditolak">Ditolak</option>
+                </select>
+
+                <p className="text-[10.5px] text-slate-400 italic mt-1.5">
+                  * Memproses status approval dan menyinkronkan seluruh tier wewenang nominal yang berlaku.
+                </p>
+              </div>
+
+              {/* Section 5: CATATAN AUDIT / KETERANGAN UPDATE MASSAL */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black uppercase tracking-wider text-slate-800 block">
+                  CATATAN AUDIT / KETERANGAN UPDATE MASSAL <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={bulkAuditNote}
+                  onChange={(e) => setBulkAuditNote(e.target.value)}
+                  placeholder={`Update status massal oleh ${currentUser?.full_name || 'User'} (${currentUser?.role || 'Admin'})`}
+                  className="w-full text-xs py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between p-4 sm:p-5 border-t border-slate-100 bg-slate-50/50">
+              <button
+                type="button"
+                onClick={() => setIsBulkUpdateModalOpen(false)}
+                className="text-xs font-bold text-slate-600 hover:text-slate-900 px-4 py-2 transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={handleConfirmBulkUpdate}
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4 stroke-[3]" />
+                )}
+                <span>Terapkan Ke {selectedIds.size} Transaksi</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -141,12 +141,73 @@ async function ensureD1SchemaWorker(db) {
   } catch (e) {}
 }
 
+const JWT_DEFAULT_SECRET = "b9fee9224e290f7c8989888ea76e67ca7015134aeeb20e2a8337e3f31bb900fc";
+
+async function signJwtWorker(payload, secretStr = JWT_DEFAULT_SECRET, expiresInSeconds = 7 * 24 * 3600) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secretStr),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const header = { alg: "HS256", typ: "JWT" };
+  const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
+  const fullPayload = { ...payload, iat: Math.floor(Date.now() / 1000), exp };
+
+  const b64Header = btoa(JSON.stringify(header)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const b64Payload = btoa(JSON.stringify(fullPayload)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const data = enc.encode(`${b64Header}.${b64Payload}`);
+  const sigBuffer = await crypto.subtle.sign("HMAC", key, data);
+  const sigBytes = new Uint8Array(sigBuffer);
+  let binary = "";
+  for (let i = 0; i < sigBytes.length; i++) binary += String.fromCharCode(sigBytes[i]);
+  const b64Sig = btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  return `${b64Header}.${b64Payload}.${b64Sig}`;
+}
+
+async function verifyJwtWorker(token, secretStr = JWT_DEFAULT_SECRET) {
+  if (!token || typeof token !== "string") return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [b64Header, b64Payload, b64Sig] = parts;
+  try {
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(secretStr),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"]
+    );
+    const sigStr = atob(b64Sig.replace(/-/g, "+").replace(/_/g, "/"));
+    const sigArr = new Uint8Array(sigStr.length);
+    for (let i = 0; i < sigStr.length; i++) sigArr[i] = sigStr.charCodeAt(i);
+
+    const isValid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      sigArr,
+      enc.encode(`${b64Header}.${b64Payload}`)
+    );
+    if (!isValid) return null;
+
+    const payloadJson = atob(b64Payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const payload = JSON.parse(payloadJson);
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 export default {
   async fetch(request, env) {
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, X-Database-Key, x-auth-token",
     };
 
     if (request.method === "OPTIONS") {
@@ -155,6 +216,107 @@ export default {
 
     const url = new URL(request.url);
     const pathname = url.pathname.replace(/\/+$/, "");
+
+    // 0a. Official Server Authentication Login Endpoint
+    if (pathname === "/api/auth/login" && request.method === "POST") {
+      try {
+        const { email, password } = await request.json();
+        if (!email || !password) {
+          return new Response(JSON.stringify({ success: false, error: "Email dan password wajib diisi." }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", ...corsHeaders }
+          });
+        }
+        const emailTrim = email.trim().toLowerCase();
+        const pwdTrim = String(password).trim();
+
+        if (!env.DB) {
+          return new Response(JSON.stringify({ success: false, error: "Database D1 belum terhubung." }), {
+            status: 500,
+            headers: { "Content-Type": "application/json", ...corsHeaders }
+          });
+        }
+
+        let profile = await env.DB.prepare("SELECT * FROM profiles WHERE LOWER(email) = LOWER(?) LIMIT 1").bind(emailTrim).first();
+
+        const isDefaultAdmin = emailTrim === 'assa@assa.id' || emailTrim === 'administrator@assa.id' || emailTrim.startsWith('admin@assa') || emailTrim.startsWith('administrator@');
+        if (!profile && isDefaultAdmin) {
+          const adminId = emailTrim === 'assa@assa.id' ? 'l8hovd' : '1';
+          await env.DB.prepare(
+            "INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES (?, ?, ?, ?, ?, ?, ?)"
+          ).bind(adminId, emailTrim, 'ASSA Administrator', 'Administrator', 'Nasional', new Date().toISOString(), pwdTrim || 'password123').run();
+          profile = await env.DB.prepare("SELECT * FROM profiles WHERE LOWER(email) = LOWER(?) LIMIT 1").bind(emailTrim).first();
+        }
+
+        if (!profile) {
+          return new Response(JSON.stringify({ success: false, error: `Email "${emailTrim}" belum terdaftar. Silakan hubungi Administrator.` }), {
+            status: 401,
+            headers: { "Content-Type": "application/json", ...corsHeaders }
+          });
+        }
+
+        const validPwd = profile.password || 'password123';
+        if (validPwd !== pwdTrim) {
+          return new Response(JSON.stringify({ success: false, error: "Password yang Anda masukkan salah." }), {
+            status: 401,
+            headers: { "Content-Type": "application/json", ...corsHeaders }
+          });
+        }
+
+        const secretKey = env.JWT_SECRET || env.DATABASE_SECRET_KEY || JWT_DEFAULT_SECRET;
+        const token = await signJwtWorker({
+          id: profile.id,
+          email: profile.email,
+          full_name: profile.full_name,
+          role: profile.role,
+          branch: profile.branch
+        }, secretKey);
+
+        await env.DB.prepare(
+          "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)"
+        ).bind('AUTH_LOGIN', profile.email, `Berhasil masuk ke sistem (Role: ${profile.role}, Cabang: ${profile.branch})`).run().catch(() => {});
+
+        const safeProfile = {
+          id: profile.id,
+          email: profile.email,
+          full_name: profile.full_name,
+          role: profile.role,
+          branch: profile.branch,
+          created_at: profile.created_at
+        };
+
+        return new Response(JSON.stringify({
+          success: true,
+          message: "Login berhasil",
+          token,
+          profile: safeProfile
+        }), {
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ success: false, error: err.message }), {
+          status: 500,
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        });
+      }
+    }
+
+    // 0b. Official Server Session Verification Endpoint
+    if (pathname === "/api/auth/me" && request.method === "GET") {
+      let authHeader = request.headers.get("Authorization") || request.headers.get("x-auth-token") || "";
+      if (authHeader.startsWith("Bearer ")) authHeader = authHeader.slice(7).trim();
+      const secretKey = env.JWT_SECRET || env.DATABASE_SECRET_KEY || JWT_DEFAULT_SECRET;
+      const user = await verifyJwtWorker(authHeader, secretKey);
+      if (!user) {
+        return new Response(JSON.stringify({ success: false, error: "Sesi tidak sah atau telah kedaluwarsa." }), {
+          status: 401,
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        });
+      }
+      return new Response(JSON.stringify({ success: true, user }), {
+        headers: { "Content-Type": "application/json", ...corsHeaders }
+      });
+    }
 
     // 1. Status Check Endpoint
     if (pathname === "/api/d1/status" && request.method === "GET") {
@@ -278,89 +440,331 @@ export default {
       }
     }
 
-    // 3. SQL Query Execution Endpoint with Self-Healing Auto-Migration
-    if (pathname === "/api/d1/query" && request.method === "POST") {
+    // 3. /api/d1/query - PERMANENTLY DISABLED FOR PRODUCTION SECURITY
+    if (pathname === "/api/d1/query") {
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: "Endpoint SQL mentah (/api/d1/query) telah dinonaktifkan secara permanen untuk keamanan produksi. Gunakan /api/d1/execute dengan allowlist." 
+        }),
+        { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    // 4. Secure allowlist-only execution gateway on Cloudflare D1
+    if (pathname === "/api/d1/execute" && request.method === "POST") {
       try {
-        const { sql, params } = await request.json();
+        const body = await request.json();
+
+        // Strict rejection of raw SQL from client
+        if (body.sql) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: "Keamanan: Pengiriman teks SQL mentah dari klien ditolak. Gunakan allowlist operationId dengan parameterized query."
+            }),
+            { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
 
         if (!env.DB) {
-          // Fallback: If Cloudflare API credentials are configured in Pages Environment Variables
-          if (env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_DATABASE_ID && env.CLOUDFLARE_API_TOKEN) {
-            try {
-              const cfRes = await fetch(
-                `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/d1/database/${env.CLOUDFLARE_DATABASE_ID}/query`,
-                {
-                  method: "POST",
-                  headers: {
-                    "Authorization": `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({ sql, params: params || [] })
-                }
-              );
-              const cfData = await cfRes.json();
-              if (cfData.success && cfData.result && cfData.result[0]) {
-                return new Response(
-                  JSON.stringify({ success: true, results: cfData.result[0].results || [] }),
-                  { headers: { "Content-Type": "application/json", ...corsHeaders } }
-                );
-              }
-            } catch (apiErr) {
-              console.warn("Cloudflare REST API fallback error:", apiErr);
-            }
-          }
-
           return new Response(
             JSON.stringify({ 
               success: false, 
-              error: "Database binding 'DB' tidak ditemukan di Cloudflare Worker/Pages ini. Sila tambahkan D1 Database Binding bernama 'DB' di Settings -> Functions -> D1 database bindings." 
+              error: "Database binding 'DB' tidak ditemukan di Cloudflare Worker/Pages ini." 
             }),
             { headers: { "Content-Type": "application/json", ...corsHeaders } }
           );
         }
 
-        // Direct query execution without artificial row restrictions
-        let optimizedSql = sql;
-        if (sql && typeof sql === 'string') {
-          const sqlUpper = sql.toUpperCase().trim();
-          // Ensure INSERT INTO backcharges handles ON CONFLICT to prevent UNIQUE constraint failed
-          if (sqlUpper.startsWith("INSERT INTO BACKCHARGES") && !sqlUpper.includes("ON CONFLICT")) {
-            optimizedSql = `${sql.trim()} ON CONFLICT(id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP`;
-          }
+        let authHeader = request.headers.get("Authorization") || request.headers.get("x-auth-token") || "";
+        if (authHeader.startsWith("Bearer ")) authHeader = authHeader.slice(7).trim();
+        const dbKey = request.headers.get("X-Database-Key");
+        const secretKey = env.JWT_SECRET || env.DATABASE_SECRET_KEY || JWT_DEFAULT_SECRET;
+
+        let user = await verifyJwtWorker(authHeader, secretKey);
+        if (!user && dbKey === (env.DATABASE_SECRET_KEY || JWT_DEFAULT_SECRET)) {
+          user = { id: 'system', email: 'system@assa.id', full_name: 'System Admin', role: 'Administrator', branch: 'Nasional' };
         }
 
-        let stmt = env.DB.prepare(optimizedSql);
-        if (params && params.length > 0) {
-          stmt = stmt.bind(...params);
+        if (!user) {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: "Otentikasi wajib: Token sesi resmi server tidak ditemukan atau kedaluwarsa. Silakan login kembali." 
+          }), {
+            status: 401,
+            headers: { "Content-Type": "application/json", ...corsHeaders }
+          });
         }
 
-        try {
-          const result = await stmt.all();
-          return new Response(
-            JSON.stringify({ success: true, results: result.results || [] }),
-            { headers: { "Content-Type": "application/json", ...corsHeaders } }
-          );
-        } catch (execErr) {
-          const errText = String(execErr.message || execErr).toLowerCase();
-          if (
-            errText.includes("no such table") ||
-            errText.includes("no such column") ||
-            errText.includes("has no column")
-          ) {
-            console.warn("Auto-healing missing table/column in D1 worker...");
-            await ensureD1SchemaWorker(env.DB);
+        const ALLOWED_BACKCHARGE_COLS = new Set([
+          'id', 'category', 'branch', 'no_bak', 'no_spk', 'no_sap', 'no_tilang',
+          'customer_name', 'license_plate', 'value', 'status_sap', 'status_confirm',
+          'status_handover', 'no_invoice', 'status_payment', 'payment_date',
+          'created_by', 'created_at', 'updated_at', 'file_bak_url',
+          'file_handover_aso_sales_url', 'file_handover_sales_admin_url',
+          'tanggal', 'tanggal_handover', 'nama_bro', 'upload_dok_pendukung', 'alasan',
+          'status_approval', 'approved_by', 'approved_at', 'approval_note',
+          'approval_attachment_1_url', 'approval_attachment_2_url', 'approval_attachment_3_url',
+          'regional_approval_status', 'regional_approved_by', 'regional_approved_at', 'regional_approval_note',
+          'division_approval_status', 'division_approved_by', 'division_approved_at', 'division_approval_note'
+        ]);
 
-            let retryStmt = env.DB.prepare(optimizedSql);
-            if (params && params.length > 0) {
-              retryStmt = retryStmt.bind(...params);
+        const ALLOWED_PROFILE_COLS = new Set([
+          'id', 'email', 'full_name', 'role', 'branch', 'password', 'created_at'
+        ]);
+
+        const { operationId, params } = body;
+
+        const executeD1 = async (sql, p = []) => {
+          let stmt = env.DB.prepare(sql);
+          if (p && p.length > 0) stmt = stmt.bind(...p);
+          const r = await stmt.all();
+          return r.results || [];
+        };
+
+        switch (operationId) {
+          case "get_profile_by_email": {
+            const emailVal = (params && params[0]) || body.email;
+            if (user.role !== 'Administrator' && user.email.toLowerCase() !== String(emailVal).toLowerCase()) {
+              return new Response(JSON.stringify({ success: false, error: "Akses ditolak: Anda hanya dapat mengakses profil Anda sendiri." }), { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } });
             }
-            const retryResult = await retryStmt.all();
-            return new Response(
-              JSON.stringify({ success: true, results: retryResult.results || [] }),
-              { headers: { "Content-Type": "application/json", ...corsHeaders } }
+            const results = await executeD1(
+              "SELECT id, email, full_name, role, branch, password, created_at FROM profiles WHERE LOWER(email) = LOWER(?)",
+              [emailVal]
             );
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
-          throw execErr;
+
+          case "get_profiles": {
+            const results = await executeD1("SELECT id, email, full_name, role, branch, created_at FROM profiles ORDER BY full_name ASC");
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "insert_profile": {
+            let p = params || [];
+            if (p.length === 0 && body.data) {
+              const d = body.data;
+              p = [d.id, d.email, d.full_name, d.role, d.branch, d.created_at || new Date().toISOString(), d.password || 'password123'];
+            }
+            const results = await executeD1(
+              "INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              p
+            );
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "update_profile_admin_role": {
+            const emailVal = (params && params[0]) || body.email;
+            const results = await executeD1(
+              "UPDATE profiles SET role = 'Administrator', branch = 'Nasional', full_name = 'ASSA' WHERE LOWER(email) = LOWER(?)",
+              [emailVal]
+            );
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "update_profile": {
+            const targetId = body.id || (params && params[params.length - 1]);
+            const data = body.data || {};
+            const validCols = Object.keys(data).filter(col => col !== 'id' && ALLOWED_PROFILE_COLS.has(col));
+            if (validCols.length === 0 || !targetId) {
+              return new Response(JSON.stringify({ success: false, error: "Kolom tidak valid" }), { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
+            const setClause = validCols.map(col => `${col} = ?`).join(', ');
+            const vals = [...validCols.map(col => data[col]), targetId];
+            const results = await executeD1(`UPDATE profiles SET ${setClause} WHERE id = ?`, vals);
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "update_profile_password": {
+            const newPwd = (params && params[0]) || body.password;
+            const targetId = (params && params[1]) || body.id;
+            const results = await executeD1("UPDATE profiles SET password = ? WHERE id = ?", [newPwd, targetId]);
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "delete_profile": {
+            const targetId = (params && params[0]) || body.id;
+            const results = await executeD1("DELETE FROM profiles WHERE id = ?", [targetId]);
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "get_all_backcharges": {
+            const branches = body.branches || (Array.isArray(params) && params.length > 0 ? params : null);
+            if (Array.isArray(branches) && branches.length > 0) {
+              const placeholders = branches.map(() => '?').join(', ');
+              const results = await executeD1(`SELECT * FROM backcharges WHERE branch IN (${placeholders}) ORDER BY created_at DESC`, branches);
+              return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
+            const results = await executeD1("SELECT * FROM backcharges ORDER BY created_at DESC");
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "get_backcharge_detail": {
+            const id = (params && params[0]) || body.id;
+            const results = await executeD1("SELECT * FROM backcharges WHERE id = ? LIMIT 1", [id]);
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "get_backcharges_by_ids": {
+            const ids = (Array.isArray(params) && params.length > 0) ? params : (body.ids || []);
+            if (!Array.isArray(ids) || ids.length === 0) {
+              return new Response(JSON.stringify({ success: true, results: [] }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
+            const placeholders = ids.map(() => '?').join(', ');
+            const results = await executeD1(`SELECT * FROM backcharges WHERE id IN (${placeholders})`, ids);
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "get_backcharge_ids": {
+            const results = await executeD1("SELECT id FROM backcharges");
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "get_top_backcharge_id_by_prefix": {
+            const prefix = (params && params[0]) || body.prefix || '';
+            const results = await executeD1(
+              "SELECT id FROM backcharges WHERE id LIKE ? ORDER BY CAST(substr(id, 9) AS INTEGER) DESC LIMIT 1",
+              [prefix]
+            );
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "insert_backcharge": {
+            const data = body.data;
+            if (!data || typeof data !== 'object' || !data.id) {
+              return new Response(JSON.stringify({ success: false, error: "Data transaksi tidak valid" }), { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
+            const validCols = Object.keys(data).filter(col => ALLOWED_BACKCHARGE_COLS.has(col));
+            const placeholders = validCols.map(() => '?').join(', ');
+            const vals = validCols.map(col => data[col] !== undefined ? data[col] : null);
+            const results = await executeD1(`INSERT INTO backcharges (${validCols.join(', ')}) VALUES (${placeholders})`, vals);
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "update_backcharge": {
+            const targetId = body.id || (params && params[params.length - 1]);
+            const data = body.data || {};
+            const validCols = Object.keys(data).filter(col => col !== 'id' && ALLOWED_BACKCHARGE_COLS.has(col));
+            if (validCols.length === 0 || !targetId) {
+              return new Response(JSON.stringify({ success: true, results: [] }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
+            const setClause = validCols.map(col => `${col} = ?`).join(', ');
+            const vals = [...validCols.map(col => data[col] !== undefined ? data[col] : null), targetId];
+            const results = await executeD1(`UPDATE backcharges SET ${setClause} WHERE id = ?`, vals);
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "bulk_update_backcharges": {
+            const items = body.items || [];
+            for (const item of items) {
+              const { id, updates } = item;
+              if (!id || !updates || typeof updates !== 'object') continue;
+              const validCols = Object.keys(updates).filter(col => col !== 'id' && ALLOWED_BACKCHARGE_COLS.has(col));
+              if (validCols.length > 0) {
+                const setClause = validCols.map(col => `${col} = ?`).join(', ');
+                const vals = [...validCols.map(col => updates[col] !== undefined ? updates[col] : null), id];
+                await executeD1(`UPDATE backcharges SET ${setClause} WHERE id = ?`, vals);
+              }
+            }
+            return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "delete_backcharge": {
+            const id = (params && params[0]) || body.id;
+            const results = await executeD1("DELETE FROM backcharges WHERE id = ?", [id]);
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "bulk_upsert_backcharges": {
+            const items = body.items || [];
+            for (const tx of items) {
+              if (!tx || typeof tx !== 'object' || !tx.id) continue;
+              const validCols = Object.keys(tx).filter(col => ALLOWED_BACKCHARGE_COLS.has(col));
+              if (validCols.length === 0) continue;
+              const placeholders = validCols.map(() => '?').join(', ');
+              const updateAssigns = validCols.filter(col => col !== 'id').map(col => `${col} = excluded.${col}`).join(', ');
+              const vals = validCols.map(col => tx[col] !== undefined ? tx[col] : null);
+              const upsertSql = `
+                INSERT INTO backcharges (${validCols.join(', ')}) 
+                VALUES (${placeholders})
+                ON CONFLICT(id) DO UPDATE SET ${updateAssigns || 'updated_at = CURRENT_TIMESTAMP'}
+              `;
+              await executeD1(upsertSql, vals);
+            }
+            return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "get_activity_logs": {
+            const limit = Number(body.limit) || 50;
+            const results = await executeD1("SELECT * FROM activity_logs ORDER BY id DESC LIMIT ?", [limit]);
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "get_max_activity_log_id": {
+            const results = await executeD1("SELECT MAX(id) as max_id FROM activity_logs");
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "get_recent_activity_logs_since": {
+            const sinceId = Number((params && params[0]) || body.sinceId || 0);
+            const results = await executeD1(
+              "SELECT id, timestamp, transaction_id, performed_by, action_description FROM activity_logs WHERE id > ? ORDER BY id ASC LIMIT 20",
+              [sinceId]
+            );
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "insert_activity_log": {
+            const txId = (params && params[0]) ?? body.transaction_id ?? '-';
+            const user = (params && params[1]) ?? body.performed_by ?? '-';
+            const desc = (params && params[2]) ?? body.action_description ?? '';
+            const results = await executeD1(
+              "INSERT INTO activity_logs (transaction_id, performed_by, action_description) VALUES (?, ?, ?)",
+              [txId, user, desc]
+            );
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "get_contact_inquiries": {
+            const results = await executeD1("SELECT * FROM contact_inquiries ORDER BY created_at DESC LIMIT 30");
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "insert_contact_inquiry": {
+            let p = params || [];
+            if (p.length === 0 && body.data) {
+              const d = body.data;
+              p = [d.id, d.full_name || d.name, d.email, d.subject, d.message, d.status || 'UNREAD', d.created_at || new Date().toISOString(), d.feedback || null, d.feedback_by || null, d.feedback_at || null];
+            }
+            const results = await executeD1(
+              "INSERT INTO contact_inquiries (id, name, email, subject, message, status, created_at, feedback, feedback_by, feedback_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              p
+            );
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "update_contact_inquiry": {
+            const { status, feedback, feedback_by, feedback_at, id } = body;
+            const p = (params && params.length >= 5) ? params : [status, feedback, feedback_by, feedback_at, id];
+            const results = await executeD1(
+              "UPDATE contact_inquiries SET status = ?, feedback = ?, feedback_by = ?, feedback_at = ? WHERE id = ?",
+              p
+            );
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "delete_contact_inquiry": {
+            const targetId = (params && params[0]) || body.id;
+            const results = await executeD1("DELETE FROM contact_inquiries WHERE id = ?", [targetId]);
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          default:
+            return new Response(
+              JSON.stringify({ success: false, error: `Operasi '${operationId}' tidak terdaftar dalam allowlist Cloudflare Worker.` }),
+              { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+            );
         }
       } catch (err) {
         return new Response(

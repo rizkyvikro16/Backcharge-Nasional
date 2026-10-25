@@ -6,6 +6,15 @@
 
 import fs from "fs";
 import path from "path";
+import { DatabaseSync } from "node:sqlite";
+
+let localDbInstance: any = null;
+function getLocalDb() {
+  if (!localDbInstance) {
+    localDbInstance = new DatabaseSync("local_dev.db");
+  }
+  return localDbInstance;
+}
 
 export interface D1QueryResponse {
   success: boolean;
@@ -44,6 +53,7 @@ export async function ensureD1TablesExist(): Promise<void> {
             role TEXT NOT NULL,
             branch TEXT NOT NULL,
             password TEXT DEFAULT 'password123',
+            force_password_reset BOOLEAN DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
         );
 
@@ -55,6 +65,7 @@ export async function ensureD1TablesExist(): Promise<void> {
             no_spk TEXT DEFAULT '-',
             no_sap TEXT DEFAULT '-',
             no_tilang TEXT DEFAULT '-',
+            no_cmd TEXT DEFAULT '-',
             customer_name TEXT NOT NULL,
             license_plate TEXT DEFAULT '-',
             value REAL NOT NULL DEFAULT 0,
@@ -113,47 +124,95 @@ export async function ensureD1TablesExist(): Promise<void> {
 
         CREATE INDEX IF NOT EXISTS idx_backcharges_created_at ON backcharges(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_backcharges_branch_created ON backcharges(branch, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_category ON backcharges(category);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_branch ON backcharges(branch);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_status_payment ON backcharges(status_payment);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_status_sap ON backcharges(status_sap);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_status_handover ON backcharges(status_handover);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_status_approval ON backcharges(status_approval);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_reg_approval ON backcharges(regional_approval_status);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_div_approval ON backcharges(division_approval_status);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_category ON backcharges(category);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_branch ON backcharges(branch);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_status_payment ON backcharges(status_payment);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_status_handover ON backcharges(status_handover);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_license_plate ON backcharges(license_plate);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_customer_name ON backcharges(customer_name);
         CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles(email);
-        CREATE INDEX IF NOT EXISTS idx_activity_logs_timestamp ON activity_logs(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
       `;
 
       await queryD1(initSql);
       hasInitializedD1Tables = true;
       console.log("✅ Cloudflare D1 tables initialized via single batch execution.");
 
-      // Check if D1 backcharges table is empty, auto-seed with full migration dataset
+      // Pastikan kolom force_password_reset tersedia di profiles
       try {
-        const countRes = await queryD1Direct("SELECT COUNT(*) as count FROM backcharges");
-        const count = Number(countRes?.[0]?.count) || 0;
-        if (count === 0) {
-          console.log("ℹ️ Cloudflare D1 database is newly created and empty. Auto-seeding full migration dataset...");
-          // Execute migration without re-triggering ensureD1TablesExist
-          const targetPath = path.join(process.cwd(), "cloudflare_d1_migration.sql");
-          if (fs.existsSync(targetPath)) {
-            const rawSql = fs.readFileSync(targetPath, "utf-8");
-            const lines = rawSql.split("\n").filter(l => !l.trim().startsWith("--"));
-            const statements = lines.join("\n").split(";").map(s => s.trim()).filter(s => s.length > 0).map(s => s + ";");
-            const BATCH_SIZE = 30;
-            for (let i = 0; i < statements.length; i += BATCH_SIZE) {
-              const batch = statements.slice(i, i + BATCH_SIZE).join("\n");
-              try {
-                await queryD1(batch);
-              } catch (bErr: any) {
-                // Ignore duplicate keys
-              }
-              await new Promise(r => setTimeout(r, 150));
-            }
-            console.log(`🎉 Auto-seeded ${statements.length} migration statements to Cloudflare D1.`);
-          }
+        const columns = await queryD1("PRAGMA table_info(profiles)");
+        const hasColumn = columns.some((col: any) => col.name === 'force_password_reset');
+        if (!hasColumn) {
+          await queryD1("ALTER TABLE profiles ADD COLUMN force_password_reset BOOLEAN DEFAULT 0");
         }
-      } catch (checkErr: any) {
-        console.warn("Notice checking D1 row count:", checkErr.message);
+      } catch (err: any) {
+        console.warn("⚠️ Failed to check/add force_password_reset column:", err.message);
       }
+
+      // Pastikan kolom no_cmd tersedia di backcharges
+      try {
+        const columns = await queryD1("PRAGMA table_info(backcharges)");
+        const hasColumn = columns.some((col: any) => col.name === 'no_cmd');
+        if (!hasColumn) {
+          await queryD1("ALTER TABLE backcharges ADD COLUMN no_cmd TEXT DEFAULT '-'");
+        }
+      } catch (err: any) {
+        console.warn("⚠️ Failed to check/add no_cmd column:", err.message);
+      }
+
+      try {
+        await queryD1(`
+          INSERT OR IGNORE INTO profiles (id, email, full_name, role, branch, created_at, password, force_password_reset) 
+          VALUES ('1', 'administrator@assa.id', 'ASSA Administrator', 'Administrator', 'Nasional', datetime('now'), 'password123', 0);
+          INSERT OR IGNORE INTO profiles (id, email, full_name, role, branch, created_at, password, force_password_reset) 
+          VALUES ('l8hovd', 'assa@assa.id', 'ASSA Admin', 'Administrator', 'Nasional', datetime('now'), 'password123', 0);
+        `);
+      } catch {
+        // Abaikan jika sudah ada
+      }
+
+      // Run seeding in background asynchronously so server starts instantly!
+      (async () => {
+        try {
+          const countRes = await queryD1Direct("SELECT COUNT(*) as count FROM backcharges");
+          const count = Number(countRes?.[0]?.count) || 0;
+          if (count === 0) {
+            console.log("ℹ️ Cloudflare D1 database is newly created and empty. Auto-seeding full migration dataset in background...");
+            const targetPath = path.join(process.cwd(), "cloudflare_d1_migration.sql");
+            if (fs.existsSync(targetPath)) {
+              const rawSql = fs.readFileSync(targetPath, "utf-8");
+              const lines = rawSql.split("\n").filter(l => !l.trim().startsWith("--"));
+              const statements = lines.join("\n").split(";").map(s => s.trim()).filter(s => s.length > 0).map(s => s + ";");
+              const BATCH_SIZE = 30;
+              for (let i = 0; i < statements.length; i += BATCH_SIZE) {
+                const batch = statements.slice(i, i + BATCH_SIZE).join("\n");
+                try {
+                  await queryD1(batch);
+                } catch (bErr: any) {
+                  // Ignore duplicate keys
+                }
+                await new Promise(r => setTimeout(r, 50));
+              }
+              console.log(`🎉 Auto-seeded ${statements.length} migration statements to Cloudflare D1 in background.`);
+            }
+          }
+        } catch (checkErr: any) {
+          console.warn("Notice checking D1 row count:", checkErr.message);
+        }
+      })().catch(() => {});
 
       // Background cleanup: migrate any existing base64 entries in D1 to short disk URLs
       cleanExistingD1Base64().catch(() => {});
     } catch (err: any) {
-      console.error("❌ Failed to auto-migrate Cloudflare D1 tables:", err.message);
+      console.error("❌ Failed to auto-migrate Cloudflare D1 tables:", err.message, err.stack);
     } finally {
       activeMigrationPromise = null;
     }
@@ -242,7 +301,7 @@ interface CacheEntry {
   expiry: number;
 }
 const queryCache = new Map<string, CacheEntry>();
-const CACHE_TTL_MS = 30000; // 30 seconds fresh cache for identical queries
+const CACHE_TTL_MS = 900000; // 15 minutes fresh cache for identical queries to minimize D1 Rows Read
 
 let globalRateLimitCooldownUntil = 0;
 
@@ -423,9 +482,31 @@ async function queryD1Direct(sql: string, params: any[] = []): Promise<any[]> {
   const apiToken = process.env.CLOUDFLARE_API_TOKEN || '';
 
   if (!accountId || !databaseId || !apiToken) {
-    throw new Error(
-      "Kredensial Cloudflare D1 belum terkonfigurasi. Pastikan CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_DATABASE_ID, dan CLOUDFLARE_API_TOKEN terisi di Environment Variables."
-    );
+    const db = getLocalDb();
+    const cleanParams = sanitizeSqlParams(params);
+    const cleanSql = sanitizeSqlString(sql);
+    try {
+      const trimmed = cleanSql.trim();
+      const isSelect = /^(SELECT|PRAGMA|EXPLAIN|SHOW)/i.test(trimmed);
+      if (isSelect) {
+        const stmt = db.prepare(cleanSql);
+        return stmt.all(...cleanParams);
+      } else {
+        if (cleanParams && cleanParams.length > 0) {
+          const stmt = db.prepare(cleanSql);
+          stmt.run(...cleanParams);
+          return [];
+        } else {
+          db.exec(cleanSql);
+          return [];
+        }
+      }
+    } catch (localErr: any) {
+      if (/already exists|duplicate column/i.test(localErr.message)) {
+        return [];
+      }
+      throw localErr;
+    }
   }
 
   // Sanitize both params and sql before sending to Cloudflare

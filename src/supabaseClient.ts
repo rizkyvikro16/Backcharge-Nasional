@@ -116,7 +116,7 @@ if (!localStorage.getItem('bc_backcharges')) {
       value: 1200000,
       status_sap: 'N/A',
       status_confirm: 'Telah Dikonfirmasi',
-      status_handover: 'Diserahkan ke Admin',
+      status_handover: 'Diterima Admin',
       no_invoice: '-',
       status_payment: 'Belum Bayar',
       created_by: 'bro.sby@company.id',
@@ -157,7 +157,7 @@ if (!localStorage.getItem('bc_backcharges')) {
       value: 2500000,
       status_sap: 'N/A',
       status_confirm: 'Belum Konfirmasi',
-      status_handover: 'Diserahkan ke Admin',
+      status_handover: 'Diterima Admin',
       no_invoice: '-',
       status_payment: 'Belum Bayar',
       created_by: 'aso.ptk@company.id',
@@ -179,6 +179,10 @@ if (!localStorage.getItem('bc_backcharges')) {
       }
       if (tx.branch === 'Pontianak') {
         tx.branch = 'BSO Pontianak';
+        modified = true;
+      }
+      if (tx.status_handover === 'Diserahkan ke Admin') {
+        tx.status_handover = 'Diterima Admin';
         modified = true;
       }
     });
