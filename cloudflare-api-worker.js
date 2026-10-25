@@ -1,3 +1,5 @@
+import bcrypt from "bcryptjs";
+
 // Helper function for automatic table creation & migration inside Worker
 async function ensureD1SchemaWorker(db) {
   if (!db) return;
@@ -206,57 +208,111 @@ export default {
   async fetch(request, env) {
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, X-Database-Key, x-auth-token",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, Accept, Origin, X-Requested-With, Cache-Control, Pragma, X-Database-Key, x-auth-token",
+      "Access-Control-Max-Age": "86400",
     };
 
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, { status: 204, headers: corsHeaders });
     }
 
     const url = new URL(request.url);
-    const pathname = url.pathname.replace(/\/+$/, "");
+    const pathname = url.pathname.replace(/\/+$/, "") || "/";
 
-    // 0a. Official Server Authentication Login Endpoint
-    if (pathname === "/api/auth/login" && request.method === "POST") {
+    // Health check endpoint
+    if ((pathname === "/health" || pathname === "/healthz" || pathname === "/api/health") && (request.method === "GET" || request.method === "HEAD")) {
+      return new Response(
+        JSON.stringify({
+          status: "healthy",
+          service: "backcharge-nasional-cloudflare-worker",
+          timestamp: new Date().toISOString()
+        }),
+        { headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    // 0a. Official Server Authentication Login Endpoint (supports /api/auth/login, /api/login, /api/auth)
+    const isLoginRoute = pathname === "/api/auth/login" || pathname === "/api/login" || pathname === "/api/auth";
+    if (isLoginRoute) {
+      if (request.method !== "POST") {
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: `Method ${request.method} tidak diizinkan pada endpoint login. Gunakan HTTP POST.` 
+          }),
+          {
+            status: 405,
+            headers: {
+              "Content-Type": "application/json",
+              "Allow": "POST, OPTIONS",
+              ...corsHeaders
+            }
+          }
+        );
+      }
+
       try {
-        const { email, password } = await request.json();
-        if (!email || !password) {
+        const body = await request.json().catch(() => ({}));
+        const inputIdentifier = (body.email || body.username || "").toString().trim().toLowerCase();
+        const pwdTrim = body.password !== undefined && body.password !== null ? String(body.password).trim() : "";
+
+        if (!inputIdentifier || !pwdTrim) {
           return new Response(JSON.stringify({ success: false, error: "Email dan password wajib diisi." }), {
             status: 400,
             headers: { "Content-Type": "application/json", ...corsHeaders }
           });
         }
-        const emailTrim = email.trim().toLowerCase();
-        const pwdTrim = String(password).trim();
 
         if (!env.DB) {
-          return new Response(JSON.stringify({ success: false, error: "Database D1 belum terhubung." }), {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: "Database D1 belum terhubung di Cloudflare Pages. Pastikan binding DB telah ditambahkan di Settings -> Functions -> D1 database bindings." 
+          }), {
             status: 500,
             headers: { "Content-Type": "application/json", ...corsHeaders }
           });
         }
 
-        let profile = await env.DB.prepare("SELECT * FROM profiles WHERE LOWER(email) = LOWER(?) LIMIT 1").bind(emailTrim).first();
+        let profile = null;
+        try {
+          profile = await env.DB.prepare("SELECT * FROM profiles WHERE LOWER(email) = LOWER(?) LIMIT 1").bind(inputIdentifier).first();
+        } catch (tableErr) {
+          // Auto-heal schema if tables do not exist yet
+          await ensureD1SchemaWorker(env.DB).catch(() => {});
+          profile = await env.DB.prepare("SELECT * FROM profiles WHERE LOWER(email) = LOWER(?) LIMIT 1").bind(inputIdentifier).first().catch(() => null);
+        }
 
-        const isDefaultAdmin = emailTrim === 'assa@assa.id' || emailTrim === 'administrator@assa.id' || emailTrim.startsWith('admin@assa') || emailTrim.startsWith('administrator@');
+        const isDefaultAdmin = inputIdentifier === 'assa@assa.id' || inputIdentifier === 'administrator@assa.id' || inputIdentifier.startsWith('admin@assa') || inputIdentifier.startsWith('administrator@');
         if (!profile && isDefaultAdmin) {
-          const adminId = emailTrim === 'assa@assa.id' ? 'l8hovd' : '1';
+          const adminId = inputIdentifier === 'assa@assa.id' ? 'l8hovd' : '1';
           await env.DB.prepare(
             "INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES (?, ?, ?, ?, ?, ?, ?)"
-          ).bind(adminId, emailTrim, 'ASSA Administrator', 'Administrator', 'Nasional', new Date().toISOString(), pwdTrim || 'password123').run();
-          profile = await env.DB.prepare("SELECT * FROM profiles WHERE LOWER(email) = LOWER(?) LIMIT 1").bind(emailTrim).first();
+          ).bind(adminId, inputIdentifier, 'ASSA Administrator', 'Administrator', 'Nasional', new Date().toISOString(), pwdTrim || 'password123').run().catch(() => {});
+          profile = await env.DB.prepare("SELECT * FROM profiles WHERE LOWER(email) = LOWER(?) LIMIT 1").bind(inputIdentifier).first().catch(() => null);
         }
 
         if (!profile) {
-          return new Response(JSON.stringify({ success: false, error: `Email "${emailTrim}" belum terdaftar. Silakan hubungi Administrator.` }), {
+          return new Response(JSON.stringify({ success: false, error: `Email "${inputIdentifier}" belum terdaftar. Silakan hubungi Administrator.` }), {
             status: 401,
             headers: { "Content-Type": "application/json", ...corsHeaders }
           });
         }
 
-        const validPwd = profile.password || 'password123';
-        if (validPwd !== pwdTrim) {
+        // Verify password with bcrypt or plain-text fallback
+        let isPasswordCorrect = false;
+        const storedPwd = String(profile.password || 'password123');
+        if (storedPwd.startsWith("$2a$") || storedPwd.startsWith("$2b$")) {
+          try {
+            isPasswordCorrect = await bcrypt.compare(pwdTrim, storedPwd);
+          } catch {
+            isPasswordCorrect = false;
+          }
+        } else {
+          isPasswordCorrect = (storedPwd === pwdTrim || (isDefaultAdmin && pwdTrim === 'password123'));
+        }
+
+        if (!isPasswordCorrect) {
           return new Response(JSON.stringify({ success: false, error: "Password yang Anda masukkan salah." }), {
             status: 401,
             headers: { "Content-Type": "application/json", ...corsHeaders }
@@ -774,9 +830,31 @@ export default {
       }
     }
 
+    // Catch-all for API & D1 routes that were not matched above
+    if (pathname.startsWith("/api/") || pathname.startsWith("/d1/")) {
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `Endpoint '${pathname}' [${request.method}] tidak ditemukan di API Worker.` 
+        }),
+        { status: 404, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
     // Serve static assets for Cloudflare Pages / Workers Sites
     if (env.ASSETS) {
-      return await env.ASSETS.fetch(request);
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return new Response("Method Not Allowed for static assets", {
+          status: 405,
+          headers: { ...corsHeaders, "Allow": "GET, HEAD, OPTIONS" }
+        });
+      }
+      let assetRes = await env.ASSETS.fetch(request);
+      if (assetRes.status === 404 && request.method === "GET") {
+        const indexUrl = new URL("/", request.url);
+        return await env.ASSETS.fetch(new Request(indexUrl, request));
+      }
+      return assetRes;
     }
 
     return new Response(
