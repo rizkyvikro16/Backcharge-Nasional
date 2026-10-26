@@ -286,9 +286,10 @@ export default {
         const isDefaultAdmin = inputIdentifier === 'assa@assa.id' || inputIdentifier === 'administrator@assa.id' || inputIdentifier.startsWith('admin@assa') || inputIdentifier.startsWith('administrator@');
         if (!profile && isDefaultAdmin) {
           const adminId = inputIdentifier === 'assa@assa.id' ? 'l8hovd' : '1';
+          const defaultHashed = await bcrypt.hash(pwdTrim || 'password123', 10);
           await env.DB.prepare(
             "INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES (?, ?, ?, ?, ?, ?, ?)"
-          ).bind(adminId, inputIdentifier, 'ASSA Administrator', 'Administrator', 'Nasional', new Date().toISOString(), pwdTrim || 'password123').run().catch(() => {});
+          ).bind(adminId, inputIdentifier, 'ASSA Administrator', 'Administrator', 'Nasional', new Date().toISOString(), defaultHashed).run().catch(() => {});
           profile = await env.DB.prepare("SELECT * FROM profiles WHERE LOWER(email) = LOWER(?) LIMIT 1").bind(inputIdentifier).first().catch(() => null);
         }
 
@@ -299,10 +300,11 @@ export default {
           });
         }
 
-        // Verify password with bcrypt or plain-text fallback
+        // Verify password with Bcrypt or auto-migrate legacy plain-text
         let isPasswordCorrect = false;
         const storedPwd = String(profile.password || 'password123');
-        if (storedPwd.startsWith("$2a$") || storedPwd.startsWith("$2b$")) {
+        const isBcryptHash = storedPwd.startsWith("$2a$") || storedPwd.startsWith("$2b$") || storedPwd.startsWith("$2y$") || storedPwd.startsWith("$2");
+        if (isBcryptHash) {
           try {
             isPasswordCorrect = await bcrypt.compare(pwdTrim, storedPwd);
           } catch {
@@ -310,6 +312,15 @@ export default {
           }
         } else {
           isPasswordCorrect = (storedPwd === pwdTrim || (isDefaultAdmin && pwdTrim === 'password123'));
+          if (isPasswordCorrect) {
+            // Auto-upgrade legacy plain-text password to standard Bcrypt hash in Cloudflare D1
+            try {
+              const upgradedHash = await bcrypt.hash(pwdTrim, 10);
+              await env.DB.prepare("UPDATE profiles SET password = ? WHERE id = ?").bind(upgradedHash, profile.id).run();
+            } catch (migErr) {
+              console.warn("Auto-hash migration warning:", migErr);
+            }
+          }
         }
 
         if (!isPasswordCorrect) {
@@ -347,6 +358,49 @@ export default {
           token,
           profile: safeProfile
         }), {
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ success: false, error: err.message }), {
+          status: 500,
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        });
+      }
+    }
+
+    // 0a-2. Reset Password Endpoint on Worker
+    if (pathname === "/api/auth/reset-password" && request.method === "POST") {
+      try {
+        const body = await request.json().catch(() => ({}));
+        const emailTrim = (body.email || "").toString().trim().toLowerCase();
+        const newPassword = (body.newPassword || body.password || "").toString().trim();
+
+        if (!emailTrim || !newPassword) {
+          return new Response(JSON.stringify({ success: false, error: "Email dan password baru diperlukan." }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", ...corsHeaders }
+          });
+        }
+
+        if (newPassword.length < 6) {
+          return new Response(JSON.stringify({ success: false, error: "Password baru minimal 6 karakter." }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", ...corsHeaders }
+          });
+        }
+
+        const user = await env.DB.prepare("SELECT id, email FROM profiles WHERE LOWER(email) = LOWER(?) LIMIT 1").bind(emailTrim).first();
+        if (!user) {
+          return new Response(JSON.stringify({ success: false, error: "Profil tidak ditemukan." }), {
+            status: 404,
+            headers: { "Content-Type": "application/json", ...corsHeaders }
+          });
+        }
+
+        const hashed = await bcrypt.hash(newPassword, 10);
+        await env.DB.prepare("UPDATE profiles SET password = ? WHERE id = ?").bind(hashed, user.id).run();
+
+        return new Response(JSON.stringify({ success: true, message: "Password berhasil diperbarui dengan enkripsi Bcrypt." }), {
           headers: { "Content-Type": "application/json", ...corsHeaders }
         });
       } catch (err) {
@@ -757,7 +811,13 @@ export default {
             let p = params || [];
             if (p.length === 0 && body.data) {
               const d = body.data;
-              p = [d.id, d.email, d.full_name, d.role, d.branch, d.created_at || new Date().toISOString(), d.password || 'password123'];
+              const rawPwd = d.password || 'password123';
+              const hashed = String(rawPwd).startsWith('$2') ? rawPwd : await bcrypt.hash(String(rawPwd), 10);
+              p = [d.id, d.email, d.full_name, d.role, d.branch, d.created_at || new Date().toISOString(), hashed];
+            } else if (p.length >= 7) {
+              if (!String(p[6]).startsWith('$2')) {
+                p[6] = await bcrypt.hash(String(p[6] || 'password123'), 10);
+              }
             }
             const results = await executeD1(
               "INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -777,7 +837,10 @@ export default {
 
           case "update_profile": {
             const targetId = body.id || (params && params[params.length - 1]);
-            const data = body.data || {};
+            const data = { ...(body.data || {}) };
+            if (data.password && !String(data.password).startsWith('$2')) {
+              data.password = await bcrypt.hash(String(data.password), 10);
+            }
             const validCols = Object.keys(data).filter(col => col !== 'id' && ALLOWED_PROFILE_COLS.has(col));
             if (validCols.length === 0 || !targetId) {
               return new Response(JSON.stringify({ success: false, error: "Kolom tidak valid" }), { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } });
@@ -789,9 +852,10 @@ export default {
           }
 
           case "update_profile_password": {
-            const newPwd = (params && params[0]) || body.password;
+            const rawPwd = (params && params[0]) || body.password;
             const targetId = (params && params[1]) || body.id;
-            const results = await executeD1("UPDATE profiles SET password = ? WHERE id = ?", [newPwd, targetId]);
+            const hashed = String(rawPwd).startsWith('$2') ? rawPwd : await bcrypt.hash(String(rawPwd), 10);
+            const results = await executeD1("UPDATE profiles SET password = ? WHERE id = ?", [hashed, targetId]);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
