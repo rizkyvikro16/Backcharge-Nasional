@@ -28,6 +28,7 @@ import {
 import { getApiUrl, getAuthHeaders, clearAuthToken } from './lib/api';
 import { useIdleTimeout } from './hooks/useIdleTimeout';
 import IdleTimeoutModal from './components/IdleTimeoutModal';
+import { useRbac } from './lib/rbac';
 
 export function cleanDbPayload(payload: any) {
   const DB_COLUMNS = [
@@ -372,9 +373,29 @@ export default function App() {
 
 
 
+  const { canView, canAction } = useRbac();
+
   const [currentTab, setCurrentTab] = useState<'dashboard' | 'database' | 'audit' | 'users' | 'complaints'>('dashboard');
   const [activeAlertFilter, setActiveAlertFilter] = useState<'due' | 'pending' | 'high_value' | ''>('');
   const [activeDashboardFilter, setActiveDashboardFilter] = useState<DashboardFilter | null>(null);
+
+  // Automatic RBAC Tab Route Guard: Redirect user if active tab is disallowed
+  useEffect(() => {
+    if (!currentUser) return;
+    if (!canView(currentUser.role, currentTab)) {
+      const allTabs: Array<'dashboard' | 'database' | 'complaints' | 'audit' | 'users'> = [
+        'dashboard',
+        'database',
+        'complaints',
+        'audit',
+        'users'
+      ];
+      const nextAllowed = allTabs.find(t => canView(currentUser.role, t));
+      if (nextAllowed) {
+        setCurrentTab(nextAllowed);
+      }
+    }
+  }, [currentUser, currentTab, canView]);
   
   // App data state with instant Stale-While-Revalidate local caching
   
@@ -608,12 +629,14 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
           // Pre-fetch related transactions for branch-accurate role routing
           const txMap = new Map<string, Backcharge>(transactions.map(t => [t.id, t]));
+          let notifiedCount = 0;
 
           for (const log of newLogs) {
             const targetTx = log.transaction_id ? txMap.get(log.transaction_id) || null : null;
             const decision = evaluateRoleNotification(currentUser, log, targetTx);
 
             if (decision.shouldNotify) {
+              notifiedCount++;
               const desc = log.action_description || '';
               sendBrowserNotification({
                 title: decision.title,
@@ -621,8 +644,14 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                 txId: log.transaction_id !== 'SYSTEM' ? log.transaction_id : undefined,
                 tag: 'live-log-' + log.id
               });
-              addToast(decision.title + ': ' + desc, 'info');
+              if (newLogs.length <= 2) {
+                addToast(decision.title + ': ' + desc, 'info');
+              }
             }
+          }
+
+          if (newLogs.length > 2 && notifiedCount > 0) {
+            addToast(`Terdapat ${notifiedCount} aktivitas baru diperbarui di sistem.`, 'info');
           }
 
           // Update logs in local state
@@ -799,10 +828,10 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
   const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const finalMessage = (import.meta.env.PROD && type === 'error') ? 'Terjadi kesalahan. Coba lagi nanti.' : message;
     const id = Math.random().toString(36).substring(7);
-    setToasts(prev => [...prev, { id, message: finalMessage, type }]);
+    setToasts(prev => [...prev.slice(-1), { id, message: finalMessage, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4000);
+    }, 3500);
   };
 
   // Restore login session on mount
@@ -2173,114 +2202,124 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
         {/* Navigations links */}
         <nav className="flex-grow px-3 py-2 space-y-1">
-          <button 
-            onClick={() => setCurrentTab('dashboard')} 
-            className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl text-xs font-bold transition-all justify-start ${
-              currentTab === 'dashboard' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white text-slate-400'
-            }`}
-          >
-            <BarChart3 className="w-5 h-5 flex-shrink-0" />
-            <span className={`transition-all duration-200 ${sidebarHover ? 'opacity-100' : 'opacity-0 hidden'}`}>Dashboard</span>
-          </button>
+          {canView(currentUser.role, 'dashboard') && (
+            <button 
+              onClick={() => setCurrentTab('dashboard')} 
+              className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl text-xs font-bold transition-all justify-start ${
+                currentTab === 'dashboard' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white text-slate-400'
+              }`}
+            >
+              <BarChart3 className="w-5 h-5 flex-shrink-0" />
+              <span className={`transition-all duration-200 ${sidebarHover ? 'opacity-100' : 'opacity-0 hidden'}`}>Dashboard</span>
+            </button>
+          )}
 
-          <button 
-            onClick={() => setCurrentTab('database')} 
-            className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl text-xs font-bold transition-all justify-start ${
-              currentTab === 'database' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white text-slate-400'
-            }`}
-          >
-            <Layers className="w-5 h-5 flex-shrink-0" />
-            <span className={`transition-all duration-200 ${sidebarHover ? 'opacity-100' : 'opacity-0 hidden'}`}>Data Backcharge</span>
-          </button>
+          {canView(currentUser.role, 'database') && (
+            <button 
+              onClick={() => setCurrentTab('database')} 
+              className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl text-xs font-bold transition-all justify-start ${
+                currentTab === 'database' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white text-slate-400'
+              }`}
+            >
+              <Layers className="w-5 h-5 flex-shrink-0" />
+              <span className={`transition-all duration-200 ${sidebarHover ? 'opacity-100' : 'opacity-0 hidden'}`}>Data Backcharge</span>
+            </button>
+          )}
 
-          <button 
-            onClick={() => setCurrentTab('complaints')} 
-            className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl text-xs font-bold transition-all justify-start ${
-              currentTab === 'complaints' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white text-slate-400'
-            }`}
-          >
-            <Mail className="w-5 h-5 flex-shrink-0" />
-            <span className={`transition-all duration-200 ${sidebarHover ? 'opacity-100' : 'opacity-0 hidden'}`}>Keluhan & Masukan</span>
-          </button>
+          {canView(currentUser.role, 'complaints') && (
+            <button 
+              onClick={() => setCurrentTab('complaints')} 
+              className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl text-xs font-bold transition-all justify-start ${
+                currentTab === 'complaints' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white text-slate-400'
+              }`}
+            >
+              <Mail className="w-5 h-5 flex-shrink-0" />
+              <span className={`transition-all duration-200 ${sidebarHover ? 'opacity-100' : 'opacity-0 hidden'}`}>Keluhan & Masukan</span>
+            </button>
+          )}
 
-          {/* ADMIN ONLY TABS */}
-          {hasRole(currentUser.role, 'Administrator') && (
-            <>
-              <button 
-                onClick={() => setCurrentTab('audit')} 
-                className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl text-xs font-bold transition-all justify-start ${
-                  currentTab === 'audit' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white text-slate-400'
-                }`}
-              >
-                <Clock className="w-5 h-5 flex-shrink-0" />
-                <span className={`transition-all duration-200 ${sidebarHover ? 'opacity-100' : 'opacity-0 hidden'}`}>Audit Trail Activity</span>
-              </button>
+          {canView(currentUser.role, 'audit') && (
+            <button 
+              onClick={() => setCurrentTab('audit')} 
+              className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl text-xs font-bold transition-all justify-start ${
+                currentTab === 'audit' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white text-slate-400'
+              }`}
+            >
+              <Clock className="w-5 h-5 flex-shrink-0" />
+              <span className={`transition-all duration-200 ${sidebarHover ? 'opacity-100' : 'opacity-0 hidden'}`}>Audit Trail Activity</span>
+            </button>
+          )}
 
-              <button 
-                onClick={() => setCurrentTab('users')} 
-                className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl text-xs font-bold transition-all justify-start ${
-                  currentTab === 'users' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white text-slate-400'
-                }`}
-              >
-                <Users className="w-5 h-5 flex-shrink-0" />
-                <span className={`transition-all duration-200 ${sidebarHover ? 'opacity-100' : 'opacity-0 hidden'}`}>Manajemen Pengguna</span>
-              </button>
-            </>
+          {canView(currentUser.role, 'users') && (
+            <button 
+              onClick={() => setCurrentTab('users')} 
+              className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl text-xs font-bold transition-all justify-start ${
+                currentTab === 'users' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white text-slate-400'
+              }`}
+            >
+              <Users className="w-5 h-5 flex-shrink-0" />
+              <span className={`transition-all duration-200 ${sidebarHover ? 'opacity-100' : 'opacity-0 hidden'}`}>Manajemen Pengguna</span>
+            </button>
           )}
         </nav>
       </aside>
 
       {/* 3. MOBILE BOTTOM FIXED BAR (ACCESSIBILITY FOR MOBILE PHONES) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 text-slate-400 shadow-2xl flex justify-around py-2.5 px-1 z-40 safe-bottom">
-        <button 
-          onClick={() => setCurrentTab('dashboard')} 
-          className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
-            currentTab === 'dashboard' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <BarChart3 className="w-5 h-5 flex-shrink-0" />
-          <span className="truncate max-w-[64px]">Dashboard</span>
-        </button>
-        <button 
-          onClick={() => setCurrentTab('database')} 
-          className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
-            currentTab === 'database' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Layers className="w-5 h-5 flex-shrink-0" />
-          <span className="truncate max-w-[64px]">Database</span>
-        </button>
-        <button 
-          onClick={() => setCurrentTab('complaints')} 
-          className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
-            currentTab === 'complaints' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Mail className="w-5 h-5 flex-shrink-0" />
-          <span className="truncate max-w-[64px]">Keluhan</span>
-        </button>
-        
-        {hasRole(currentUser.role, 'Administrator') && (
-          <>
-            <button 
-              onClick={() => setCurrentTab('audit')} 
-              className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
-                currentTab === 'audit' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Clock className="w-5 h-5 flex-shrink-0" />
-              <span className="truncate max-w-[64px]">Audit</span>
-            </button>
-            <button 
-              onClick={() => setCurrentTab('users')} 
-              className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
-                currentTab === 'users' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Users className="w-5 h-5 flex-shrink-0" />
-              <span className="truncate max-w-[64px]">User</span>
-            </button>
-          </>
+        {canView(currentUser.role, 'dashboard') && (
+          <button 
+            onClick={() => setCurrentTab('dashboard')} 
+            className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
+              currentTab === 'dashboard' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <BarChart3 className="w-5 h-5 flex-shrink-0" />
+            <span className="truncate max-w-[64px]">Dashboard</span>
+          </button>
+        )}
+        {canView(currentUser.role, 'database') && (
+          <button 
+            onClick={() => setCurrentTab('database')} 
+            className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
+              currentTab === 'database' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Layers className="w-5 h-5 flex-shrink-0" />
+            <span className="truncate max-w-[64px]">Database</span>
+          </button>
+        )}
+        {canView(currentUser.role, 'complaints') && (
+          <button 
+            onClick={() => setCurrentTab('complaints')} 
+            className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
+              currentTab === 'complaints' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Mail className="w-5 h-5 flex-shrink-0" />
+            <span className="truncate max-w-[64px]">Keluhan</span>
+          </button>
+        )}
+        {canView(currentUser.role, 'audit') && (
+          <button 
+            onClick={() => setCurrentTab('audit')} 
+            className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
+              currentTab === 'audit' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Clock className="w-5 h-5 flex-shrink-0" />
+            <span className="truncate max-w-[64px]">Audit</span>
+          </button>
+        )}
+        {canView(currentUser.role, 'users') && (
+          <button 
+            onClick={() => setCurrentTab('users')} 
+            className={`flex flex-col items-center justify-center space-y-1 text-[10px] font-bold flex-1 py-1 px-0.5 rounded-lg transition-colors ${
+              currentTab === 'users' ? 'text-blue-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Users className="w-5 h-5 flex-shrink-0" />
+            <span className="truncate max-w-[64px]">User</span>
+          </button>
         )}
       </nav>
 
@@ -2351,12 +2390,12 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
             </button>
 
-            {/* Notification drop indicator */}
+            {/* Notification slide-out drawer trigger */}
             <div className="relative">
               <button 
                 onClick={() => setShowNotifDropdown(!showNotifDropdown)}
                 className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-xl transition-all border border-slate-100 relative"
-                title="Antrean Tugas"
+                title="Antrean Tugas & Notifikasi"
               >
                 <Bell className="w-4 h-4" />
                 <AnimatePresence>
@@ -2380,69 +2419,96 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                   )}
                 </AnimatePresence>
               </button>
+            </div>
 
-              {/* Notification Dropdown Box */}
-              {showNotifDropdown && (
-                <div className="fixed sm:absolute right-2 sm:right-0 top-14 sm:top-auto sm:mt-2 w-[calc(100vw-1rem)] sm:w-80 max-w-[340px] bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 animate-in fade-in slide-in-from-top-2">
-                  <div className="px-4 py-2 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
-                    <div className="min-w-0 pr-2">
-                      <span className="text-xs font-black text-slate-800 block truncate">Antrean Tugas</span>
-                      <span className="text-[9px] text-slate-500 font-semibold truncate block">{currentUser?.role} • {currentUser?.branch}</span>
+            {/* Slide-out Notification Panel (Drawer) on the Right */}
+            {showNotifDropdown && (
+              <>
+                {/* Backdrop Overlay */}
+                <div 
+                  className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-50 animate-in fade-in duration-200"
+                  onClick={() => setShowNotifDropdown(false)}
+                />
+                
+                {/* Panel Drawer */}
+                <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-white shadow-2xl flex flex-col border-l border-slate-200 animate-in slide-in-from-right duration-300">
+                  <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-900 text-white">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-md">
+                        <Bell className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-white">Antrean Tugas & Notifikasi</h3>
+                        <p className="text-[10px] text-slate-300 font-medium">{currentUser?.role} • {currentUser?.branch}</p>
+                      </div>
                     </div>
-                    <span className="text-[9px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-extrabold flex-shrink-0">
-                      {notifications.length} Pending
-                    </span>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-400/30 px-2.5 py-1 rounded-full font-extrabold">
+                        {notifications.length} Pending
+                      </span>
+                      <button 
+                        onClick={() => setShowNotifDropdown(false)}
+                        className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-all"
+                        title="Tutup panel"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
                   </div>
                   
-                  <div className="max-h-80 overflow-y-auto custom-scrollbar divide-y divide-slate-100 text-xs">
+                  <div className="flex-grow overflow-y-auto custom-scrollbar divide-y divide-slate-100 p-3 space-y-2">
                     {notifications.map(n => {
                       const badge = getNotificationBadge(n);
                       return (
                         <div 
                           key={n.id} 
                           onClick={() => handleNotificationClick(n)}
-                          className={`p-3 hover:bg-slate-100/80 cursor-pointer transition-all flex flex-col space-y-1.5 border-l-4 ${badge.borderLeftClass} ${
-                            n.read ? 'opacity-60 bg-white' : 'bg-slate-50/70 font-semibold'
+                          className={`p-3.5 rounded-xl hover:bg-blue-50/60 cursor-pointer transition-all flex flex-col space-y-2 border-l-4 shadow-2xs border border-slate-100 ${badge.borderLeftClass} ${
+                            n.read ? 'opacity-70 bg-white' : 'bg-slate-50 font-semibold'
                           }`}
                         >
                           <div className="flex items-center justify-between gap-1 flex-wrap">
-                            <div className="flex items-center space-x-1.5">
-                              <span className="font-extrabold text-slate-900 font-mono text-[11px]">{n.transaction_id}</span>
-                              <span className={`px-2 py-0.5 text-[9px] rounded-full border inline-flex items-center space-x-1 shadow-2xs ${badge.badgeClass}`}>
+                            <div className="flex items-center space-x-2">
+                              <span className="font-extrabold text-slate-900 font-mono text-xs">{n.transaction_id}</span>
+                              <span className={`px-2 py-0.5 text-[10px] rounded-full border inline-flex items-center space-x-1 ${badge.badgeClass}`}>
                                 <span className={`w-1.5 h-1.5 rounded-full ${badge.dotClass}`}></span>
                                 <span>{badge.label}</span>
                               </span>
                             </div>
-                            <span className="text-[9px] text-slate-600 bg-slate-200/60 border border-slate-200 px-1.5 py-0.5 rounded font-bold uppercase">{n.branch}</span>
+                            <span className="text-[10px] text-slate-600 bg-slate-200/60 border border-slate-200 px-2 py-0.5 rounded font-bold uppercase">{n.branch}</span>
                           </div>
-                          <p className="text-[10px] text-slate-600 font-medium leading-snug break-words">{n.description}</p>
-                          <div className="flex justify-between items-center text-[8px] text-slate-400 font-mono pt-0.5">
-                            <span className="font-sans font-bold text-slate-500 truncate max-w-[150px]">{n.customer_name}</span>
-                            <span>{new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <p className="text-xs text-slate-700 font-medium leading-relaxed">{n.description}</p>
+                          <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono pt-1 border-t border-slate-100/80">
+                            <span className="font-sans font-bold text-slate-600 truncate max-w-[200px]">{n.customer_name}</span>
+                            <span>{new Date(n.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span>
                           </div>
                         </div>
                       );
                     })}
 
                     {notifications.length === 0 && (
-                      <div className="p-5 text-center text-slate-400">
-                        <p className="text-xs font-bold text-slate-600">Semua Tugas Selesai! 🎉</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5 italic">Tidak ada antrean tugas pending untuk peran Anda saat ini.</p>
+                      <div className="py-16 text-center text-slate-400">
+                        <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto mb-3 shadow-inner">
+                          <CheckCircle className="w-8 h-8" />
+                        </div>
+                        <p className="text-sm font-bold text-slate-800">Semua Tugas Selesai! 🎉</p>
+                        <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto italic">Tidak ada antrean tugas pending untuk peran dan wilayah Anda saat ini.</p>
                       </div>
                     )}
                   </div>
-                    <div className="p-2 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
-                      <button 
-                        onClick={() => { setShowNotifDropdown(false); setShowNotifSettings(true); }}
-                        className="w-full text-center text-[11px] text-blue-600 hover:text-blue-800 font-bold py-1 flex items-center justify-center space-x-1.5 hover:bg-blue-50/50 rounded-lg transition-all"
-                      >
-                        <Bell className="w-3 h-3 text-blue-600" />
-                        <span>Pengaturan Notifikasi Real-Time (HP & Web)</span>
-                      </button>
-                    </div>
+
+                  <div className="p-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+                    <button 
+                      onClick={() => { setShowNotifDropdown(false); setShowNotifSettings(true); }}
+                      className="w-full text-center text-xs text-blue-600 hover:text-blue-800 font-bold py-2 px-3 flex items-center justify-center space-x-2 bg-blue-50/80 hover:bg-blue-100 rounded-xl transition-all border border-blue-200/60 shadow-xs"
+                    >
+                      <Bell className="w-4 h-4 text-blue-600" />
+                      <span>Pengaturan Notifikasi Real-Time (HP & Web)</span>
+                    </button>
                   </div>
-              )}
-            </div>
+                </div>
+              </>
+            )}
 
             {/* Logout Portal */}
             <button 
@@ -2501,7 +2567,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
 
 
-          {currentTab === 'dashboard' && (
+          {currentTab === 'dashboard' && canView(currentUser?.role, 'dashboard') && (
             <Dashboard 
               transactions={transactions} 
               currentUser={currentUser!}
@@ -2524,7 +2590,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             />
           )}
 
-          {currentTab === 'database' && (
+          {currentTab === 'database' && canView(currentUser?.role, 'database') && (
             <DatabaseView 
               transactions={transactions}
               currentUser={currentUser!}
@@ -2547,11 +2613,11 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             />
           )}
 
-          {currentTab === 'audit' && (
+          {currentTab === 'audit' && canView(currentUser?.role, 'audit') && (
             <AuditView logs={logs} profiles={profiles} />
           )}
 
-          {currentTab === 'users' && (
+          {currentTab === 'users' && canView(currentUser?.role, 'users') && (
             <UserManagement 
               profiles={profiles}
               currentUser={currentUser!}
@@ -2561,7 +2627,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             />
           )}
 
-          {currentTab === 'complaints' && (
+          {currentTab === 'complaints' && canView(currentUser?.role, 'complaints') && (
             <FeedbackView 
               inquiries={inquiries}
               currentUser={currentUser!}

@@ -928,6 +928,11 @@ async function startServer() {
         return res.sendFile(directLocalPath);
       }
 
+      // If client is navigating in a browser tab to view the document
+      if (req.headers.accept?.includes("text/html") || !isDownload) {
+        return res.redirect(`https://drive.google.com/file/d/${encodeURIComponent(fileId)}/view`);
+      }
+
       return res.status(404).json({ error: "Berkas privat tidak ditemukan atau belum disinkronkan" });
     } catch (err: any) {
       console.error("[DRIVE SECURE PROXY] Error:", err.message);

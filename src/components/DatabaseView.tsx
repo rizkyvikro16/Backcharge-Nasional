@@ -21,6 +21,7 @@ import {
   unpackExtraFields,
   isRegionalHeadRole
 } from '../types';
+import { canPerformAction } from '../lib/rbac';
 import MultiSelect from './MultiSelect';
 
 export interface DatabaseViewProps {
@@ -321,22 +322,20 @@ export default function DatabaseView({
   onClearDashboardFilter,
   addToast
 }: DatabaseViewProps) {
-  // Permission helpers
-  const canDelete = hasRole(currentUser?.role, 'Administrator') ||
+  // Permission helpers aligned with RBAC
+  const canDelete = canPerformAction(currentUser?.role, 'delete') && (
+    hasRole(currentUser?.role, 'Administrator') ||
     hasRole(currentUser?.role, 'ASO') ||
     hasRole(currentUser?.role, 'ASO Megabranch') ||
-    hasRole(currentUser?.role, 'Maintenance Center');
+    hasRole(currentUser?.role, 'Maintenance Center')
+  );
 
-  const canAdd = hasRole(currentUser?.role, 'Administrator') ||
-    hasRole(currentUser?.role, 'Admin') ||
-    hasRole(currentUser?.role, 'Admin Head') ||
-    hasRole(currentUser?.role, 'ASO') ||
-    hasRole(currentUser?.role, 'ASO Megabranch') ||
-    hasRole(currentUser?.role, 'Maintenance Center') ||
-    hasRole(currentUser?.role, 'BRO');
+  const canAdd = canPerformAction(currentUser?.role, 'create');
+  const canExport = canPerformAction(currentUser?.role, 'export');
 
   // Role authority checks for each section of Bulk Update
   const canUpdateHandover = useMemo(() => {
+    if (!canPerformAction(currentUser?.role, 'update')) return false;
     return hasRole(currentUser?.role, 'Administrator') ||
       hasRole(currentUser?.role, 'Admin') ||
       hasRole(currentUser?.role, 'Admin Head') ||
@@ -346,6 +345,7 @@ export default function DatabaseView({
   }, [currentUser]);
 
   const canUpdateSap = useMemo(() => {
+    if (!canPerformAction(currentUser?.role, 'update')) return false;
     return hasRole(currentUser?.role, 'Administrator') ||
       hasRole(currentUser?.role, 'Admin Head') ||
       hasRole(currentUser?.role, 'Sales Head') ||
@@ -353,6 +353,7 @@ export default function DatabaseView({
   }, [currentUser]);
 
   const canUpdatePayment = useMemo(() => {
+    if (!canPerformAction(currentUser?.role, 'update')) return false;
     return hasRole(currentUser?.role, 'Administrator') ||
       hasRole(currentUser?.role, 'Admin') ||
       hasRole(currentUser?.role, 'Admin Head') ||
@@ -360,6 +361,7 @@ export default function DatabaseView({
   }, [currentUser]);
 
   const canUpdateApproval = useMemo(() => {
+    if (!canPerformAction(currentUser?.role, 'approve')) return false;
     return hasRole(currentUser?.role, 'Administrator') ||
       hasRole(currentUser?.role, 'Admin Head') ||
       hasRole(currentUser?.role, 'Kepala Cabang') ||
@@ -2129,14 +2131,16 @@ export default function DatabaseView({
             </button>
           )}
 
-          <button
-            onClick={handleExportExcel}
-            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
-            title="Unduh Rekap Data Transaksi ke File Excel"
-          >
-            <Download className="w-4 h-4" />
-            <span>Ekspor Rekap Excel</span>
-          </button>
+          {canExport && (
+            <button
+              onClick={handleExportExcel}
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              title="Unduh Rekap Data Transaksi ke File Excel"
+            >
+              <Download className="w-4 h-4" />
+              <span>Ekspor Rekap Excel</span>
+            </button>
+          )}
         </div>
       </div>
 

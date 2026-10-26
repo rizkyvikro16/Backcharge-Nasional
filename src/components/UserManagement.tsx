@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PlusCircle, Edit2, Trash2, ShieldCheck, Mail, MapPin, X, Key, Search, Lock, CheckSquare, Square, Unlock } from 'lucide-react';
 import { Profile, UserRole, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, isRegionalHeadRole, WEST_BRANCHES, CENTRAL_BRANCHES, EAST_BRANCHES, hasRole } from '../types';
+import { ALL_SYSTEM_ROLES, SYSTEM_MENUS, SYSTEM_ACTIONS, getRbacMatrix, saveRbacMatrix, resetRbacMatrix, RbacConfig } from '../lib/rbac';
 
 interface UserManagementProps {
   profiles: Profile[];
@@ -160,6 +161,88 @@ export default function UserManagement({
   const [userToDelete, setUserToDelete] = useState<Profile | null>(null);
   const [userToResetPassword, setUserToResetPassword] = useState<Profile | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [rbacSuccessMessage, setRbacSuccessMessage] = useState<string | null>(null);
+
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'rbac'>('users');
+  const [rbacCategoryFilter, setRbacCategoryFilter] = useState<'all' | 'operational' | 'branch_head' | 'regional_hq'>('all');
+  const [rbacSearch, setRbacSearch] = useState<string>('');
+
+  const [rbacMatrix, setRbacMatrix] = useState<RbacConfig>(() => getRbacMatrix());
+  const isInitialRbacMount = useRef(true);
+
+  // Safely persist RBAC matrix after render commits, preventing cross-component setState-in-render conflicts
+  useEffect(() => {
+    if (isInitialRbacMount.current) {
+      isInitialRbacMount.current = false;
+      return;
+    }
+    saveRbacMatrix(rbacMatrix);
+  }, [rbacMatrix]);
+
+  const toggleRbacPermission = (roleName: string, type: 'menus' | 'actions', itemId: string) => {
+    setRbacMatrix(prev => {
+      const current = prev[roleName] || { menus: [], actions: [] };
+      const list = [...current[type]];
+      const index = list.indexOf(itemId);
+      if (index >= 0) {
+        list.splice(index, 1);
+      } else {
+        list.push(itemId);
+      }
+      return {
+        ...prev,
+        [roleName]: {
+          ...current,
+          [type]: list
+        }
+      };
+    });
+  };
+
+  const handleSetAllPermissions = (roleName: string, type: 'menus' | 'actions', enableAll: boolean) => {
+    setRbacMatrix(prev => {
+      const current = prev[roleName] || { menus: [], actions: [] };
+      const allIds = type === 'menus' ? SYSTEM_MENUS.map(m => m.id) : SYSTEM_ACTIONS.map(a => a.id);
+      return {
+        ...prev,
+        [roleName]: {
+          ...current,
+          [type]: enableAll ? allIds : []
+        }
+      };
+    });
+  };
+
+  const handleResetToDefault = () => {
+    if (window.confirm("Apakah Anda yakin ingin mengembalikan seluruh hak akses RBAC ke standar awal sistem?")) {
+      const def = resetRbacMatrix();
+      setRbacMatrix(def);
+      setRbacSuccessMessage("Konfigurasi RBAC berhasil direset ke standar awal!");
+      setTimeout(() => setRbacSuccessMessage(null), 3000);
+    }
+  };
+
+  const handleSaveRbac = () => {
+    saveRbacMatrix(rbacMatrix);
+    setRbacSuccessMessage("Konfigurasi matriks akses RBAC berhasil disimpan dan diselaraskan secara langsung!");
+    setTimeout(() => setRbacSuccessMessage(null), 3500);
+  };
+
+  const filteredRoles = ALL_SYSTEM_ROLES.filter(r => {
+    if (rbacSearch.trim()) {
+      if (!r.toLowerCase().includes(rbacSearch.toLowerCase().trim())) return false;
+    }
+    if (rbacCategoryFilter === 'operational') {
+      return ['ASO', 'ASO Megabranch', 'Maintenance Center', 'BRO', 'Admin', 'Admin Head'].includes(r);
+    }
+    if (rbacCategoryFilter === 'branch_head') {
+      return ['Kepala Cabang', 'Sales Head'].includes(r);
+    }
+    if (rbacCategoryFilter === 'regional_hq') {
+      return ['Regional Head', 'Regional Head West', 'Regional Head Central', 'Regional Head East', 'Division Head', 'Administrator'].includes(r);
+    }
+    return true;
+  });
 
   const handleDelete = (p: Profile) => {
     if (p.id === currentUser.id || p.email.toLowerCase() === currentUser.email.toLowerCase()) {
@@ -171,9 +254,282 @@ export default function UserManagement({
 
   return (
     <div className="space-y-4">
-      
-      {/* Top action header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      {/* Subtab Switcher */}
+      <div className="flex items-center space-x-2 border-b border-slate-200 pb-3">
+        <button
+          onClick={() => setActiveSubTab('users')}
+          className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all ${
+            activeSubTab === 'users'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          Daftar Staf & Pengguna ({profiles.length})
+        </button>
+        <button
+          onClick={() => setActiveSubTab('rbac')}
+          className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all flex items-center space-x-1.5 ${
+            activeSubTab === 'rbac'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Lock className="w-3.5 h-3.5" />
+          <span>Matriks Hak Akses (RBAC: 14 Role)</span>
+        </button>
+      </div>
+
+      {activeSubTab === 'rbac' ? (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-5">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-sm font-extrabold text-slate-900">Matriks Role-Based Access Control (RBAC)</h3>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                  {ALL_SYSTEM_ROLES.length} Role Lengkap
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Atur menu mana yang dapat dilihat dan aksi apa yang dapat dijalankan oleh setiap otoritas peran (termasuk Maintenance Center, ASO Megabranch, dan Admin Head).
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={handleResetToDefault}
+                className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all"
+                title="Kembalikan ke setting default bawaan sistem"
+              >
+                Reset ke Standar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveRbac}
+                className="px-4 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition-all flex items-center space-x-1.5"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Simpan RBAC</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Success Banner */}
+          {rbacSuccessMessage && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-bold flex items-center justify-between animate-in fade-in">
+              <span>{rbacSuccessMessage}</span>
+              <button onClick={() => setRbacSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-900 font-black">×</button>
+            </div>
+          )}
+
+          {/* Role Filter Tabs & Search */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-1 border-t border-slate-100">
+            <div className="flex flex-wrap gap-1 bg-slate-100 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setRbacCategoryFilter('all')}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
+                  rbacCategoryFilter === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Semua Role ({ALL_SYSTEM_ROLES.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setRbacCategoryFilter('operational')}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
+                  rbacCategoryFilter === 'operational' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Operasional & Teknisi (6)
+              </button>
+              <button
+                type="button"
+                onClick={() => setRbacCategoryFilter('branch_head')}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
+                  rbacCategoryFilter === 'branch_head' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Pimpinan Cabang & Sales (2)
+              </button>
+              <button
+                type="button"
+                onClick={() => setRbacCategoryFilter('regional_hq')}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
+                  rbacCategoryFilter === 'regional_hq' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Regional & Head Office (6)
+              </button>
+            </div>
+
+            <div className="relative max-w-xs w-full">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={rbacSearch}
+                onChange={(e) => setRbacSearch(e.target.value)}
+                placeholder="Cari role di matriks..."
+                className="w-full text-xs pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+              />
+            </div>
+          </div>
+
+          {/* Matrix Table */}
+          <div className="overflow-x-auto custom-scrollbar border border-slate-200 rounded-xl">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold uppercase tracking-wider">
+                  <th className="p-3 w-48 bg-slate-50 sticky left-0 z-10 border-r border-slate-200">Peran / Role Otoritas</th>
+                  <th className="p-3 min-w-[280px]">Akses Menu Tampilan (Visibility)</th>
+                  <th className="p-3 min-w-[360px]">Otoritas Aksi Sistem (Permissions)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                {filteredRoles.map(role => {
+                  const perm = rbacMatrix[role] || { menus: [], actions: [] };
+                  const isOps = ['ASO', 'ASO Megabranch', 'Maintenance Center', 'BRO', 'Admin', 'Admin Head'].includes(role);
+                  const isHighlighted = role === 'Maintenance Center' || role === 'ASO Megabranch' || role === 'Admin Head';
+
+                  return (
+                    <tr key={role} className={`hover:bg-slate-50/70 ${isHighlighted ? 'bg-amber-50/20' : ''}`}>
+                      <td className="p-3 align-top font-extrabold text-slate-900 border-r border-slate-100 bg-white sticky left-0 z-10">
+                        <div className="flex flex-col space-y-1">
+                          <div className="flex items-center space-x-1.5">
+                            <span className={`inline-block px-2 py-0.5 rounded-md text-[11px] font-black border ${
+                              role === 'Administrator' 
+                                ? 'bg-purple-100 text-purple-800 border-purple-200'
+                                : role.startsWith('Regional Head') || role === 'Division Head'
+                                  ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                                  : isHighlighted
+                                    ? 'bg-amber-100 text-amber-900 border-amber-300 ring-1 ring-amber-400'
+                                    : 'bg-blue-50 text-blue-700 border-blue-200'
+                            }`}>
+                              {role}
+                            </span>
+                            {isHighlighted && (
+                              <span className="text-[8px] bg-amber-500 text-white font-extrabold px-1 rounded uppercase">Aktif</span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-normal">
+                            {isOps ? 'Operasional Cabang' : role.startsWith('Regional') ? 'Regional Office' : 'Manajemen'}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Menu Visibility Column */}
+                      <td className="p-3 align-top border-r border-slate-100">
+                        <div className="flex items-center justify-between mb-1.5 text-[10px] text-slate-400 font-bold">
+                          <span>Menu yang dapat dibuka:</span>
+                          <div className="space-x-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleSetAllPermissions(role, 'menus', true)}
+                              className="text-blue-600 hover:underline"
+                            >
+                              Semua
+                            </button>
+                            <span>·</span>
+                            <button
+                              type="button"
+                              onClick={() => handleSetAllPermissions(role, 'menus', false)}
+                              className="text-slate-500 hover:underline"
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {SYSTEM_MENUS.map(menu => {
+                            const isChecked = perm.menus.includes(menu.id);
+                            return (
+                              <button
+                                key={menu.id}
+                                type="button"
+                                onClick={() => toggleRbacPermission(role, 'menus', menu.id)}
+                                className={`flex items-center space-x-1 px-2 py-1 rounded-lg border text-[10px] font-bold transition-all ${
+                                  isChecked
+                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                                    : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                }`}
+                                title={menu.description}
+                              >
+                                {isChecked ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
+                                <span>{menu.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </td>
+
+                      {/* Action Permissions Column */}
+                      <td className="p-3 align-top">
+                        <div className="flex items-center justify-between mb-1.5 text-[10px] text-slate-400 font-bold">
+                          <span>Aksi yang diizinkan:</span>
+                          <div className="space-x-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleSetAllPermissions(role, 'actions', true)}
+                              className="text-blue-600 hover:underline"
+                            >
+                              Semua
+                            </button>
+                            <span>·</span>
+                            <button
+                              type="button"
+                              onClick={() => handleSetAllPermissions(role, 'actions', false)}
+                              className="text-slate-500 hover:underline"
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {SYSTEM_ACTIONS.map(action => {
+                            const isChecked = perm.actions.includes(action.id);
+                            return (
+                              <button
+                                key={action.id}
+                                type="button"
+                                onClick={() => toggleRbacPermission(role, 'actions', action.id)}
+                                className={`flex items-center space-x-1 px-2 py-1 rounded-lg border text-[10px] font-bold transition-all ${
+                                  isChecked
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                    : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                }`}
+                                title={action.description}
+                              >
+                                {isChecked ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
+                                <span>{action.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="p-3 bg-blue-50/80 rounded-xl border border-blue-200 text-xs text-blue-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <span className="font-semibold">
+              Semua perubahan hak akses RBAC (Role-Based Access Control) akan langsung mempengaruhi visibilitas menu sidebar dan otoritas tombol tindakan di sistem.
+            </span>
+            <button
+              type="button"
+              onClick={handleSaveRbac}
+              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-xs transition-all shrink-0"
+            >
+              Simpan Konfigurasi
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Top action header */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div className="relative flex-grow max-w-md w-full">
           <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
             <Search className="w-4 h-4" />
@@ -721,6 +1077,9 @@ export default function UserManagement({
             </div>
           </div>
         </div>
+      )}
+
+      </>
       )}
 
     </div>

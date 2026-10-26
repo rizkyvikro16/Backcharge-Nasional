@@ -397,8 +397,85 @@ export default {
 
     // 1c. Secure File Preview Proxy
     if (pathname.startsWith("/api/files/secure/") && request.method === "GET") {
-      const fileId = pathname.replace("/api/files/secure/", "");
+      const fileId = pathname.replace("/api/files/secure/", "").trim();
+      if (!fileId || fileId === "undefined" || fileId === "null") {
+        return new Response(JSON.stringify({ success: false, error: "File ID tidak valid" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        });
+      }
+
+      const clientName = url.searchParams.get("name") || "document";
+      const isDownload = url.searchParams.get("download") === "true" || url.searchParams.get("download") === "1";
+      const acceptHeader = (request.headers.get("Accept") || "").toLowerCase();
+
+      const getExt = (name) => {
+        const parts = name.split('.');
+        return parts.length > 1 ? parts.pop().toLowerCase() : '';
+      };
+
+      const detectWorkerMime = (buffer, filename = '') => {
+        if (buffer && buffer.byteLength >= 4) {
+          const b = new Uint8Array(buffer.slice(0, 12));
+          // PDF magic bytes: %PDF- (0x25 0x50 0x44 0x46)
+          if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) {
+            return 'application/pdf';
+          }
+          // PNG magic bytes: \x89PNG (0x89 0x50 0x4E 0x47)
+          if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) {
+            return 'image/png';
+          }
+          // JPEG magic bytes: \xFF\xD8\xFF
+          if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) {
+            return 'image/jpeg';
+          }
+          // WebP: RIFF....WEBP (0x52 0x49 0x46 0x46 ... 0x57 0x45 0x42 0x50)
+          if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) {
+            return 'image/webp';
+          }
+          // GIF: GIF8 (0x47 0x49 0x46 0x38)
+          if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) {
+            return 'image/gif';
+          }
+        }
+        const ext = getExt(filename);
+        if (ext === 'pdf') return 'application/pdf';
+        if (ext === 'png') return 'image/png';
+        if (ext === 'webp') return 'image/webp';
+        if (ext === 'gif') return 'image/gif';
+        if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+        return 'application/pdf';
+      };
+
       try {
+        // Strategy 1: Googleusercontent CDN for direct high-speed image delivery
+        const cdnUrl = `https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}`;
+        const cdnRes = await fetch(cdnUrl, {
+          redirect: "follow",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+          }
+        });
+
+        if (cdnRes.ok) {
+          const cdnContentType = (cdnRes.headers.get("content-type") || "").toLowerCase();
+          if (!cdnContentType.includes("text/html")) {
+            const bodyBuf = await cdnRes.arrayBuffer();
+            const mimeType = detectWorkerMime(bodyBuf, clientName);
+
+            return new Response(bodyBuf, {
+              headers: {
+                "Content-Type": mimeType,
+                "Cache-Control": "public, max-age=86400, s-maxage=86400",
+                "Access-Control-Allow-Origin": "*",
+                "Content-Disposition": isDownload ? `attachment; filename="${encodeURIComponent(clientName)}"` : "inline",
+                "X-Content-Type-Options": "nosniff"
+              }
+            });
+          }
+        }
+
+        // Strategy 2: Google Drive Direct Download Stream (Binary Media)
         const driveMediaUrl = `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`;
         const gRes = await fetch(driveMediaUrl, {
           redirect: "follow",
@@ -406,17 +483,71 @@ export default {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
           }
         });
+
         if (gRes.ok) {
-           return new Response(gRes.body, {
-             headers: {
-               "Content-Type": gRes.headers.get("content-type") || "application/octet-stream",
-               "Access-Control-Allow-Origin": "*",
-               "Content-Disposition": "inline"
-             }
-           });
+          const gContentType = (gRes.headers.get("content-type") || "").toLowerCase();
+          if (!gContentType.includes("text/html")) {
+            const bodyBuf = await gRes.arrayBuffer();
+            const mimeType = detectWorkerMime(bodyBuf, clientName);
+
+            return new Response(bodyBuf, {
+              headers: {
+                "Content-Type": mimeType,
+                "Cache-Control": "public, max-age=86400, s-maxage=86400",
+                "Access-Control-Allow-Origin": "*",
+                "Content-Disposition": isDownload ? `attachment; filename="${encodeURIComponent(clientName)}"` : "inline",
+                "X-Content-Type-Options": "nosniff"
+              }
+            });
+          }
         }
-      } catch (e) {
-        return new Response(JSON.stringify({ success: false, error: "Gagal memuat pratinjau file." }), { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } });
+
+        // Strategy 3: Google Drive Thumbnail API for high-resolution images
+        const thumbUrl = `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w2048`;
+        const thumbRes = await fetch(thumbUrl, {
+          redirect: "follow",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+          }
+        });
+
+        if (thumbRes.ok) {
+          const thumbContentType = (thumbRes.headers.get("content-type") || "").toLowerCase();
+          if (!thumbContentType.includes("text/html")) {
+            const bodyBuf = await thumbRes.arrayBuffer();
+            const mimeType = detectWorkerMime(bodyBuf, clientName);
+
+            return new Response(bodyBuf, {
+              headers: {
+                "Content-Type": mimeType,
+                "Cache-Control": "public, max-age=86400, s-maxage=86400",
+                "Access-Control-Allow-Origin": "*",
+                "Content-Disposition": isDownload ? `attachment; filename="${encodeURIComponent(clientName)}"` : "inline",
+                "X-Content-Type-Options": "nosniff"
+              }
+            });
+          }
+        }
+
+        // Strategy 4: If direct binary streaming cannot be accessed anonymously, and the request
+        // comes from a browser navigation tab (Accept: text/html), redirect straight to Google Drive's
+        // official interactive web viewer so the user views the file rather than downloading a broken file.
+        if (acceptHeader.includes("text/html") || !isDownload) {
+          return Response.redirect(`https://drive.google.com/file/d/${encodeURIComponent(fileId)}/view`, 302);
+        }
+
+        return new Response(JSON.stringify({ success: false, error: "Berkas tidak dapat dipratinjau secara langsung. Buka di tab baru untuk melihat di Google Drive." }), {
+          status: 404,
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        });
+      } catch (err) {
+        if (acceptHeader.includes("text/html")) {
+          return Response.redirect(`https://drive.google.com/file/d/${encodeURIComponent(fileId)}/view`, 302);
+        }
+        return new Response(JSON.stringify({ success: false, error: err.message || "Gagal memuat pratinjau file." }), {
+          status: 500,
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        });
       }
     }
 

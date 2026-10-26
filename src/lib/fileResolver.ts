@@ -9,8 +9,16 @@ const pendingPromises = new Map<string, Promise<string>>();
  */
 export const extractDriveId = (url: string | null | undefined): string | null => {
   if (!url) return null;
-  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-  return match ? match[1] : url;
+  const trimmed = url.trim();
+  const match = trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/) || 
+                trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/) ||
+                trimmed.match(/\/api\/files\/secure\/([a-zA-Z0-9_-]+)/);
+  if (match) return match[1];
+  // If string is a raw Google Drive alphanumeric ID
+  if (/^[a-zA-Z0-9_-]{25,50}$/.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
 };
 
 /**
@@ -22,7 +30,7 @@ export const toSecureProxyUrl = (url: string | null | undefined): string => {
 
   if (url.includes("drive.google.com") || url.includes("/d/")) {
     const driveId = extractDriveId(url);
-    if (driveId && driveId !== url) {
+    if (driveId) {
       return `/api/files/secure/${driveId}`;
     }
   }
@@ -72,15 +80,31 @@ export async function resolveFileUrl(url: string | null | undefined): Promise<st
 }
 
 /**
- * Opens a resolved file or image URL safely in a new browser window/tab.
- * Uses programmatic anchor navigation without document.write to completely avoid
- * Chrome "This page has been blocked by Chrome" errors in sandboxed iframes.
+ * Opens a resolved file or image URL safely in a new browser window/tab for viewing.
+ * Prevents forced file downloads by navigating Google Drive files directly to Google's
+ * interactive web document viewer (https://drive.google.com/file/d/{id}/view) and
+ * serving internal/proxy files with explicit inline disposition.
  */
 export async function openFileInNewTab(url: string, title?: string): Promise<void> {
-  if (!url) return;
+  if (!url || url.startsWith("MOCK_")) return;
 
   try {
-    // 1. Data URLs or existing Blob URLs
+    // 1. If it has a Google Drive File ID, open Google's native interactive document viewer
+    // This allows full-page viewing, zooming, rotation, and reading without triggering a file download.
+    const driveId = extractDriveId(url);
+    if (driveId) {
+      const viewerUrl = `https://drive.google.com/file/d/${encodeURIComponent(driveId)}/view`;
+      const a = document.createElement("a");
+      a.href = viewerUrl;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
+
+    // 2. Data URLs or existing Blob URLs
     if (url.startsWith("data:") || url.startsWith("blob:")) {
       const a = document.createElement("a");
       a.href = url;
@@ -92,13 +116,15 @@ export async function openFileInNewTab(url: string, title?: string): Promise<voi
       return;
     }
 
-    // 2. Resolve authenticated secure proxy URL
+    // 3. Resolve authenticated secure proxy URL with inline viewing parameters
     const resolved = await resolveFileUrl(url);
     const targetUrl = resolved.startsWith("http") ? resolved : getApiUrl(resolved);
+    const separator = targetUrl.includes("?") ? "&" : "?";
+    const inlineUrl = `${targetUrl}${separator}inline=1&name=${encodeURIComponent(title || "document")}`;
 
-    // 3. Open directly in new tab cleanly
+    // 4. Open directly in new tab cleanly
     const a = document.createElement("a");
-    a.href = targetUrl;
+    a.href = inlineUrl;
     a.target = "_blank";
     a.rel = "noopener noreferrer";
     document.body.appendChild(a);

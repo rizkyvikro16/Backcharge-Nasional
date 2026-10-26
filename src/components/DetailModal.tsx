@@ -3246,7 +3246,7 @@ export default function DetailModal({
                 </button>
               )}
 
-              {lightboxFile.url && (
+              {lightboxFile.url && !lightboxFile.url.startsWith('MOCK_') && (
                 <button 
                   onClick={() => openFileInNewTab(lightboxFile.url, lightboxFile.title)}
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center space-x-1 transition-all cursor-pointer"
