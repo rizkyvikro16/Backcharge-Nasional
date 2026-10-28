@@ -1601,12 +1601,6 @@ export default function DetailModal({
                 </div>
               )}
 
-              {transaction.dok_pendukung_alasan && transaction.dok_pendukung_alasan !== '-' && (
-                <div>
-                  <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Dokumen Pendukung & Alasan</span>
-                  <p className="text-slate-700 font-medium block mt-0.5 p-2.5 bg-slate-100/50 rounded-xl whitespace-pre-wrap leading-relaxed">{transaction.dok_pendukung_alasan}</p>
-                </div>
-              )}
 
               <div className="pt-3 border-t border-slate-200/60 space-y-2.5">
                 <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Lampiran Dokumen</span>

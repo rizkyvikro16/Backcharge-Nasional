@@ -184,7 +184,7 @@ export async function ensureD1TablesExist(): Promise<void> {
         try {
           const countRes = await queryD1Direct("SELECT COUNT(*) as count FROM backcharges");
           const count = Number(countRes?.[0]?.count) || 0;
-          if (count === 0) {
+          if (count < 50) {
             console.log("ℹ️ Cloudflare D1 database is newly created and empty. Auto-seeding full migration dataset in background...");
             const targetPath = path.join(process.cwd(), "cloudflare_d1_migration.sql");
             if (fs.existsSync(targetPath)) {
