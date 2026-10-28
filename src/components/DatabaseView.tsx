@@ -22,6 +22,7 @@ import {
   isRegionalHeadRole
 } from '../types';
 import { canPerformAction } from '../lib/rbac';
+import { compressImageIfNeeded } from '../lib/googleDrive';
 import MultiSelect from './MultiSelect';
 
 export interface DatabaseViewProps {
@@ -1905,27 +1906,34 @@ export default function DatabaseView({
     }
   };
 
-  const handleFileChangeEdit = (e: React.ChangeEvent<HTMLInputElement>, type: 'bak' | 'supporting' | 'handover') => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 20 * 1024 * 1024) {
-      if (addToast) addToast('Ukuran file maksimal 20MB!', 'error');
+  const handleFileChangeEdit = async (e: React.ChangeEvent<HTMLInputElement>, type: 'bak' | 'supporting' | 'handover') => {
+    const rawFile = e.target.files?.[0];
+    if (!rawFile) return;
+    if (rawFile.size > 25 * 1024 * 1024) {
+      if (addToast) addToast('Ukuran file maksimal 25MB!', 'error');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setEditingFiles(prev => ({
-        ...prev,
-        [type]: {
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          dataUrl: reader.result as string
-        }
-      }));
-      if (addToast) addToast(`Berkas "${file.name}" berhasil diunggah!`, 'success');
-    };
-    reader.readAsDataURL(file);
+    if (addToast) addToast('Mengoptimalkan & mengompresi gambar (tetap jernih & tajam)...', 'info');
+    try {
+      const optimized = await compressImageIfNeeded(rawFile);
+      const file = optimized instanceof File ? optimized : new File([optimized], rawFile.name, { type: rawFile.type });
+      const reader = new FileReader();
+      reader.onload = () => {
+        setEditingFiles(prev => ({
+          ...prev,
+          [type]: {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            dataUrl: reader.result as string
+          }
+        }));
+        if (addToast) addToast(`Berkas "${file.name}" berhasil dikompres & diunggah!`, 'success');
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      if (addToast) addToast('Gagal memproses file.', 'error');
+    }
   };
 
   // BULK ACTIONS & HANDLERS (MATCHING image_308f8e6a.png)
@@ -1941,27 +1949,34 @@ export default function DatabaseView({
     setIsBulkUpdateModalOpen(true);
   };
 
-  const handleProcessBulkFile = (file: File) => {
-    if (!file) return;
-    if (file.size > 20 * 1024 * 1024) {
-      if (addToast) addToast('Ukuran file maksimal 20MB!', 'error');
+  const handleProcessBulkFile = async (rawFile: File) => {
+    if (!rawFile) return;
+    if (rawFile.size > 25 * 1024 * 1024) {
+      if (addToast) addToast('Ukuran file maksimal 25MB!', 'error');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setBulkFile({
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        dataUrl: reader.result as string
-      });
-      if (addToast) addToast(`Berkas "${file.name}" berhasil diunggah!`, 'success');
-    };
-    reader.onerror = () => {
-      if (addToast) addToast('Gagal membaca file berkas.', 'error');
-    };
-    reader.readAsDataURL(file);
+    if (addToast) addToast('Mengoptimalkan & mengompresi gambar (tetap jernih & tajam)...', 'info');
+    try {
+      const optimized = await compressImageIfNeeded(rawFile);
+      const file = optimized instanceof File ? optimized : new File([optimized], rawFile.name, { type: rawFile.type });
+      const reader = new FileReader();
+      reader.onload = () => {
+        setBulkFile({
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          dataUrl: reader.result as string
+        });
+        if (addToast) addToast(`Berkas "${file.name}" berhasil dikompres & diunggah!`, 'success');
+      };
+      reader.onerror = () => {
+        if (addToast) addToast('Gagal membaca file berkas.', 'error');
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      if (addToast) addToast('Gagal memproses file.', 'error');
+    }
   };
 
   const handleBulkFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
