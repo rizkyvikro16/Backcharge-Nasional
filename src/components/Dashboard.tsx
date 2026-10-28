@@ -574,10 +574,13 @@ export default function Dashboard({
       }
 
       // Status breakdown
+      const isNotBill = t.status_sap === 'Not Bill' || String(t.status_sap || '').toLowerCase() === 'not bill';
+
       if (t.status_payment === 'Lunas') {
         lCount++;
         lValue += val;
       } else if (
+        isNotBill ||
         t.status_approval === 'Ditolak' || 
         t.regional_approval_status === 'Ditolak' || 
         t.division_approval_status === 'Ditolak' || 
@@ -602,6 +605,7 @@ export default function Dashboard({
       const isDivisionHeadReq = transVal > 15000000;
 
       const isDocRejected = Boolean(
+        isNotBill ||
         t.status_approval === 'Ditolak' || 
         t.regional_approval_status === 'Ditolak' || 
         t.division_approval_status === 'Ditolak' || 
@@ -615,7 +619,6 @@ export default function Dashboard({
 
       const stepInvoice = Boolean(t.no_invoice && typeof t.no_invoice === 'string' && t.no_invoice.trim() !== '' && t.no_invoice.trim() !== '-');
       const stepPayment = t.status_payment === 'Lunas';
-      const isNotBill = t.status_sap === 'Not Bill';
       const isHandedOverAdmin = t.status_handover === 'Diserahkan ke Admin' || t.status_handover === 'Diterima Admin';
 
       // Populate Category Pipeline (Counts & Values)
@@ -624,7 +627,7 @@ export default function Dashboard({
         catPipelines[cat].stage1InputValue += transVal;
 
         // Pipeline Classification (consistent with DatabaseView.tsx stages)
-        if (isDocRejected) {
+        if (isDocRejected || isNotBill) {
           catPipelines[cat].stageReject++;
           catPipelines[cat].stageRejectValue += transVal;
         } else if (stepPayment) {
@@ -669,8 +672,8 @@ export default function Dashboard({
         }
       }
 
-      if (isDocRejected) {
-        // Dokumen ditolak sudah tercatat di rCount / rValue dan stageReject
+      if (isDocRejected || isNotBill) {
+        // Dokumen ditolak / Not Bill sudah tercatat di rCount / rValue dan stageReject
       } else if (stepPayment) {
         s8Payment++;
       } else if (!isHandedOverAdmin) {
@@ -760,6 +763,14 @@ export default function Dashboard({
               const day = parseInt(parts[0], 10);
               const month = parseInt(parts[1], 10) - 1;
               const year = parseInt(parts[2], 10);
+              dateObj = new Date(year, month, day);
+            }
+          } else if (t.tanggal.includes('-')) {
+            const parts = t.tanggal.split('T')[0].split('-');
+            if (parts.length === 3) {
+              const year = parseInt(parts[0], 10);
+              const month = parseInt(parts[1], 10) - 1;
+              const day = parseInt(parts[2], 10);
               dateObj = new Date(year, month, day);
             }
           } else {

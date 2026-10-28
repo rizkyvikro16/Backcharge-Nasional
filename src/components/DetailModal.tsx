@@ -1002,6 +1002,8 @@ export default function DetailModal({
     }
   };
 
+  const [isUploadingDirect, setIsUploadingDirect] = useState(false);
+
   // Upload new attachment file on detail view (converts to short lightweight URL)
   const uploadNewFile = async (
     e: React.ChangeEvent<HTMLInputElement>, 
@@ -1010,32 +1012,14 @@ export default function DetailModal({
   ) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (addToast) addToast("Mengunggah dan merampingkan dokumen...", "info");
+      setIsUploadingDirect(true);
+      if (addToast) addToast(`Mengunggah dan merampingkan dokumen "${file.name}"...`, "info");
       try {
         const docName = fieldName === 'file_bak_url' ? 'Berkas_BAK' : 'Serah_Terima';
         const fileNameToUpload = getFormattedFileName(docName, transaction, file.name);
-        let shortUrl: string;
-
-        try {
-          shortUrl = await uploadFileToDrive(file, fileNameToUpload, googleToken);
-        } catch (upErr: any) {
-          console.warn("Drive upload failed, saving via /api/upload-file:", upErr?.message);
-          const reader = new FileReader();
-          const base64Data = await new Promise<string>((resolve) => {
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(file);
-          });
-          const res = await fetch(getApiUrl('/api/upload-file'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ base64: base64Data, filename: fileNameToUpload })
-          });
-          const json = await res.json();
-          if (json?.url) {
-            shortUrl = json.url;
-          } else {
-            throw new Error("Gagal menyimpan dokumen ke server.");
-          }
+        const shortUrl = await uploadFileToDrive(file, fileNameToUpload, googleToken);
+        if (!shortUrl) {
+          throw new Error("Gagal mendapatkan URL berkas terunggah.");
         }
 
         const updates: Partial<Backcharge> = { [fieldName]: shortUrl };
@@ -1053,27 +1037,47 @@ export default function DetailModal({
           updates, 
           logMsg
         );
-        if (addToast) addToast("Dokumen berhasil disimpan dengan URL ringkas!", "success");
+        if (addToast) addToast("Dokumen berhasil terunggah dan disimpan tanpa kendala!", "success");
       } catch (err: any) {
         console.error("Gagal mengunggah file:", err);
-        if (addToast) addToast(`Gagal mengunggah file: ${err.message}`, "error");
+        if (addToast) addToast(`Gagal mengunggah file: ${err?.message || 'Terjadi kesalahan'}. File tidak tersimpan.`, "error");
+      } finally {
+        setIsUploadingDirect(false);
+        if (e.target) e.target.value = '';
       }
     }
+  };
+
+  const safeConfirm = (msg: string): boolean => {
+    try {
+      if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+        return window.confirm(msg);
+      }
+    } catch {
+      return true;
+    }
+    return true;
   };
 
   // Actions trigger handlers
   const handleSAPStatus = () => {
     const confirmMessage = `Konfirmasi Status Billing SAP:\nApakah Anda yakin ingin memperbarui Status SAP menjadi "${modalSAPStatus}"?`;
-    if (!window.confirm(confirmMessage)) {
+    if (!safeConfirm(confirmMessage)) {
       return;
     }
     setActionLoading(true);
+    const actorRole = hasRole(currentUser?.role, 'Administrator')
+      ? 'Administrator'
+      : (hasRole(currentUser?.role, 'Kepala Cabang') || hasRole(currentUser?.role, 'kacab'))
+      ? 'Kepala Cabang'
+      : 'Sales Head';
+
     onUpdateStatus(
       transaction.id,
       { 
         status_sap: modalSAPStatus
       },
-      `Sales Head menyetujui status SAP: ${modalSAPStatus}`
+      `${actorRole} (${currentUser?.full_name || currentUser?.email || 'User'}) memperbarui status SAP: ${modalSAPStatus}`
     );
     setActionLoading(false);
     setShowActionForm(null);
@@ -1089,7 +1093,7 @@ export default function DetailModal({
       return;
     }
     const confirmMessage = `Konfirmasi Penerbitan Invoice:\nApakah Anda yakin ingin menerbitkan Invoice No: ${modalInvoiceNo.trim()}?`;
-    if (!window.confirm(confirmMessage)) {
+    if (!safeConfirm(confirmMessage)) {
       return;
     }
     setActionLoading(true);
@@ -1116,7 +1120,7 @@ export default function DetailModal({
       return;
     }
     const confirmMessage = `Konfirmasi Serah Terima Berkas:\nApakah Anda yakin ingin mengunggah Foto Bukti Serah Terima Sales ke Admin?`;
-    if (!window.confirm(confirmMessage)) {
+    if (!safeConfirm(confirmMessage)) {
       return;
     }
     setActionLoading(true);
@@ -1138,7 +1142,7 @@ export default function DetailModal({
 
   const handleSetPaid = () => {
     const confirmMessage = `Konfirmasi Status Lunas:\nApakah Anda yakin ingin mengubah status pembayaran transaksi ini menjadi "Lunas"? Tindakan ini akan menyelesaikan alur transaksi Backcharge.`;
-    if (!window.confirm(confirmMessage)) {
+    if (!safeConfirm(confirmMessage)) {
       return;
     }
     onUpdateStatus(
@@ -1160,7 +1164,7 @@ export default function DetailModal({
     }
 
     const confirmMessage = `PERINGATAN STATUS KRITIS!\n\nApakah Anda yakin ingin menyimpan keputusan Approval Backcharge ini dengan status: "${modalApprovalStatus.toUpperCase()}"?\n\nPerubahan ini akan dicatat secara resmi atas nama ${currentUser.full_name || currentUser.email} (${roleTitle}).`;
-    if (!window.confirm(confirmMessage)) {
+    if (!safeConfirm(confirmMessage)) {
       return;
     }
 
@@ -1195,7 +1199,7 @@ export default function DetailModal({
 
   const handleRegionalApprovalSubmit = () => {
     const confirmMessage = `PERINGATAN STATUS KRITIS!\n\nApakah Anda yakin ingin menyimpan keputusan Approval Regional Head ini dengan status: "${modalRegionalApprovalStatus.toUpperCase()}"?\n\nPerubahan ini akan dicatat atas nama ${currentUser.full_name || currentUser.email} (Regional Head).`;
-    if (!window.confirm(confirmMessage)) return;
+    if (!safeConfirm(confirmMessage)) return;
 
     setActionLoading(true);
     const updates: Partial<Backcharge> = {
@@ -1225,7 +1229,7 @@ export default function DetailModal({
 
   const handleDivisionApprovalSubmit = () => {
     const confirmMessage = `PERINGATAN STATUS KRITIS!\n\nApakah Anda yakin ingin menyimpan keputusan Approval Division Head ini dengan status: "${modalDivisionApprovalStatus.toUpperCase()}"?\n\nPerubahan ini akan dicatat atas nama ${currentUser.full_name || currentUser.email} (Division Head).`;
-    if (!window.confirm(confirmMessage)) return;
+    if (!safeConfirm(confirmMessage)) return;
 
     setActionLoading(true);
     const updates: Partial<Backcharge> = {
@@ -1300,7 +1304,8 @@ export default function DetailModal({
     (!isRegionalHeadReq || transaction.regional_approval_status === 'Disetujui') &&
     (!isDivisionHeadReq || transaction.division_approval_status === 'Disetujui');
 
-  const showBlockSAP = isSuperAdmin || (isSalesHeadUser && transaction.category === 'Own Risk');
+  const canManageSAP = isSuperAdmin || isSalesHeadRole || isKacabRole;
+  const showBlockSAP = canManageSAP;
   const showBlockApprovalL1 = isSuperAdmin || ((isKacabUser && (isKacabCat)) || (isSalesHeadUser && isOtherCat));
   const showBlockRegionalApproval = isSuperAdmin || (isRegionalHeadUser && isRegionalHeadReq);
   const showBlockDivisionApproval = isSuperAdmin || (isDivisionHeadUser && txValue > 15000000);
@@ -1652,11 +1657,18 @@ export default function DetailModal({
                       </button>
                     ) : (
                       isAso && (
-                        <label className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg cursor-pointer border border-slate-200 transition-colors">
-                          <Upload className="w-3.5 h-3.5" />
+                        <label className={`p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg cursor-pointer border border-slate-200 transition-colors ${
+                          isUploadingDirect ? 'opacity-60 pointer-events-none' : ''
+                        }`}>
+                          {isUploadingDirect ? (
+                            <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin" />
+                          ) : (
+                            <Upload className="w-3.5 h-3.5" />
+                          )}
                           <input 
                             type="file" 
                             accept="application/pdf,image/*"
+                            disabled={isUploadingDirect}
                             onChange={(e) => uploadNewFile(e, 'file_bak_url', getFileLabels(transaction.category).bak)}
                             className="hidden" 
                           />
@@ -2027,7 +2039,7 @@ export default function DetailModal({
                         <span className="text-base">⚙️</span>
                         <div>
                           <h5 className="text-xs font-extrabold text-slate-800">1. Update SAP (Bill/No)</h5>
-                          <span className="text-[9px] text-slate-500 font-bold">Wewenang: Sales Head</span>
+                          <span className="text-[9px] text-slate-500 font-bold">Wewenang: Administrator, Sales Head, &amp; Kepala Cabang</span>
                         </div>
                       </div>
                       <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold ${
@@ -2075,12 +2087,12 @@ export default function DetailModal({
                             ? 'Atur pembebanan billing Backcharge di SAP ERP (Bill vs Not Bill).' 
                             : 'Kategori Non-Own Risk terproses otomatis di SAP.'}
                         </p>
-                        {transaction.category === 'Own Risk' && isSalesHeadRole && (
+                        {canManageSAP && (
                           <button 
                             onClick={() => setShowActionForm('sap')}
                             className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-lg shadow transition-all cursor-pointer shrink-0"
                           >
-                            Update Status SAP
+                            Ubah Status SAP
                           </button>
                         )}
                       </div>
@@ -2213,35 +2225,27 @@ export default function DetailModal({
                                         disabled={isUploading}
                                         onChange={async (e) => {
                                           const file = e.target.files?.[0];
-                                          if (file) {
-                                            item.setName(file.name);
-                                            const isDriveActive = googleToken || serviceAccountActive || appsScriptActive;
-                                            if (isDriveActive) {
-                                              item.setUploading(true);
-                                              try {
-                                                const docName = `Lampiran_Approval_${idx + 1}`;
-                                                const fileNameToUpload = getFormattedFileName(docName, transaction, file.name);
-                                                const driveUrl = await uploadFileToDrive(file, fileNameToUpload, googleToken);
-                                                item.setter(driveUrl);
-                                                if (addToast) addToast("Dokumen berhasil diunggah dan diamankan di Cloud!", "success");
-                                              } catch (err: any) {
-                                                console.error("Gagal mengunggah berkas:", err);
-                                                if (addToast) { addToast("File diamankan ke penyimpanan server lokal.", "info"); }
-                                                const reader = new FileReader();
-                                                reader.onloadend = () => {
-                                                  item.setter(reader.result as string);
-                                                };
-                                                reader.readAsDataURL(file);
-                                              } finally {
-                                                item.setUploading(false);
-                                              }
-                                            } else {
-                                              const reader = new FileReader();
-                                              reader.onloadend = () => {
-                                                item.setter(reader.result as string);
-                                              };
-                                              reader.readAsDataURL(file);
+                                          if (!file) return;
+                                          item.setName(file.name);
+                                          item.setUploading(true);
+                                          if (addToast) addToast(`Mengunggah ${item.label}...`, "info");
+                                          try {
+                                            const docName = `Lampiran_Approval_${idx + 1}`;
+                                            const fileNameToUpload = getFormattedFileName(docName, transaction, file.name);
+                                            const uploadedUrl = await uploadFileToDrive(file, fileNameToUpload, googleToken);
+                                            if (!uploadedUrl) {
+                                              throw new Error("Gagal mendapatkan URL berkas terunggah.");
                                             }
+                                            item.setter(uploadedUrl);
+                                            if (addToast) addToast(`${item.label} berhasil diunggah tanpa kendala dan siap disimpan!`, "success");
+                                          } catch (err: any) {
+                                            console.error("Gagal mengunggah berkas:", err);
+                                            item.setter(null);
+                                            item.setName('');
+                                            if (addToast) addToast(`Gagal mengunggah ${item.label}: ${err?.message || 'Terjadi kesalahan'}. File belum tersimpan.`, "error");
+                                          } finally {
+                                            item.setUploading(false);
+                                            if (e.target) e.target.value = '';
                                           }
                                         }}
                                         className="hidden" 
@@ -2273,10 +2277,19 @@ export default function DetailModal({
 
                           <button 
                             onClick={handleApprovalSubmit}
-                            disabled={actionLoading}
-                            className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2.5 rounded-xl text-xs font-extrabold transition-all shadow cursor-pointer"
+                            disabled={actionLoading || uploadingAttachment1 || uploadingAttachment2 || uploadingAttachment3}
+                            className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white py-2.5 rounded-xl text-xs font-extrabold transition-all shadow cursor-pointer flex items-center justify-center gap-2"
                           >
-                            Simpan Keputusan Approval
+                            {(actionLoading || uploadingAttachment1 || uploadingAttachment2 || uploadingAttachment3) && (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            )}
+                            <span>
+                              {(uploadingAttachment1 || uploadingAttachment2 || uploadingAttachment3) 
+                                ? 'Menunggu Lampiran Selesai Terunggah...' 
+                                : actionLoading 
+                                ? 'Menyimpan Approval...' 
+                                : 'Simpan Keputusan Approval'}
+                            </span>
                           </button>
                         </div>
                       </div>
@@ -2773,38 +2786,31 @@ export default function DetailModal({
                               const file = e.target.files?.[0];
                               if (!file) return;
                               setLocalHandoverSalesAdminFileName(file.name);
-                              
-                              const isDriveActive = googleToken || serviceAccountActive || appsScriptActive;
-                              
-                              if (isDriveActive) {
-                                setUploadingSalesAdmin(true);
-                                try {
-                                  const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
-                                  setLocalHandoverSalesAdminFile(driveUrl);
-                                  if (addToast) addToast("Dokumen berhasil diunggah ke Google Drive!", "success");
-                                } catch (err: any) {
-                                  console.error("Gagal mengunggah ke Google Drive:", err);
-                                  if (addToast) { addToast("File diamankan ke penyimpanan lokal.", "info"); }
-                                  const reader = new FileReader();
-                                  reader.onloadend = () => {
-                                    setLocalHandoverSalesAdminFile(reader.result as string);
-                                  };
-                                  reader.readAsDataURL(file);
-                                } finally {
-                                  setUploadingSalesAdmin(false);
+                              setUploadingSalesAdmin(true);
+                              if (addToast) addToast("Mengunggah foto bukti serah terima...", "info");
+                              try {
+                                const docName = 'Foto_Serah_Terima_Sales_Admin';
+                                const fileNameToUpload = getFormattedFileName(docName, transaction, file.name);
+                                const driveUrl = await uploadFileToDrive(file, fileNameToUpload, googleToken);
+                                if (!driveUrl) {
+                                  throw new Error("Gagal mendapatkan URL foto bukti.");
                                 }
-                              } else {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setLocalHandoverSalesAdminFile(reader.result as string);
-                                };
-                                reader.readAsDataURL(file);
+                                setLocalHandoverSalesAdminFile(driveUrl);
+                                if (addToast) addToast("Foto bukti serah terima berhasil diunggah tanpa kendala!", "success");
+                              } catch (err: any) {
+                                console.error("Gagal mengunggah foto serah terima:", err);
+                                setLocalHandoverSalesAdminFile(null);
+                                setLocalHandoverSalesAdminFileName('');
+                                if (addToast) addToast(`Gagal mengunggah foto bukti: ${err?.message || 'Terjadi kesalahan'}. File belum tersimpan.`, "error");
+                              } finally {
+                                setUploadingSalesAdmin(false);
+                                if (e.target) e.target.value = '';
                               }
                             }}
                             className="hidden" 
                           />
                         </label>
-                        {localHandoverSalesAdminFile && (
+                        {localHandoverSalesAdminFile && !uploadingSalesAdmin && (
                           <button 
                             type="button" 
                             onClick={() => { setLocalHandoverSalesAdminFile(null); setLocalHandoverSalesAdminFileName(''); }}
@@ -2818,14 +2824,16 @@ export default function DetailModal({
                       {uploadingSalesAdmin && (
                         <div className="flex items-center space-x-1.5 text-[9px] font-bold text-blue-600 font-sans">
                           <Loader2 className="w-3 h-3 animate-spin" />
-                          <span>Mengamankan foto bukti ke Cloud Storage...</span>
+                          <span>Mengunggah foto bukti ke Cloud Storage... Mohon tunggu.</span>
                         </div>
                       )}
 
                       {localHandoverSalesAdminFileName && (
                         <div className="flex items-center space-x-1.5 text-[8px] text-slate-500 font-sans">
                           <span className="font-mono truncate flex-grow max-w-[200px]">{localHandoverSalesAdminFileName}</span>
-                          <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black uppercase">Cloud Secure</span>
+                          <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black uppercase">
+                            {uploadingSalesAdmin ? 'Mengunggah...' : 'Cloud Secure'}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -2841,7 +2849,14 @@ export default function DetailModal({
                       disabled={actionLoading || uploadingSalesAdmin || !localHandoverSalesAdminFile}
                       className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white py-2 rounded-xl text-xs font-bold transition-all shadow font-sans cursor-pointer flex items-center justify-center space-x-1.5"
                     >
-                      <span>Kirim &amp; Simpan ke Otoritas</span>
+                      {(actionLoading || uploadingSalesAdmin) && <Loader2 className="w-4 h-4 animate-spin" />}
+                      <span>
+                        {uploadingSalesAdmin 
+                          ? 'Menunggu Foto Selesai Terunggah...' 
+                          : actionLoading 
+                          ? 'Menyimpan...' 
+                          : 'Kirim & Simpan ke Otoritas'}
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -2897,30 +2912,29 @@ export default function DetailModal({
                                 const file = e.target.files?.[0];
                                 if (!file) return;
                                 setLocalFileBakName(file.name);
-                                const isDriveActive = googleToken || serviceAccountActive || appsScriptActive;
-                                if (isDriveActive) {
-                                  setUploadingBak(true);
-                                  try {
-                                    const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
-                                    setLocalFileBak(driveUrl);
-                                  } catch (err) {
-                                    console.error("Gagal mengunggah ke Drive:", err);
-                                    const reader = new FileReader();
-                                    reader.onloadend = () => setLocalFileBak(reader.result as string);
-                                    reader.readAsDataURL(file);
-                                  } finally {
-                                    setUploadingBak(false);
-                                  }
-                                } else {
-                                  const reader = new FileReader();
-                                  reader.onloadend = () => setLocalFileBak(reader.result as string);
-                                  reader.readAsDataURL(file);
+                                setUploadingBak(true);
+                                if (addToast) addToast("Mengunggah File BAK...", "info");
+                                try {
+                                  const docName = 'Berkas_BAK';
+                                  const fileNameToUpload = getFormattedFileName(docName, transaction, file.name);
+                                  const driveUrl = await uploadFileToDrive(file, fileNameToUpload, googleToken);
+                                  if (!driveUrl) throw new Error("Gagal mendapatkan URL berkas.");
+                                  setLocalFileBak(driveUrl);
+                                  if (addToast) addToast("File BAK berhasil diunggah tanpa kendala!", "success");
+                                } catch (err: any) {
+                                  console.error("Gagal mengunggah ke Drive:", err);
+                                  setLocalFileBak(null);
+                                  setLocalFileBakName('');
+                                  if (addToast) addToast(`Gagal mengunggah File BAK: ${err?.message || 'Terjadi kesalahan'}. File belum tersimpan.`, "error");
+                                } finally {
+                                  setUploadingBak(false);
+                                  if (e.target) e.target.value = '';
                                 }
                               }}
                               className="hidden" 
                             />
                           </label>
-                          {localFileBak && (
+                          {localFileBak && !uploadingBak && (
                             <button 
                               type="button" 
                               onClick={() => { setLocalFileBak(null); setLocalFileBakName(''); }}
@@ -2933,13 +2947,15 @@ export default function DetailModal({
                         {uploadingBak && (
                           <div className="flex items-center space-x-1.5 text-[9px] font-bold text-blue-600 font-sans">
                             <Loader2 className="w-3 h-3 animate-spin" />
-                            <span>Mengamankan file ke Cloud Storage...</span>
+                            <span>Mengunggah file ke Cloud Storage... Mohon tunggu.</span>
                           </div>
                         )}
                         {localFileBakName && (
                           <div className="flex items-center space-x-1 text-[8px] text-slate-500 font-sans">
                             <span className="font-mono truncate flex-grow max-w-[200px]">{localFileBakName}</span>
-                            <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black">Cloud Secure</span>
+                            <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black">
+                              {uploadingBak ? 'Mengunggah...' : 'Cloud Secure'}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -2948,9 +2964,9 @@ export default function DetailModal({
                       <div className="space-y-1">
                         <label className="block text-[9px] font-bold text-slate-500 uppercase font-sans">2. Dokumen Pendukung (File / Foto)</label>
                         <div className="flex items-center space-x-2">
-                          <label className="flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-3 py-1.5 rounded-xl cursor-pointer font-bold border border-slate-200 transition-all flex-grow font-sans">
+                          <label className={`flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-3 py-1.5 rounded-xl cursor-pointer font-bold border border-slate-200 transition-all flex-grow font-sans ${uploadingDokPendukung ? 'opacity-60 pointer-events-none' : ''}`}>
                             <Upload className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
-                            <span>{localUploadDokPendukungName ? 'Ubah Dokumen Pendukung' : 'Pilih Dokumen Pendukung'}</span>
+                            <span>{uploadingDokPendukung ? 'Mengunggah Dokumen...' : localUploadDokPendukungName ? 'Ubah Dokumen Pendukung' : 'Pilih Dokumen Pendukung'}</span>
                             <input 
                               type="file" 
                               accept="application/pdf,image/*" 
@@ -2959,30 +2975,29 @@ export default function DetailModal({
                                 const file = e.target.files?.[0];
                                 if (!file) return;
                                 setLocalUploadDokPendukungName(file.name);
-                                const isDriveActive = googleToken || serviceAccountActive || appsScriptActive;
-                                if (isDriveActive) {
-                                  setUploadingDokPendukung(true);
-                                  try {
-                                    const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
-                                    setLocalUploadDokPendukung(driveUrl);
-                                  } catch (err) {
-                                    console.error("Gagal mengunggah berkas:", err);
-                                    const reader = new FileReader();
-                                    reader.onloadend = () => setLocalUploadDokPendukung(reader.result as string);
-                                    reader.readAsDataURL(file);
-                                  } finally {
-                                    setUploadingDokPendukung(false);
-                                  }
-                                } else {
-                                  const reader = new FileReader();
-                                  reader.onloadend = () => setLocalUploadDokPendukung(reader.result as string);
-                                  reader.readAsDataURL(file);
+                                setUploadingDokPendukung(true);
+                                if (addToast) addToast("Mengunggah Dokumen Pendukung...", "info");
+                                try {
+                                  const docName = 'Dokumen_Pendukung';
+                                  const fileNameToUpload = getFormattedFileName(docName, transaction, file.name);
+                                  const driveUrl = await uploadFileToDrive(file, fileNameToUpload, googleToken);
+                                  if (!driveUrl) throw new Error("Gagal mendapatkan URL berkas.");
+                                  setLocalUploadDokPendukung(driveUrl);
+                                  if (addToast) addToast("Dokumen pendukung berhasil diunggah tanpa kendala!", "success");
+                                } catch (err: any) {
+                                  console.error("Gagal mengunggah berkas:", err);
+                                  setLocalUploadDokPendukung(null);
+                                  setLocalUploadDokPendukungName('');
+                                  if (addToast) addToast(`Gagal mengunggah Dokumen Pendukung: ${err?.message || 'Terjadi kesalahan'}. File belum tersimpan.`, "error");
+                                } finally {
+                                  setUploadingDokPendukung(false);
+                                  if (e.target) e.target.value = '';
                                 }
                               }}
                               className="hidden" 
                             />
                           </label>
-                          {localUploadDokPendukung && (
+                          {localUploadDokPendukung && !uploadingDokPendukung && (
                             <button 
                               type="button" 
                               onClick={() => { setLocalUploadDokPendukung(null); setLocalUploadDokPendukungName(''); }}
@@ -2995,13 +3010,15 @@ export default function DetailModal({
                         {uploadingDokPendukung && (
                           <div className="flex items-center space-x-1.5 text-[9px] font-bold text-blue-600 font-sans">
                             <Loader2 className="w-3 h-3 animate-spin" />
-                            <span>Mengamankan file ke Cloud Storage...</span>
+                            <span>Mengunggah file ke Cloud Storage... Mohon tunggu.</span>
                           </div>
                         )}
                         {localUploadDokPendukungName && (
                           <div className="flex items-center space-x-1 text-[8px] text-slate-500 font-sans">
                             <span className="font-mono truncate flex-grow max-w-[200px]">{localUploadDokPendukungName}</span>
-                            <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black">Cloud Secure</span>
+                            <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black">
+                              {uploadingDokPendukung ? 'Mengunggah...' : 'Cloud Secure'}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -3022,9 +3039,9 @@ export default function DetailModal({
                       <div className="space-y-1 pt-2 border-t border-slate-100">
                         <label className="block text-[10px] font-bold text-slate-500 uppercase font-sans">Pilih File Foto Bukti Serah Terima (Wajib)</label>
                         <div className="flex items-center space-x-2">
-                          <label className="flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-3 py-2 rounded-xl cursor-pointer font-bold border border-slate-200 transition-all flex-grow font-sans">
+                          <label className={`flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-3 py-2 rounded-xl cursor-pointer font-bold border border-slate-200 transition-all flex-grow font-sans ${uploadingSalesAdmin ? 'opacity-60 pointer-events-none' : ''}`}>
                             <Upload className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
-                            <span>{localHandoverSalesAdminFileName ? 'Ubah Foto' : 'Pilih Foto Serah Terima'}</span>
+                            <span>{uploadingSalesAdmin ? 'Mengunggah Foto...' : localHandoverSalesAdminFileName ? 'Ubah Foto' : 'Pilih Foto Serah Terima'}</span>
                             <input 
                               type="file" 
                               accept="image/*" 
@@ -3033,38 +3050,29 @@ export default function DetailModal({
                                 const file = e.target.files?.[0];
                                 if (!file) return;
                                 setLocalHandoverSalesAdminFileName(file.name);
-                                
-                                const isDriveActive = googleToken || serviceAccountActive || appsScriptActive;
-                                
-                                if (isDriveActive) {
-                                  setUploadingSalesAdmin(true);
-                                  try {
-                                    const driveUrl = await uploadFileToDrive(file, file.name, googleToken);
-                                    setLocalHandoverSalesAdminFile(driveUrl);
-                                    if (addToast) addToast("Dokumen berhasil diamankan di Cloud!", "success");
-                                  } catch (err: any) {
-                                    console.error("Gagal mengunggah berkas:", err);
-                                    if (addToast) { addToast("File diamankan ke penyimpanan server lokal.", "info"); }
-                                    const reader = new FileReader();
-                                    reader.onloadend = () => {
-                                      setLocalHandoverSalesAdminFile(reader.result as string);
-                                    };
-                                    reader.readAsDataURL(file);
-                                  } finally {
-                                    setUploadingSalesAdmin(false);
-                                  }
-                                } else {
-                                  const reader = new FileReader();
-                                  reader.onloadend = () => {
-                                    setLocalHandoverSalesAdminFile(reader.result as string);
-                                  };
-                                  reader.readAsDataURL(file);
+                                setUploadingSalesAdmin(true);
+                                if (addToast) addToast("Mengunggah foto bukti serah terima...", "info");
+                                try {
+                                  const docName = 'Foto_Serah_Terima';
+                                  const fileNameToUpload = getFormattedFileName(docName, transaction, file.name);
+                                  const driveUrl = await uploadFileToDrive(file, fileNameToUpload, googleToken);
+                                  if (!driveUrl) throw new Error("Gagal mendapatkan URL foto.");
+                                  setLocalHandoverSalesAdminFile(driveUrl);
+                                  if (addToast) addToast("Foto serah terima berhasil diunggah tanpa kendala!", "success");
+                                } catch (err: any) {
+                                  console.error("Gagal mengunggah berkas:", err);
+                                  setLocalHandoverSalesAdminFile(null);
+                                  setLocalHandoverSalesAdminFileName('');
+                                  if (addToast) addToast(`Gagal mengunggah foto serah terima: ${err?.message || 'Terjadi kesalahan'}. File belum tersimpan.`, "error");
+                                } finally {
+                                  setUploadingSalesAdmin(false);
+                                  if (e.target) e.target.value = '';
                                 }
                               }}
                               className="hidden" 
                             />
                           </label>
-                          {localHandoverSalesAdminFile && (
+                          {localHandoverSalesAdminFile && !uploadingSalesAdmin && (
                             <button 
                               type="button" 
                               onClick={() => { setLocalHandoverSalesAdminFile(null); setLocalHandoverSalesAdminFileName(''); }}
@@ -3078,14 +3086,16 @@ export default function DetailModal({
                         {uploadingSalesAdmin && (
                           <div className="flex items-center space-x-1.5 text-[9px] font-bold text-blue-600 font-sans">
                             <Loader2 className="w-3 h-3 animate-spin" />
-                            <span>Mengamankan foto bukti ke Cloud Storage...</span>
+                            <span>Mengunggah foto bukti ke Cloud Storage... Mohon tunggu.</span>
                           </div>
                         )}
 
                         {localHandoverSalesAdminFileName && (
                           <div className="flex items-center space-x-1.5 text-[8px] text-slate-500 font-sans">
                             <span className="font-mono truncate flex-grow max-w-[200px]">{localHandoverSalesAdminFileName}</span>
-                            <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black uppercase">Cloud Secure</span>
+                            <span className="bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded text-[7px] font-black uppercase">
+                              {uploadingSalesAdmin ? 'Mengunggah...' : 'Cloud Secure'}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -3099,6 +3109,10 @@ export default function DetailModal({
 
                     <button 
                       onClick={() => {
+                        if (uploadingSalesAdmin || uploadingBak || uploadingDokPendukung) {
+                          if (addToast) addToast('Harap tunggu! Berkas masih dalam proses pengunggahan ke server.', 'error');
+                          return;
+                        }
                         if (!localHandoverSalesAdminFile) {
                           if (addToast) {
                             addToast('Foto bukti serah terima wajib diunggah!', 'error');
@@ -3130,7 +3144,16 @@ export default function DetailModal({
                       disabled={actionLoading || uploadingSalesAdmin || uploadingBak || uploadingDokPendukung || !localHandoverSalesAdminFile}
                       className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-2 rounded-xl text-xs font-bold transition-all shadow font-sans cursor-pointer flex items-center justify-center space-x-1.5"
                     >
-                      <span>📦 Kirim &amp; Serahkan Fisik Berkas</span>
+                      {(actionLoading || uploadingSalesAdmin || uploadingBak || uploadingDokPendukung) && (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      )}
+                      <span>
+                        {(uploadingSalesAdmin || uploadingBak || uploadingDokPendukung) 
+                          ? 'Menunggu Berkas Selesai Terunggah...' 
+                          : actionLoading 
+                          ? 'Menyimpan...' 
+                          : '📦 Kirim & Serahkan Fisik Berkas'}
+                      </span>
                     </button>
                   </div>
                 </div>

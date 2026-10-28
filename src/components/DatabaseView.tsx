@@ -22,7 +22,7 @@ import {
   isRegionalHeadRole
 } from '../types';
 import { canPerformAction } from '../lib/rbac';
-import { compressImageIfNeeded } from '../lib/googleDrive';
+import { compressImageIfNeeded, uploadFileToDrive } from '../lib/googleDrive';
 import MultiSelect from './MultiSelect';
 
 export interface DatabaseViewProps {
@@ -90,6 +90,19 @@ const formatCurrency = (val: number) => {
 const formatDate = (dateStr?: string | null) => {
   if (!dateStr) return '-';
   try {
+    const justDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.split(' ')[0];
+    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(justDate)) {
+      const parts = justDate.split('-');
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      const d = parseInt(parts[2], 10);
+      const dateObj = new Date(y, m, d);
+      return dateObj.toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+    }
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
     return d.toLocaleDateString('id-ID', {
@@ -100,6 +113,21 @@ const formatDate = (dateStr?: string | null) => {
   } catch {
     return dateStr;
   }
+};
+
+export const getEffectiveSapStatus = (tx: Backcharge): string => {
+  if (tx.status_sap === 'Not Bill' || String(tx.status_sap || '').toLowerCase() === 'not bill') {
+    return 'Not Bill';
+  }
+  const hasInvoice = Boolean(tx.no_invoice && typeof tx.no_invoice === 'string' && tx.no_invoice.trim() !== '' && tx.no_invoice.trim() !== '-');
+  const isPaid = tx.status_payment === 'Lunas';
+  const stage = getTransactionStage(tx);
+  const isInvoiceStageOrBeyond = hasInvoice || isPaid || stage === 'Menunggu Cetak & Kirim Invoice' || stage === 'Menunggu Pelunasan Backcharge' || stage === 'Selesai (Lunas)';
+
+  if (isInvoiceStageOrBeyond && (!tx.status_sap || tx.status_sap === 'N/A' || tx.status_sap.trim() === '')) {
+    return 'Bill';
+  }
+  return tx.status_sap || 'N/A';
 };
 
 const getLeadTimeDays = (bakDateStr?: string | null, paymentDateStr?: string | null, isLunas?: boolean): number => {
@@ -255,6 +283,10 @@ const PROCESS_STAGES = [
 ];
 
 const getTransactionStage = (t: Backcharge): string => {
+  if (t.status_sap === 'Not Bill' || String(t.status_sap || '').toLowerCase() === 'not bill') {
+    return 'Dokumen Ditolak (Reject)';
+  }
+
   const transVal = Number(t.value) || 0;
   const isMaintenance = t.category === 'Maintenance';
   const isRegionalHeadReq = isMaintenance ? (transVal > 7500000) : (transVal > 5000000);
@@ -307,26 +339,27 @@ const getTransactionStage = (t: Backcharge): string => {
 };
 
 const parseExcelDate = (val: any): string => {
-  if (!val) return new Date().toISOString().split('T')[0];
+  const getTodayStr = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  if (!val) return getTodayStr();
   if (val instanceof Date) {
     if (!isNaN(val.getTime())) {
-      return val.toISOString().split('T')[0];
+      const year = val.getUTCFullYear();
+      const month = String(val.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(val.getUTCDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     }
   }
   const str = String(val).trim();
-  if (!str) return new Date().toISOString().split('T')[0];
+  if (!str) return getTodayStr();
 
-  // If it's an Excel serial date number (e.g., 46322)
-  if (/^\d+(\.\d+)?$/.test(str)) {
-    const num = Number(str);
-    const utcDays = num > 60 ? num - 25569 : num - 25568;
-    const dateObj = new Date(utcDays * 86400 * 1000);
-    if (!isNaN(dateObj.getTime())) {
-      return dateObj.toISOString().split('T')[0];
-    }
-  }
-
-  // If DD/MM/YYYY or DD-MM-YYYY
+  // If DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
   if (/^\d{1,2}[/-]\d{1,2}[/-]\d{4}$/.test(str)) {
     const parts = str.split(/[/-]/);
     const day = parts[0].padStart(2, '0');
@@ -335,12 +368,37 @@ const parseExcelDate = (val: any): string => {
     return `${year}-${month}-${day}`;
   }
 
-  const d = new Date(str);
-  if (!isNaN(d.getTime())) {
-    return d.toISOString().split('T')[0];
+  // If YYYY-MM-DD
+  if (/^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(str)) {
+    const parts = str.split(/[/-]/);
+    const year = parts[0];
+    const month = parts[1].padStart(2, '0');
+    const day = parts[2].padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
-  return new Date().toISOString().split('T')[0];
+  // If it's an Excel serial date number (e.g., 46322)
+  if (/^\d+(\.\d+)?$/.test(str)) {
+    const num = Number(str);
+    const utcDays = num > 60 ? num - 25569 : num - 25568;
+    const dateObj = new Date(utcDays * 86400 * 1000);
+    if (!isNaN(dateObj.getTime())) {
+      const year = dateObj.getUTCFullYear();
+      const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getUTCDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+  }
+
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  return getTodayStr();
 };
 
 export default function DatabaseView({
@@ -385,9 +443,10 @@ export default function DatabaseView({
   const canUpdateSap = useMemo(() => {
     if (!canPerformAction(currentUser?.role, 'update')) return false;
     return hasRole(currentUser?.role, 'Administrator') ||
-      hasRole(currentUser?.role, 'Admin Head') ||
       hasRole(currentUser?.role, 'Sales Head') ||
-      hasRole(currentUser?.role, 'Sales');
+      hasRole(currentUser?.role, 'Sales / Sales Head') ||
+      hasRole(currentUser?.role, 'Kepala Cabang') ||
+      hasRole(currentUser?.role, 'kacab');
   }, [currentUser]);
 
   const canUpdatePayment = useMemo(() => {
@@ -465,10 +524,18 @@ export default function DatabaseView({
     supporting: { name: string; size: number; type: string; dataUrl: string } | null;
     handover: { name: string; size: number; type: string; dataUrl: string } | null;
   }>({ bak: null, supporting: null, handover: null });
+  const [uploadingEditFiles, setUploadingEditFiles] = useState<{
+    bak: boolean;
+    supporting: boolean;
+    handover: boolean;
+  }>({ bak: false, supporting: false, handover: false });
+  const [isUploadingBulkFile, setIsUploadingBulkFile] = useState<boolean>(false);
   const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const isAnyEditFileUploading = uploadingEditFiles.bak || uploadingEditFiles.supporting || uploadingEditFiles.handover;
 
   // Form State for Add / Edit
   const initialFormState = {
@@ -811,7 +878,7 @@ export default function DatabaseView({
 
       // 7. SAP status filter (multi-select)
       if (selectedSapStatuses.length > 0) {
-        const effectiveSap = t.status_sap || 'N/A';
+        const effectiveSap = getEffectiveSapStatus(t);
         if (!selectedSapStatuses.includes(effectiveSap)) {
           return false;
         }
@@ -1703,9 +1770,20 @@ export default function DatabaseView({
           }
 
           let statusSap = getVal(['status sap (bill/not bill/na)', 'status sap', 'sap status']) || 'Bill';
-          if (statusSap.toLowerCase().includes('not bill')) statusSap = 'Not Bill';
-          else if (statusSap.toLowerCase().includes('n/a') || statusSap.toLowerCase() === 'na') statusSap = 'N/A';
-          else if (statusSap.toLowerCase().includes('bill')) statusSap = 'Bill';
+          if (statusSap.toLowerCase().includes('not bill')) {
+            statusSap = 'Not Bill';
+          } else if (statusSap.toLowerCase().includes('n/a') || statusSap.toLowerCase() === 'na' || !statusSap) {
+            const inv = getVal(['no invoice', 'no. invoice', 'invoice']) || '-';
+            const pay = getVal(['status bayar', 'status pembayaran']) || '';
+            const appr = getVal(['status approval', 'approval']) || '';
+            if (inv !== '-' || pay.toLowerCase() === 'lunas' || pay.toLowerCase() === 'belum bayar' || appr.toLowerCase().includes('disetujui')) {
+              statusSap = 'Bill';
+            } else {
+              statusSap = 'N/A';
+            }
+          } else {
+            statusSap = 'Bill';
+          }
 
           parsedItems.push({
             category,
@@ -1880,6 +1958,10 @@ export default function DatabaseView({
   const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTransaction) return;
+    if (uploadingEditFiles.bak || uploadingEditFiles.supporting || uploadingEditFiles.handover) {
+      if (addToast) addToast('Harap tunggu! Berkas dokumen/foto masih dalam proses pengunggahan.', 'error');
+      return;
+    }
     if (!validateForm()) return;
     setIsSubmitting(true);
     try {
@@ -1911,28 +1993,36 @@ export default function DatabaseView({
     if (!rawFile) return;
     if (rawFile.size > 25 * 1024 * 1024) {
       if (addToast) addToast('Ukuran file maksimal 25MB!', 'error');
+      if (e.target) e.target.value = '';
       return;
     }
-    if (addToast) addToast('Mengoptimalkan & mengompresi gambar (tetap jernih & tajam)...', 'info');
+
+    setUploadingEditFiles(prev => ({ ...prev, [type]: true }));
+    if (addToast) addToast(`Mengunggah berkas "${rawFile.name}"... Mohon tunggu hingga selesai terverifikasi.`, 'info');
     try {
-      const optimized = await compressImageIfNeeded(rawFile);
-      const file = optimized instanceof File ? optimized : new File([optimized], rawFile.name, { type: rawFile.type });
-      const reader = new FileReader();
-      reader.onload = () => {
-        setEditingFiles(prev => ({
-          ...prev,
-          [type]: {
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            dataUrl: reader.result as string
-          }
-        }));
-        if (addToast) addToast(`Berkas "${file.name}" berhasil dikompres & diunggah!`, 'success');
-      };
-      reader.readAsDataURL(file);
-    } catch {
-      if (addToast) addToast('Gagal memproses file.', 'error');
+      const typeLabel = type === 'bak' ? 'Berkas_BAK' : type === 'supporting' ? 'Dokumen_Pendukung' : 'Foto_Serah_Terima';
+      const safeName = `${typeLabel}_${editingTransaction?.id || 'edit'}_${rawFile.name}`;
+      const uploadedUrl = await uploadFileToDrive(rawFile, safeName);
+      if (!uploadedUrl) {
+        throw new Error('Gagal mendapatkan tautan penyimpanan berkas.');
+      }
+      setEditingFiles(prev => ({
+        ...prev,
+        [type]: {
+          name: rawFile.name,
+          size: rawFile.size,
+          type: rawFile.type,
+          dataUrl: uploadedUrl
+        }
+      }));
+      if (addToast) addToast(`Berkas "${rawFile.name}" berhasil terunggah tanpa kendala dan siap disimpan!`, 'success');
+    } catch (err: any) {
+      console.error('Upload file edit failed:', err);
+      setEditingFiles(prev => ({ ...prev, [type]: null }));
+      if (addToast) addToast(`Gagal mengunggah berkas: ${err?.message || 'Terjadi kesalahan'}. File tidak tersimpan.`, 'error');
+    } finally {
+      setUploadingEditFiles(prev => ({ ...prev, [type]: false }));
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -1945,6 +2035,7 @@ export default function DatabaseView({
     setBulkApprovalStatus('-- Tidak Diubah --');
     setBulkAuditNote(`Update status massal oleh ${currentUser?.full_name || 'User'} (${currentUser?.role || 'Admin'})`);
     setBulkFile(null);
+    setIsUploadingBulkFile(false);
     setIsDraggingFile(false);
     setIsBulkUpdateModalOpen(true);
   };
@@ -1956,26 +2047,27 @@ export default function DatabaseView({
       return;
     }
 
-    if (addToast) addToast('Mengoptimalkan & mengompresi gambar (tetap jernih & tajam)...', 'info');
+    setIsUploadingBulkFile(true);
+    if (addToast) addToast(`Mengunggah berkas bukti "${rawFile.name}"... Mohon tunggu hingga selesai terverifikasi.`, 'info');
     try {
-      const optimized = await compressImageIfNeeded(rawFile);
-      const file = optimized instanceof File ? optimized : new File([optimized], rawFile.name, { type: rawFile.type });
-      const reader = new FileReader();
-      reader.onload = () => {
-        setBulkFile({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          dataUrl: reader.result as string
-        });
-        if (addToast) addToast(`Berkas "${file.name}" berhasil dikompres & diunggah!`, 'success');
-      };
-      reader.onerror = () => {
-        if (addToast) addToast('Gagal membaca file berkas.', 'error');
-      };
-      reader.readAsDataURL(file);
-    } catch {
-      if (addToast) addToast('Gagal memproses file.', 'error');
+      const safeName = `Bukti_Massal_${Date.now()}_${rawFile.name}`;
+      const uploadedUrl = await uploadFileToDrive(rawFile, safeName);
+      if (!uploadedUrl) {
+        throw new Error('Gagal mendapatkan tautan penyimpanan dokumen.');
+      }
+      setBulkFile({
+        name: rawFile.name,
+        size: rawFile.size,
+        type: rawFile.type,
+        dataUrl: uploadedUrl
+      });
+      if (addToast) addToast(`Berkas bukti "${rawFile.name}" berhasil terunggah tanpa kendala dan siap disimpan!`, 'success');
+    } catch (err: any) {
+      console.error('Failed to process bulk file:', err);
+      setBulkFile(null);
+      if (addToast) addToast(`Gagal mengunggah berkas: ${err?.message || 'Terjadi kesalahan'}. File belum tersimpan.`, 'error');
+    } finally {
+      setIsUploadingBulkFile(false);
     }
   };
 
@@ -2010,9 +2102,14 @@ export default function DatabaseView({
       return;
     }
 
+    if (isUploadingBulkFile) {
+      if (addToast) addToast('Harap tunggu! Berkas bukti serah terima masih dalam proses pengunggahan.', 'error');
+      return;
+    }
+
     // 2. Mandatory file/photo attachment check
     if (!bulkFile) {
-      if (addToast) addToast('Wajib melampirkan foto atau file bukti serah terima / lampiran!', 'error');
+      if (addToast) addToast('Wajib melampirkan foto atau file bukti serah terima / lampiran yang telah berhasil terunggah!', 'error');
       return;
     }
 
@@ -2776,15 +2873,20 @@ export default function DatabaseView({
                       </td>
 
                       <td className="py-3 px-3 text-center whitespace-nowrap">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          tx.status_sap === 'Bill' 
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                            : tx.status_sap === 'Not Bill'
-                            ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                            : 'bg-gray-50 text-gray-500 border border-gray-200'
-                        }`}>
-                          {tx.status_sap || 'N/A'}
-                        </span>
+                        {(() => {
+                          const effSap = getEffectiveSapStatus(tx);
+                          return (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              effSap === 'Bill' 
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                                : effSap === 'Not Bill'
+                                ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                : 'bg-gray-50 text-gray-500 border border-gray-200'
+                            }`}>
+                              {effSap}
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       <td className="py-2.5 px-3 text-center whitespace-nowrap">
@@ -3398,37 +3500,137 @@ export default function DatabaseView({
                   {/* 1. FILE BAK */}
                   <div>
                     <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">1. FILE BAK (PDF / GAMBAR)</label>
-                    <input type="file" ref={editFileInputRef} onChange={(e) => handleFileChangeEdit(e, 'bak')} className="hidden" id="edit-file-bak" />
-                    <label htmlFor="edit-file-bak" className="cursor-pointer w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-between transition-all">
-                      <span>{editingFiles.bak ? editingFiles.bak.name : (editingTransaction?.file_bak_url ? 'Ubah File BAK' : 'Pilih File BAK')}</span>
-                      <Upload className="w-4 h-4 text-slate-400" />
+                    <input 
+                      type="file" 
+                      ref={editFileInputRef} 
+                      disabled={uploadingEditFiles.bak}
+                      onChange={(e) => handleFileChangeEdit(e, 'bak')} 
+                      className="hidden" 
+                      id="edit-file-bak" 
+                    />
+                    <label 
+                      htmlFor="edit-file-bak" 
+                      className={`cursor-pointer w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-between transition-all ${
+                        uploadingEditFiles.bak ? 'opacity-60 pointer-events-none' : ''
+                      }`}
+                    >
+                      <span>
+                        {uploadingEditFiles.bak 
+                          ? 'Mengunggah & merampingkan berkas...' 
+                          : editingFiles.bak 
+                          ? editingFiles.bak.name 
+                          : (editingTransaction?.file_bak_url ? 'Ubah File BAK' : 'Pilih File BAK')}
+                      </span>
+                      {uploadingEditFiles.bak ? (
+                        <RefreshCw className="w-4 h-4 text-blue-600 animate-spin" />
+                      ) : (
+                        <Upload className="w-4 h-4 text-slate-400" />
+                      )}
                     </label>
-                    {(editingFiles.bak || editingTransaction?.file_bak_url) && (
-                      <div className="flex items-center gap-2 mt-1.5 text-[10px]">
-                        <span className="text-slate-500">File BAK Tersimpan</span>
-                        <span className="text-emerald-600 font-bold bg-emerald-50 px-1.5 rounded">Cloud Secure</span>
+                    {uploadingEditFiles.bak ? (
+                      <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-blue-600 font-bold">
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        <span>Sedang mengunggah ke Cloud Storage... Mohon tunggu sebelum menyimpan.</span>
                       </div>
-                    )}
+                    ) : (editingFiles.bak || editingTransaction?.file_bak_url) ? (
+                      <div className="flex items-center gap-2 mt-1.5 text-[10px]">
+                        <span className="text-slate-500 font-medium">{editingFiles.bak ? editingFiles.bak.name : 'File BAK Tersimpan'}</span>
+                        <span className="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>Terunggah (Siap Disimpan)</span>
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* 2. DOKUMEN PENDUKUNG */}
                   <div>
                     <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">2. DOKUMEN PENDUKUNG (FILE / FOTO)</label>
-                    <input type="file" onChange={(e) => handleFileChangeEdit(e, 'supporting')} className="hidden" id="edit-file-supporting" />
-                    <label htmlFor="edit-file-supporting" className="cursor-pointer w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-between transition-all">
-                      <span>{editingFiles.supporting ? editingFiles.supporting.name : (editingTransaction?.upload_dok_pendukung ? 'Ubah Dokumen Pendukung' : 'Pilih Dokumen Pendukung')}</span>
-                      <Upload className="w-4 h-4 text-slate-400" />
+                    <input 
+                      type="file" 
+                      disabled={uploadingEditFiles.supporting}
+                      onChange={(e) => handleFileChangeEdit(e, 'supporting')} 
+                      className="hidden" 
+                      id="edit-file-supporting" 
+                    />
+                    <label 
+                      htmlFor="edit-file-supporting" 
+                      className={`cursor-pointer w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-between transition-all ${
+                        uploadingEditFiles.supporting ? 'opacity-60 pointer-events-none' : ''
+                      }`}
+                    >
+                      <span>
+                        {uploadingEditFiles.supporting 
+                          ? 'Mengunggah & merampingkan berkas...' 
+                          : editingFiles.supporting 
+                          ? editingFiles.supporting.name 
+                          : (editingTransaction?.upload_dok_pendukung ? 'Ubah Dokumen Pendukung' : 'Pilih Dokumen Pendukung')}
+                      </span>
+                      {uploadingEditFiles.supporting ? (
+                        <RefreshCw className="w-4 h-4 text-blue-600 animate-spin" />
+                      ) : (
+                        <Upload className="w-4 h-4 text-slate-400" />
+                      )}
                     </label>
+                    {uploadingEditFiles.supporting ? (
+                      <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-blue-600 font-bold">
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        <span>Sedang mengunggah ke Cloud Storage... Mohon tunggu sebelum menyimpan.</span>
+                      </div>
+                    ) : (editingFiles.supporting || editingTransaction?.upload_dok_pendukung) ? (
+                      <div className="flex items-center gap-2 mt-1.5 text-[10px]">
+                        <span className="text-slate-500 font-medium">{editingFiles.supporting ? editingFiles.supporting.name : 'Dokumen Pendukung Tersimpan'}</span>
+                        <span className="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>Terunggah (Siap Disimpan)</span>
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* 3. FOTO BUKTI SERAH TERIMA */}
                   <div>
                     <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">3. PILIH FILE FOTO BUKTI SERAH TERIMA (WAJIB)</label>
-                    <input type="file" onChange={(e) => handleFileChangeEdit(e, 'handover')} className="hidden" id="edit-file-handover" />
-                    <label htmlFor="edit-file-handover" className="cursor-pointer w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-between transition-all">
-                      <span>{editingFiles.handover ? editingFiles.handover.name : (editingTransaction?.file_handover_aso_sales_url ? 'Ubah Foto Serah Terima' : 'Pilih Foto Serah Terima')}</span>
-                      <Upload className="w-4 h-4 text-slate-400" />
+                    <input 
+                      type="file" 
+                      disabled={uploadingEditFiles.handover}
+                      onChange={(e) => handleFileChangeEdit(e, 'handover')} 
+                      className="hidden" 
+                      id="edit-file-handover" 
+                    />
+                    <label 
+                      htmlFor="edit-file-handover" 
+                      className={`cursor-pointer w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-between transition-all ${
+                        uploadingEditFiles.handover ? 'opacity-60 pointer-events-none' : ''
+                      }`}
+                    >
+                      <span>
+                        {uploadingEditFiles.handover 
+                          ? 'Mengunggah & merampingkan berkas...' 
+                          : editingFiles.handover 
+                          ? editingFiles.handover.name 
+                          : (editingTransaction?.file_handover_aso_sales_url ? 'Ubah Foto Serah Terima' : 'Pilih Foto Serah Terima')}
+                      </span>
+                      {uploadingEditFiles.handover ? (
+                        <RefreshCw className="w-4 h-4 text-blue-600 animate-spin" />
+                      ) : (
+                        <Upload className="w-4 h-4 text-slate-400" />
+                      )}
                     </label>
+                    {uploadingEditFiles.handover ? (
+                      <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-blue-600 font-bold">
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        <span>Sedang mengunggah ke Cloud Storage... Mohon tunggu sebelum menyimpan.</span>
+                      </div>
+                    ) : (editingFiles.handover || editingTransaction?.file_handover_aso_sales_url) ? (
+                      <div className="flex items-center gap-2 mt-1.5 text-[10px]">
+                        <span className="text-slate-500 font-medium">{editingFiles.handover ? editingFiles.handover.name : 'Foto Serah Terima Tersimpan'}</span>
+                        <span className="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>Terunggah (Siap Disimpan)</span>
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -3451,11 +3653,17 @@ export default function DatabaseView({
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isAnyEditFileUploading}
                   className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-extrabold shadow-md shadow-blue-500/25 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  {isSubmitting && <RefreshCw className="w-4 h-4 animate-spin" />}
-                  <span>{isAddModalOpen ? 'Simpan & Kirim Notifikasi' : 'Perbarui Transaksi'}</span>
+                  {(isSubmitting || isAnyEditFileUploading) && <RefreshCw className="w-4 h-4 animate-spin" />}
+                  <span>
+                    {isAnyEditFileUploading 
+                      ? 'Menunggu Berkas Selesai Terunggah...' 
+                      : isSubmitting 
+                      ? 'Menyimpan Transaksi...' 
+                      : (isAddModalOpen ? 'Simpan & Kirim Notifikasi' : 'Perbarui Transaksi')}
+                  </span>
                 </button>
               </div>
             </form>
@@ -3811,7 +4019,17 @@ export default function DatabaseView({
                     id="bulk-file-upload-input"
                   />
 
-                  {!bulkFile ? (
+                  {isUploadingBulkFile ? (
+                    <div className="border-2 border-dashed border-blue-400 bg-blue-50/70 rounded-2xl p-6 text-center transition-all animate-pulse">
+                      <RefreshCw className="w-7 h-7 text-blue-600 mx-auto mb-2 animate-spin" />
+                      <p className="text-xs font-bold text-blue-900">
+                        Sedang Mengunggah &amp; Memverifikasi Berkas...
+                      </p>
+                      <p className="text-[10.5px] text-blue-600 mt-1 font-medium">
+                        Mohon tunggu, berkas sedang disimpan secara aman ke Cloud Storage sebelum dapat disimpan.
+                      </p>
+                    </div>
+                  ) : !bulkFile ? (
                     <div
                       onClick={() => bulkFileInputRef.current?.click()}
                       onDragOver={(e) => {
@@ -3899,7 +4117,7 @@ export default function DatabaseView({
                       </span>
                     )}
                     <span className="text-[11px] font-black text-purple-600 uppercase tracking-wider">
-                      WEWENANG SALES HEAD
+                      WEWENANG: ADMINISTRATOR, SALES HEAD, &amp; KEPALA CABANG
                     </span>
                   </div>
                 </div>
@@ -4018,16 +4236,22 @@ export default function DatabaseView({
               </button>
               <button
                 type="button"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isUploadingBulkFile || !bulkFile}
                 onClick={handleConfirmBulkUpdate}
                 className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 cursor-pointer"
               >
-                {isSubmitting ? (
+                {(isSubmitting || isUploadingBulkFile) ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 ) : (
                   <Check className="w-4 h-4 stroke-[3]" />
                 )}
-                <span>Terapkan Ke {selectedIds.size} Transaksi</span>
+                <span>
+                  {isUploadingBulkFile 
+                    ? 'Menunggu Berkas Terunggah...' 
+                    : isSubmitting 
+                    ? 'Menyimpan Pembaruan...' 
+                    : `Terapkan Ke ${selectedIds.size} Transaksi`}
+                </span>
               </button>
             </div>
           </div>

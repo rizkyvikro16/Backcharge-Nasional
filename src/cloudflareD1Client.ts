@@ -146,6 +146,23 @@ export async function ensureD1TablesExist(): Promise<void> {
       hasInitializedD1Tables = true;
       console.log("✅ Cloudflare D1 tables initialized via single batch execution.");
 
+      // Otomatis ubah status_sap dari N/A ke Bill jika transaksi sudah masuk tahap invoice, pembayaran, atau approval
+      try {
+        await queryD1(`
+          UPDATE backcharges 
+          SET status_sap = 'Bill' 
+          WHERE (status_sap IS NULL OR status_sap = 'N/A' OR status_sap = '') 
+            AND status_sap != 'Not Bill'
+            AND (
+              (no_invoice IS NOT NULL AND no_invoice != '-' AND TRIM(no_invoice) != '') 
+              OR status_payment = 'Lunas'
+              OR status_approval = 'Disetujui'
+            );
+        `);
+      } catch (err: any) {
+        console.warn("Notice updating status_sap N/A to Bill:", err?.message);
+      }
+
       // Pastikan kolom force_password_reset tersedia di profiles
       try {
         const columns = await queryD1("PRAGMA table_info(profiles)");

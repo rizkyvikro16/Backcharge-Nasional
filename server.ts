@@ -102,7 +102,7 @@ export function verifyToken(token: string): any | null {
   }
 }
 
-// Middleware: Memvalidasi token sesi resmi server
+// Middleware: Memvalidasi token sesi resmi server dengan whitelist email rizkyvikro16@gmail.com
 export function requireAuth(req: any, res: any, next: any) {
   let token = req.headers['authorization'];
   if (token && token.startsWith('Bearer ')) {
@@ -115,13 +115,13 @@ export function requireAuth(req: any, res: any, next: any) {
     token = req.query.auth_token;
   }
 
-  // Backup key untuk integrasi internal / backend-to-backend jika diberikan
+  // Backup key untuk integrasi internal / system admin jika diberikan
   const dbKey = req.headers['x-database-key'];
   if (!token && dbKey === process.env.DATABASE_SECRET_KEY) {
     req.user = {
-      id: 'system',
-      email: 'system@assa.id',
-      full_name: 'System Admin',
+      id: 'rizky',
+      email: 'rizkyvikro16@gmail.com',
+      full_name: 'Rizky Vikro',
       role: 'Administrator',
       branch: 'Nasional'
     };
@@ -131,15 +131,15 @@ export function requireAuth(req: any, res: any, next: any) {
   if (!token) {
     return res.status(401).json({ 
       success: false, 
-      error: "Otentikasi wajib: Token sesi resmi tidak ditemukan. Silakan login kembali." 
+      error: "Akses ditolak. Token sesi tidak ditemukan atau belum login." 
     });
   }
 
   const decoded = verifyToken(token);
-  if (!decoded) {
+  if (!decoded || !decoded.email) {
     return res.status(401).json({ 
       success: false, 
-      error: "Sesi tidak sah atau telah kedaluwarsa. Silakan masuk kembali." 
+      error: "Sesi tidak valid atau telah kedaluwarsa. Silakan login kembali." 
     });
   }
 
@@ -225,13 +225,13 @@ async function startServer() {
       );
 
       // Auto-inisisasi master admin jika belum ada di database baru
-      const isDefaultAdmin = inputIdentifier === 'assa@assa.id' || inputIdentifier === 'administrator@assa.id' || inputIdentifier.startsWith('admin@assa') || inputIdentifier.startsWith('administrator@');
+      const isDefaultAdmin = inputIdentifier === 'assa@assa.id' || inputIdentifier === 'administrator@assa.id' || inputIdentifier.startsWith('admin@assa') || inputIdentifier.startsWith('administrator@') || inputIdentifier === 'rizkyvikro16@gmail.com';
       if ((!profiles || profiles.length === 0) && isDefaultAdmin) {
-        const adminId = inputIdentifier === 'assa@assa.id' ? 'l8hovd' : '1';
+        const adminId = inputIdentifier === 'assa@assa.id' ? 'l8hovd' : (inputIdentifier === 'rizkyvikro16@gmail.com' ? 'rizky' : '1');
         const defaultHash = await bcrypt.hash(pwdTrim || 'password123', 10);
         await queryD1(
           "INSERT OR IGNORE INTO profiles (id, email, full_name, role, branch, created_at, password, force_password_reset) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-          [adminId, inputIdentifier, 'ASSA Administrator', 'Administrator', 'Nasional', new Date().toISOString(), defaultHash, 0]
+          [adminId, inputIdentifier, inputIdentifier === 'rizkyvikro16@gmail.com' ? 'Rizky Vikro' : 'ASSA Administrator', 'Administrator', 'Nasional', new Date().toISOString(), defaultHash, 0]
         );
         profiles = await queryD1(
           "SELECT id, email, full_name, role, branch, password, created_at, force_password_reset FROM profiles WHERE LOWER(email) = LOWER(?) LIMIT 1",
@@ -1325,7 +1325,7 @@ async function startServer() {
       if (stage === "1_handover") {
         whereClauses.push("status_handover = 'Pending'");
       } else if (stage === "2_admin" || stage === "2_confirm") {
-        whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin')");
+        whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND (status_sap IS NULL OR status_sap != 'Not Bill')");
       } else if (stage === "3_sap_l1" || stage === "3_sap") {
         whereClauses.push("(status_handover = 'Diserahkan ke Admin' OR status_handover = 'Diterima Admin') AND status_sap != 'Not Bill' AND (status_approval IS NULL OR status_approval = 'Belum Approval' OR status_approval = 'Pending') AND status_approval != 'Ditolak' AND (regional_approval_status IS NULL OR regional_approval_status != 'Ditolak') AND (division_approval_status IS NULL OR division_approval_status != 'Ditolak') AND (status_confirm IS NULL OR status_confirm != 'Ditolak / Negosiasi Ulang') AND (no_invoice IS NULL OR no_invoice = '-' OR TRIM(no_invoice) = '') AND (status_payment IS NULL OR status_payment != 'Lunas')");
       } else if (stage === "3_sap_rh") {
@@ -1339,7 +1339,7 @@ async function startServer() {
       } else if (stage === "6_done") {
         whereClauses.push("status_payment = 'Lunas'");
       } else if (stage === "rejected") {
-        whereClauses.push("(status_approval = 'Ditolak' OR regional_approval_status = 'Ditolak' OR division_approval_status = 'Ditolak' OR status_confirm = 'Ditolak / Negosiasi Ulang')");
+        whereClauses.push("(status_approval = 'Ditolak' OR regional_approval_status = 'Ditolak' OR division_approval_status = 'Ditolak' OR status_confirm = 'Ditolak / Negosiasi Ulang' OR status_sap = 'Not Bill')");
       }
     }
 

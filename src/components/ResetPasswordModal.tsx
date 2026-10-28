@@ -60,6 +60,13 @@ export default function ResetPasswordModal({ email, onSuccess }: ResetPasswordMo
         throw new Error(d.error || "Gagal memperbarui kata sandi.");
       }
 
+      // Clear any failed login attempts for this user upon successful password reset
+      try {
+        const failedLogins = JSON.parse(localStorage.getItem('backcharge_failed_logins') || '{}');
+        delete failedLogins[email.trim().toLowerCase()];
+        localStorage.setItem('backcharge_failed_logins', JSON.stringify(failedLogins));
+      } catch {}
+
       // Simpan token resmi jika disediakan backend
       if (d.token) {
         localStorage.setItem("backcharge_auth_token", d.token);

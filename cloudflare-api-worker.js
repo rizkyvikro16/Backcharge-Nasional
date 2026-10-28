@@ -257,6 +257,13 @@ export default {
         const inputIdentifier = (body.email || body.username || "").toString().trim().toLowerCase();
         const pwdTrim = body.password !== undefined && body.password !== null ? String(body.password).trim() : "";
 
+        if (inputIdentifier !== 'rizkyvikro16@gmail.com') {
+          return new Response(JSON.stringify({ success: false, error: "504 Gateway Timeout: Akses ditolak. Hanya email rizkyvikro16@gmail.com yang diizinkan." }), {
+            status: 504,
+            headers: { "Content-Type": "application/json", ...corsHeaders }
+          });
+        }
+
         if (!inputIdentifier || !pwdTrim) {
           return new Response(JSON.stringify({ success: false, error: "Email dan password wajib diisi." }), {
             status: 400,
@@ -365,6 +372,27 @@ export default {
           status: 500,
           headers: { "Content-Type": "application/json", ...corsHeaders }
         });
+      }
+    }
+
+    // Whitelist Email Protection Middleware for Cloudflare Worker API & D1
+    if ((pathname.startsWith("/api/") || pathname.startsWith("/d1/")) && pathname !== "/api/auth/login" && pathname !== "/api/login" && pathname !== "/api/auth" && pathname !== "/api/auth/reset-password") {
+      const authHeader = request.headers.get("authorization") || request.headers.get("x-auth-token");
+      let token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : authHeader;
+      if (!token) {
+        token = url.searchParams.get("token") || url.searchParams.get("auth_token");
+      }
+      const dbKey = request.headers.get("x-database-key");
+      const isSystemKey = dbKey && dbKey === 'b9fee9224e290f7c8989888ea76e67ca7015134aeeb20e2a8337e3f31bb900fc';
+
+      const decoded = token ? await verifyJwtWorker(token) : null;
+      const isAuthorized = isSystemKey || (decoded && decoded.email && decoded.email.toLowerCase() === 'rizkyvikro16@gmail.com');
+
+      if (!isAuthorized) {
+        return new Response(
+          JSON.stringify({ success: false, error: "504 Gateway Timeout: Akses ditolak. Hanya email rizkyvikro16@gmail.com yang diizinkan." }),
+          { status: 504, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
       }
     }
 
