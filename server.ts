@@ -102,7 +102,7 @@ export function verifyToken(token: string): any | null {
   }
 }
 
-// Middleware: Memvalidasi token sesi resmi server dengan whitelist email rizkyvikro16@gmail.com
+// Middleware: Memvalidasi token sesi resmi server untuk semua pengguna terdaftar
 export function requireAuth(req: any, res: any, next: any) {
   let token = req.headers['authorization'];
   if (token && token.startsWith('Bearer ')) {
