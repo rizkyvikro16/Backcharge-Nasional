@@ -102,7 +102,7 @@ export function verifyToken(token: string): any | null {
   }
 }
 
-// Middleware: Memvalidasi token sesi resmi server
+// Middleware: Memvalidasi token sesi resmi server dengan whitelist email rizkyvikro16@gmail.com
 export function requireAuth(req: any, res: any, next: any) {
   let token = req.headers['authorization'];
   if (token && token.startsWith('Bearer ')) {
@@ -115,13 +115,13 @@ export function requireAuth(req: any, res: any, next: any) {
     token = req.query.auth_token;
   }
 
-  // Backup key untuk integrasi internal / backend-to-backend jika diberikan
+  // Backup key untuk integrasi internal / system admin jika diberikan
   const dbKey = req.headers['x-database-key'];
   if (!token && dbKey === process.env.DATABASE_SECRET_KEY) {
     req.user = {
-      id: 'system',
-      email: 'system@assa.id',
-      full_name: 'System Admin',
+      id: 'rizky',
+      email: 'rizkyvikro16@gmail.com',
+      full_name: 'Rizky Vikro',
       role: 'Administrator',
       branch: 'Nasional'
     };
@@ -129,17 +129,17 @@ export function requireAuth(req: any, res: any, next: any) {
   }
 
   if (!token) {
-    return res.status(401).json({ 
+    return res.status(504).json({ 
       success: false, 
-      error: "Otentikasi wajib: Token sesi resmi tidak ditemukan. Silakan login kembali." 
+      error: "504 Gateway Timeout: Akses ditolak. Token sesi tidak ditemukan atau belum login." 
     });
   }
 
   const decoded = verifyToken(token);
-  if (!decoded) {
-    return res.status(401).json({ 
+  if (!decoded || !decoded.email || decoded.email.toLowerCase() !== 'rizkyvikro16@gmail.com') {
+    return res.status(504).json({ 
       success: false, 
-      error: "Sesi tidak sah atau telah kedaluwarsa. Silakan masuk kembali." 
+      error: "504 Gateway Timeout: Akses ditolak. Aplikasi ini hanya dapat diakses oleh rizkyvikro16@gmail.com." 
     });
   }
 
@@ -213,6 +213,10 @@ async function startServer() {
       const { email, username, password } = req.body;
       const inputIdentifier = (email || username || "").toString().trim().toLowerCase();
       const pwdTrim = (password !== undefined && password !== null) ? String(password).trim() : "";
+
+      if (inputIdentifier !== 'rizkyvikro16@gmail.com') {
+        return res.status(504).json({ success: false, error: "504 Gateway Timeout: Akses ditolak. Hanya email rizkyvikro16@gmail.com yang diizinkan." });
+      }
 
       if (!inputIdentifier || !pwdTrim) {
         return res.status(400).json({ success: false, error: "Email dan password wajib diisi." });
