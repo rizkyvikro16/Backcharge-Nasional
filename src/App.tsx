@@ -6,7 +6,7 @@ import {
   Download, FileSpreadsheet, RefreshCw, LogOut, Bell, BellOff, Smartphone, Volume2, Shield, Users, Landmark, UserCheck, X
 } from 'lucide-react';
 
-import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, getRoleAllowedBranches, isNationalOrAllBranches, hasRole, isRegionalHeadRole, ALL_SYSTEM_BRANCHES, packExtraFields, unpackExtraFields } from './types';
+import { Profile, Backcharge, ActivityLog, AppNotification, UserRole, DashboardFilter, ContactInquiry, getUserBranches, getRoleAllowedBranches, isNationalOrAllBranches, hasRole, isRegionalHeadRole, ALL_SYSTEM_BRANCHES, packExtraFields, unpackExtraFields, syncNonOrSapStatus } from './types';
 import { mockDb } from './supabaseClient';
 
 import AuthScreen from './components/AuthScreen';
@@ -403,15 +403,20 @@ const normalizeTransactions = (txs: Backcharge[]): Backcharge[] => {
   const kacabCats = ['Maintenance', 'TPL', 'Dokumen Kendaraan', 'Unclaimable Insurance'];
   const shCats = ['Own Risk', 'Ekspedisi', 'ETLE'];
   return txs.map(t => {
-    if (!t.approved_by) return t;
-    const isKacab = kacabCats.includes(t.category);
-    let newApprovedBy = t.approved_by;
-    if (isKacab && newApprovedBy.includes('(Sales Head)')) {
-      newApprovedBy = newApprovedBy.replace('(Sales Head)', '(Kepala Cabang)');
-    } else if (shCats.includes(t.category) && (newApprovedBy.includes('(Kepala Cabang)') || newApprovedBy.includes('(Kacab)'))) {
-      newApprovedBy = newApprovedBy.replace(/\((Kepala Cabang|Kacab)\)/, '(Sales Head)');
+    let item = { ...t };
+    if (item.approved_by) {
+      const isKacab = kacabCats.includes(item.category);
+      let newApprovedBy = item.approved_by;
+      if (isKacab && newApprovedBy.includes('(Sales Head)')) {
+        newApprovedBy = newApprovedBy.replace('(Sales Head)', '(Kepala Cabang)');
+      } else if (shCats.includes(item.category) && (newApprovedBy.includes('(Kepala Cabang)') || newApprovedBy.includes('(Kacab)'))) {
+        newApprovedBy = newApprovedBy.replace(/\((Kepala Cabang|Kacab)\)/, '(Sales Head)');
+      }
+      item.approved_by = newApprovedBy;
     }
-    return { ...t, approved_by: newApprovedBy };
+
+    // Skema Otomatis: Selain Own Risk, otomatis 'Bill' jika diapprove/invoice/lunas, dan 'Not Bill' jika direject
+    return syncNonOrSapStatus(item);
   });
 };
 
@@ -1734,6 +1739,8 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         ...updates,
         updated_at: new Date().toISOString()
       };
+      // Harmonize Non-OR SAP status
+      syncNonOrSapStatus(updatedTx);
       // Keep packed no_bak in 100% sync
       updatedTx.no_bak = packExtraFields(updatedTx);
 
@@ -1748,6 +1755,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
       if (isD1Active) {
         const cleanedUpdateObj = cleanDbPayload({
           ...updates,
+          status_sap: updatedTx.status_sap,
           no_bak: updatedTx.no_bak,
           updated_at: new Date().toISOString()
         });
@@ -1813,6 +1821,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             ...updates,
             updated_at: nowStr
           };
+          syncNonOrSapStatus(updated);
           updated.no_bak = packExtraFields(updated);
           updatedMap.set(id, updated);
 
@@ -1830,14 +1839,18 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         // Execute in safe chunks of 15 to stay within HTTP payload and execution limits
         const BATCH_SIZE = 15;
         for (let i = 0; i < itemsToUpdate.length; i += BATCH_SIZE) {
-          const batch = itemsToUpdate.slice(i, i + BATCH_SIZE).map(({ id, updates }) => ({
-            id,
-            updates: cleanDbPayload({
-              ...updates,
-              no_bak: updatedMap.get(id)?.no_bak,
-              updated_at: nowStr
-            })
-          }));
+          const batch = itemsToUpdate.slice(i, i + BATCH_SIZE).map(({ id, updates }) => {
+            const up = updatedMap.get(id);
+            return {
+              id,
+              updates: cleanDbPayload({
+                ...updates,
+                status_sap: up?.status_sap || updates.status_sap,
+                no_bak: up?.no_bak,
+                updated_at: nowStr
+              })
+            };
+          });
 
           await executeD1Query("bulk_update_backcharges", [], 1, { items: batch });
 

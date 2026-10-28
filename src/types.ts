@@ -429,3 +429,32 @@ export function unpackExtraFields(item: any): any {
     division_approval_note
   };
 }
+
+/**
+ * Harmonizes SAP Status for Non-Own Risk categories:
+ * - Kategori selain Own Risk (Maintenance, Ekspedisi, ETLE, Dokumen Kendaraan, dll):
+ *   - Otomatis 'Bill' jika disetujui (status_approval = 'Disetujui', regional/division disetujui, invoice terbit, atau lunas)
+ *   - Otomatis 'Not Bill' jika ditolak (status_approval = 'Ditolak', regional/division ditolak, atau negosiasi ulang ditolak)
+ */
+export function syncNonOrSapStatus<T extends Partial<Backcharge>>(tx: T): T {
+  if (tx.category && tx.category !== 'Own Risk') {
+    const isRejected = tx.status_approval === 'Ditolak' || 
+                       tx.regional_approval_status === 'Ditolak' || 
+                       tx.division_approval_status === 'Ditolak' || 
+                       tx.status_confirm === 'Ditolak / Negosiasi Ulang';
+
+    const isApproved = tx.status_approval === 'Disetujui' || 
+                       tx.regional_approval_status === 'Disetujui' || 
+                       tx.division_approval_status === 'Disetujui' ||
+                       (tx.no_invoice && tx.no_invoice !== '-' && tx.no_invoice.trim() !== '') ||
+                       tx.status_payment === 'Lunas';
+
+    if (isRejected) {
+      tx.status_sap = 'Not Bill';
+    } else if (isApproved) {
+      tx.status_sap = 'Bill';
+    }
+  }
+  return tx;
+}
+

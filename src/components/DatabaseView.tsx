@@ -305,6 +305,43 @@ const getTransactionStage = (t: Backcharge): string => {
   return 'Menunggu Pelunasan Backcharge';
 };
 
+const parseExcelDate = (val: any): string => {
+  if (!val) return new Date().toISOString().split('T')[0];
+  if (val instanceof Date) {
+    if (!isNaN(val.getTime())) {
+      return val.toISOString().split('T')[0];
+    }
+  }
+  const str = String(val).trim();
+  if (!str) return new Date().toISOString().split('T')[0];
+
+  // If it's an Excel serial date number (e.g., 46322)
+  if (/^\d+(\.\d+)?$/.test(str)) {
+    const num = Number(str);
+    const utcDays = num > 60 ? num - 25569 : num - 25568;
+    const dateObj = new Date(utcDays * 86400 * 1000);
+    if (!isNaN(dateObj.getTime())) {
+      return dateObj.toISOString().split('T')[0];
+    }
+  }
+
+  // If DD/MM/YYYY or DD-MM-YYYY
+  if (/^\d{1,2}[/-]\d{1,2}[/-]\d{4}$/.test(str)) {
+    const parts = str.split(/[/-]/);
+    const day = parts[0].padStart(2, '0');
+    const month = parts[1].padStart(2, '0');
+    const year = parts[2];
+    return `${year}-${month}-${day}`;
+  }
+
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    return d.toISOString().split('T')[0];
+  }
+
+  return new Date().toISOString().split('T')[0];
+};
+
 export default function DatabaseView({
   transactions,
   currentUser,
@@ -422,8 +459,14 @@ export default function DatabaseView({
   const [bulkApprovalStatus, setBulkApprovalStatus] = useState<string>('-- Tidak Diubah --');
   const [bulkAuditNote, setBulkAuditNote] = useState<string>('');
   const [bulkFile, setBulkFile] = useState<{ name: string; size: number; type: string; dataUrl: string } | null>(null);
+  const [editingFiles, setEditingFiles] = useState<{
+    bak: { name: string; size: number; type: string; dataUrl: string } | null;
+    supporting: { name: string; size: number; type: string; dataUrl: string } | null;
+    handover: { name: string; size: number; type: string; dataUrl: string } | null;
+  }>({ bak: null, supporting: null, handover: null });
   const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form State for Add / Edit
@@ -1532,7 +1575,7 @@ export default function DatabaseView({
     reader.onload = (evt) => {
       try {
         const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
 
         // Target 'Template Backcharge' sheet or first sheet
         const targetSheetName = wb.SheetNames.find((name: string) => {
@@ -1557,6 +1600,14 @@ export default function DatabaseView({
             for (const k of keys) {
               const found = Object.keys(row).find(rk => rk.trim().toLowerCase() === k.toLowerCase());
               if (found && row[found] !== undefined && row[found] !== '') return String(row[found]).trim();
+            }
+            return '';
+          };
+
+          const getRawVal = (keys: string[]) => {
+            for (const k of keys) {
+              const found = Object.keys(row).find(rk => rk.trim().toLowerCase() === k.toLowerCase());
+              if (found && row[found] !== undefined && row[found] !== '') return row[found];
             }
             return '';
           };
@@ -1668,7 +1719,7 @@ export default function DatabaseView({
             no_tilang: getVal(['no tilang', 'no. tilang', 'tilang']) || '-',
             nama_bro: getVal(['pic/bro', 'pic / bro', 'pic', 'nama bro', 'bro']) || '-',
             bro_name: getVal(['pic/bro', 'pic / bro', 'pic', 'nama bro', 'bro']) || '-',
-            tanggal: getVal(['tanggal', 'date', 'tgl']) || new Date().toISOString().split('T')[0],
+            tanggal: parseExcelDate(getRawVal(['tanggal', 'date', 'tgl'])),
             status_sap: statusSap,
             status_confirm: getVal(['status konfirmasi', 'status confirm']) || 'Belum Konfirmasi',
             status_handover: statusHandover,
@@ -1725,6 +1776,8 @@ export default function DatabaseView({
   const handleOpenEdit = (tx: Backcharge) => {
     setActiveAutocompleteField(null);
     setEditingTransaction(tx);
+    setEditingFiles({ bak: null, supporting: null, handover: null });
+    if (editFileInputRef.current) editFileInputRef.current.value = '';
     setFormData({
       category: tx.category,
       branch: tx.branch,
@@ -1833,6 +1886,9 @@ export default function DatabaseView({
         editingTransaction.id,
         {
           ...formData,
+          file_bak_url: editingFiles.bak ? editingFiles.bak.dataUrl : editingTransaction.file_bak_url,
+          upload_dok_pendukung: editingFiles.supporting ? editingFiles.supporting.dataUrl : editingTransaction.upload_dok_pendukung,
+          file_handover_aso_sales_url: editingFiles.handover ? editingFiles.handover.dataUrl : editingTransaction.file_handover_aso_sales_url,
           no_bak: (formData.no_bak || '').trim(),
           no_spk: (formData.no_spk || '').trim(),
           no_cmd: (formData.no_cmd || '').trim(),
@@ -1847,6 +1903,29 @@ export default function DatabaseView({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleFileChangeEdit = (e: React.ChangeEvent<HTMLInputElement>, type: 'bak' | 'supporting' | 'handover') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+      if (addToast) addToast('Ukuran file maksimal 20MB!', 'error');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setEditingFiles(prev => ({
+        ...prev,
+        [type]: {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          dataUrl: reader.result as string
+        }
+      }));
+      if (addToast) addToast(`Berkas "${file.name}" berhasil diunggah!`, 'success');
+    };
+    reader.readAsDataURL(file);
   };
 
   // BULK ACTIONS & HANDLERS (MATCHING image_308f8e6a.png)
@@ -2686,7 +2765,7 @@ export default function DatabaseView({
                           tx.status_sap === 'Bill' 
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                             : tx.status_sap === 'Not Bill'
-                            ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                            ? 'bg-rose-100 text-rose-800 border border-rose-200'
                             : 'bg-gray-50 text-gray-500 border border-gray-200'
                         }`}>
                           {tx.status_sap || 'N/A'}
@@ -3298,7 +3377,46 @@ export default function DatabaseView({
                 </div>
               )}
 
+              {/* UPLOAD DOKUMEN (HANYA EDIT) */}
+              {isEditModalOpen && (
+                <div className="space-y-4">
+                  {/* 1. FILE BAK */}
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">1. FILE BAK (PDF / GAMBAR)</label>
+                    <input type="file" ref={editFileInputRef} onChange={(e) => handleFileChangeEdit(e, 'bak')} className="hidden" id="edit-file-bak" />
+                    <label htmlFor="edit-file-bak" className="cursor-pointer w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-between transition-all">
+                      <span>{editingFiles.bak ? editingFiles.bak.name : (editingTransaction?.file_bak_url ? 'Ubah File BAK' : 'Pilih File BAK')}</span>
+                      <Upload className="w-4 h-4 text-slate-400" />
+                    </label>
+                    {(editingFiles.bak || editingTransaction?.file_bak_url) && (
+                      <div className="flex items-center gap-2 mt-1.5 text-[10px]">
+                        <span className="text-slate-500">File BAK Tersimpan</span>
+                        <span className="text-emerald-600 font-bold bg-emerald-50 px-1.5 rounded">Cloud Secure</span>
+                      </div>
+                    )}
+                  </div>
 
+                  {/* 2. DOKUMEN PENDUKUNG */}
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">2. DOKUMEN PENDUKUNG (FILE / FOTO)</label>
+                    <input type="file" onChange={(e) => handleFileChangeEdit(e, 'supporting')} className="hidden" id="edit-file-supporting" />
+                    <label htmlFor="edit-file-supporting" className="cursor-pointer w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-between transition-all">
+                      <span>{editingFiles.supporting ? editingFiles.supporting.name : (editingTransaction?.upload_dok_pendukung ? 'Ubah Dokumen Pendukung' : 'Pilih Dokumen Pendukung')}</span>
+                      <Upload className="w-4 h-4 text-slate-400" />
+                    </label>
+                  </div>
+
+                  {/* 3. FOTO BUKTI SERAH TERIMA */}
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">3. PILIH FILE FOTO BUKTI SERAH TERIMA (WAJIB)</label>
+                    <input type="file" onChange={(e) => handleFileChangeEdit(e, 'handover')} className="hidden" id="edit-file-handover" />
+                    <label htmlFor="edit-file-handover" className="cursor-pointer w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-between transition-all">
+                      <span>{editingFiles.handover ? editingFiles.handover.name : (editingTransaction?.file_handover_aso_sales_url ? 'Ubah Foto Serah Terima' : 'Pilih Foto Serah Terima')}</span>
+                      <Upload className="w-4 h-4 text-slate-400" />
+                    </label>
+                  </div>
+                </div>
+              )}
 
               {/* Catatan / Alasan */}
               <div>

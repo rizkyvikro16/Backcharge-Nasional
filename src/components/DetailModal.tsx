@@ -1165,18 +1165,29 @@ export default function DetailModal({
     }
 
     setActionLoading(true);
+    const updates: Partial<Backcharge> = { 
+      status_approval: modalApprovalStatus,
+      approved_by: `${currentUser.full_name || currentUser.email} (${roleTitle})`,
+      approved_at: new Date().toLocaleString('id-ID'),
+      approval_note: modalApprovalNotes.trim() || null,
+      approval_attachment_1_url: approvalAttachment1,
+      approval_attachment_2_url: approvalAttachment2,
+      approval_attachment_3_url: approvalAttachment3
+    };
+
+    // Skema Otomatis: Kategori selain Own Risk (OR) otomatis Bill jika Disetujui, dan Not Bill jika Ditolak
+    if (transaction.category !== 'Own Risk') {
+      if (modalApprovalStatus === 'Disetujui') {
+        updates.status_sap = 'Bill';
+      } else if (modalApprovalStatus === 'Ditolak') {
+        updates.status_sap = 'Not Bill';
+      }
+    }
+
     onUpdateStatus(
       transaction.id,
-      { 
-        status_approval: modalApprovalStatus,
-        approved_by: `${currentUser.full_name || currentUser.email} (${roleTitle})`,
-        approved_at: new Date().toLocaleString('id-ID'),
-        approval_note: modalApprovalNotes.trim() || null,
-        approval_attachment_1_url: approvalAttachment1,
-        approval_attachment_2_url: approvalAttachment2,
-        approval_attachment_3_url: approvalAttachment3
-      },
-      `${roleTitle} memproses Approval Backcharge kategori ${transaction.category}: ${modalApprovalStatus}.${modalApprovalNotes.trim() ? ` Catatan: ${modalApprovalNotes.trim()}` : ''}`
+      updates,
+      `${roleTitle} memproses Approval Backcharge kategori ${transaction.category}: ${modalApprovalStatus}${updates.status_sap ? ` (Status SAP Otomatis: ${updates.status_sap})` : ''}.${modalApprovalNotes.trim() ? ` Catatan: ${modalApprovalNotes.trim()}` : ''}`
     );
     setActionLoading(false);
     setShowActionForm(null);
@@ -1187,15 +1198,26 @@ export default function DetailModal({
     if (!window.confirm(confirmMessage)) return;
 
     setActionLoading(true);
+    const updates: Partial<Backcharge> = {
+      regional_approval_status: modalRegionalApprovalStatus,
+      regional_approved_by: `${currentUser.full_name || currentUser.email} (${currentUser.role})`,
+      regional_approved_at: new Date().toLocaleString('id-ID'),
+      regional_approval_note: modalRegionalApprovalNotes.trim() || null
+    };
+
+    // Skema Otomatis: Kategori selain Own Risk (OR) otomatis Bill jika Disetujui, dan Not Bill jika Ditolak
+    if (transaction.category !== 'Own Risk') {
+      if (modalRegionalApprovalStatus === 'Disetujui') {
+        updates.status_sap = 'Bill';
+      } else if (modalRegionalApprovalStatus === 'Ditolak') {
+        updates.status_sap = 'Not Bill';
+      }
+    }
+
     onUpdateStatus(
       transaction.id,
-      {
-        regional_approval_status: modalRegionalApprovalStatus,
-        regional_approved_by: `${currentUser.full_name || currentUser.email} (${currentUser.role})`,
-        regional_approved_at: new Date().toLocaleString('id-ID'),
-        regional_approval_note: modalRegionalApprovalNotes.trim() || null
-      },
-      `Regional Head memproses Approval Regional Head: ${modalRegionalApprovalStatus}.${modalRegionalApprovalNotes.trim() ? ` Catatan: ${modalRegionalApprovalNotes.trim()}` : ''}`
+      updates,
+      `Regional Head memproses Approval Regional Head: ${modalRegionalApprovalStatus}${updates.status_sap ? ` (Status SAP Otomatis: ${updates.status_sap})` : ''}.${modalRegionalApprovalNotes.trim() ? ` Catatan: ${modalRegionalApprovalNotes.trim()}` : ''}`
     );
     setActionLoading(false);
     setShowActionForm(null);
@@ -1206,15 +1228,26 @@ export default function DetailModal({
     if (!window.confirm(confirmMessage)) return;
 
     setActionLoading(true);
+    const updates: Partial<Backcharge> = {
+      division_approval_status: modalDivisionApprovalStatus,
+      division_approved_by: `${currentUser.full_name || currentUser.email} (${currentUser.role})`,
+      division_approved_at: new Date().toLocaleString('id-ID'),
+      division_approval_note: modalDivisionApprovalNotes.trim() || null
+    };
+
+    // Skema Otomatis: Kategori selain Own Risk (OR) otomatis Bill jika Disetujui, dan Not Bill jika Ditolak
+    if (transaction.category !== 'Own Risk') {
+      if (modalDivisionApprovalStatus === 'Disetujui') {
+        updates.status_sap = 'Bill';
+      } else if (modalDivisionApprovalStatus === 'Ditolak') {
+        updates.status_sap = 'Not Bill';
+      }
+    }
+
     onUpdateStatus(
       transaction.id,
-      {
-        division_approval_status: modalDivisionApprovalStatus,
-        division_approved_by: `${currentUser.full_name || currentUser.email} (${currentUser.role})`,
-        division_approved_at: new Date().toLocaleString('id-ID'),
-        division_approval_note: modalDivisionApprovalNotes.trim() || null
-      },
-      `Division Head memproses Approval Division Head: ${modalDivisionApprovalStatus}.${modalDivisionApprovalNotes.trim() ? ` Catatan: ${modalDivisionApprovalNotes.trim()}` : ''}`
+      updates,
+      `Division Head memproses Approval Division Head: ${modalDivisionApprovalStatus}${updates.status_sap ? ` (Status SAP Otomatis: ${updates.status_sap})` : ''}.${modalDivisionApprovalNotes.trim() ? ` Catatan: ${modalDivisionApprovalNotes.trim()}` : ''}`
     );
     setActionLoading(false);
     setShowActionForm(null);
@@ -2112,6 +2145,12 @@ export default function DetailModal({
                               <option value="Disetujui">✅ Disetujui (Approved)</option>
                               <option value="Ditolak">❌ Tidak Disetujui (Not Approved)</option>
                             </select>
+                            {transaction.category !== 'Own Risk' && (
+                              <p className="text-[10px] text-blue-700 mt-1.5 font-bold flex items-center gap-1.5 bg-blue-50/80 px-2.5 py-1.5 rounded-lg border border-blue-200">
+                                <span>ℹ️</span>
+                                <span>Kategori <strong>{transaction.category}</strong>: Jika <strong>Disetujui</strong> status SAP otomatis menjadi <strong>Bill</strong>, jika <strong>Ditolak</strong> menjadi <strong>Not Bill</strong>.</span>
+                              </p>
+                            )}
                           </div>
 
                           <div>
@@ -2374,6 +2413,12 @@ export default function DetailModal({
                               <option value="Disetujui">✅ Disetujui (Approved)</option>
                               <option value="Ditolak">❌ Tidak Disetujui (Not Approved)</option>
                             </select>
+                            {transaction.category !== 'Own Risk' && (
+                              <p className="text-[10px] text-blue-700 mt-1.5 font-bold flex items-center gap-1.5 bg-blue-50/80 px-2.5 py-1.5 rounded-lg border border-blue-200">
+                                <span>ℹ️</span>
+                                <span>Kategori <strong>{transaction.category}</strong>: Jika <strong>Disetujui</strong> status SAP otomatis menjadi <strong>Bill</strong>, jika <strong>Ditolak</strong> menjadi <strong>Not Bill</strong>.</span>
+                              </p>
+                            )}
                           </div>
                           <button 
                             onClick={handleRegionalApprovalSubmit}
@@ -2515,6 +2560,12 @@ export default function DetailModal({
                               <option value="Disetujui">✅ Disetujui (Approved)</option>
                               <option value="Ditolak">❌ Tidak Disetujui (Not Approved)</option>
                             </select>
+                            {transaction.category !== 'Own Risk' && (
+                              <p className="text-[10px] text-blue-700 mt-1.5 font-bold flex items-center gap-1.5 bg-blue-50/80 px-2.5 py-1.5 rounded-lg border border-blue-200">
+                                <span>ℹ️</span>
+                                <span>Kategori <strong>{transaction.category}</strong>: Jika <strong>Disetujui</strong> status SAP otomatis menjadi <strong>Bill</strong>, jika <strong>Ditolak</strong> menjadi <strong>Not Bill</strong>.</span>
+                              </p>
+                            )}
                           </div>
                           <button 
                             onClick={handleDivisionApprovalSubmit}
