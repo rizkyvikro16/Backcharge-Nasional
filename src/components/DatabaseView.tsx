@@ -119,8 +119,14 @@ export const getEffectiveSapStatus = (tx: Backcharge): string => {
   if (tx.status_sap === 'Not Bill' || String(tx.status_sap || '').toLowerCase() === 'not bill') {
     return 'Not Bill';
   }
+  const summary = getApprovalSummary(tx);
   const hasInvoice = Boolean(tx.no_invoice && typeof tx.no_invoice === 'string' && tx.no_invoice.trim() !== '' && tx.no_invoice.trim() !== '-');
   const isPaid = tx.status_payment === 'Lunas';
+
+  if (!summary.isFullyApproved && !hasInvoice && !isPaid) {
+    return 'N/A';
+  }
+
   const stage = getTransactionStage(tx);
   const isInvoiceStageOrBeyond = hasInvoice || isPaid || stage === 'Menunggu Cetak & Kirim Invoice' || stage === 'Menunggu Pelunasan Backcharge' || stage === 'Selesai (Lunas)';
 
@@ -1227,7 +1233,7 @@ export default function DatabaseView({
           tx.no_tilang || '-',
           getCreatorName(tx.created_by),
           tx.nama_bro || tx.bro_name || '-',
-          tx.status_sap || 'N/A',
+          getEffectiveSapStatus(tx),
           tx.status_confirm || 'Belum Konfirmasi',
           tx.status_handover || 'Pending',
           tx.tanggal_handover || '-',
@@ -1356,7 +1362,7 @@ export default function DatabaseView({
           'No. SAP': tx.no_sap,
           'No. Tilang': tx.no_tilang || '-',
           'Nama BRO': tx.nama_bro || tx.bro_name || '-',
-          'Status SAP': tx.status_sap,
+          'Status SAP': getEffectiveSapStatus(tx),
           'Status Konfirmasi': tx.status_confirm,
           'Status Serah Terima': tx.status_handover,
           'Status Approval': getApprovalText(tx),
@@ -2993,7 +2999,7 @@ export default function DatabaseView({
                           // Fallback jika tidak sesuai kondisi di atas
                           return (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-600 border border-slate-200">
-                              {tx.status_approval || 'Belum Approval'}
+                              {tx.status_approval && tx.status_approval !== 'Belum Approval' ? tx.status_approval : 'N/A'}
                             </span>
                           );
                         })()}

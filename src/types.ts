@@ -443,9 +443,10 @@ export function syncNonOrSapStatus<T extends Partial<Backcharge>>(tx: T): T {
                        tx.division_approval_status === 'Ditolak' || 
                        tx.status_confirm === 'Ditolak / Negosiasi Ulang';
 
-    const isApproved = tx.status_approval === 'Disetujui' || 
-                       tx.regional_approval_status === 'Disetujui' || 
-                       tx.division_approval_status === 'Disetujui' ||
+    // Transaksi dianggap 'Bill' HANYA jika sudah disetujui penuh & sudah ada invoice/lunas
+    const isApproved = (tx.status_approval === 'Disetujui' && 
+                        tx.regional_approval_status === 'Disetujui' && 
+                        tx.division_approval_status === 'Disetujui') ||
                        (tx.no_invoice && tx.no_invoice !== '-' && tx.no_invoice.trim() !== '') ||
                        tx.status_payment === 'Lunas';
 
@@ -453,7 +454,13 @@ export function syncNonOrSapStatus<T extends Partial<Backcharge>>(tx: T): T {
       tx.status_sap = 'Not Bill';
     } else if (isApproved) {
       tx.status_sap = 'Bill';
+    } else {
+      // Force 'N/A' if not fully approved, even if currently 'Bill'
+      tx.status_sap = 'N/A';
     }
+  } else {
+    // For Own Risk, ensure N/A if not set
+    if (!tx.status_sap) tx.status_sap = 'N/A';
   }
   return tx;
 }

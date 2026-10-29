@@ -1713,6 +1713,28 @@ async function startServer() {
           return res.json({ success: true, results: results || [] });
         }
 
+        case "get_backcharges_since": {
+          const since = params && params[0];
+          if (!since) return res.status(400).json({ success: false, error: "Parameter 'since' diperlukan" });
+          
+          const branches = req.body.branches || (Array.isArray(params) && params.length > 1 ? params.slice(1) : null);
+          
+          let sql = "SELECT * FROM backcharges WHERE updated_at > ? OR updated_at IS NULL OR updated_at = ''";
+          let queryParams: any[] = [since];
+
+          if (Array.isArray(branches) && branches.length > 0) {
+            const placeholders = branches.map(() => '?').join(', ');
+            sql += ` AND branch IN (${placeholders})`;
+            queryParams.push(...branches);
+          }
+          
+          sql += " ORDER BY updated_at DESC";
+
+          const results = await queryD1(sql, queryParams);
+          return res.json({ success: true, results: results || [] });
+        }
+
+
         case "get_paginated_backcharges": {
           const result = await getPaginatedBackcharges(req.body);
           return res.json({ success: true, ...result });

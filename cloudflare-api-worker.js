@@ -369,7 +369,15 @@ export default {
     }
 
     // Authentication Middleware for Cloudflare Worker API & D1
-    if ((pathname.startsWith("/api/") || pathname.startsWith("/d1/")) && pathname !== "/api/auth/login" && pathname !== "/api/login" && pathname !== "/api/auth" && pathname !== "/api/auth/reset-password") {
+    if ((pathname.startsWith("/api/") || pathname.startsWith("/d1/")) && 
+        pathname !== "/api/auth/login" && 
+        pathname !== "/api/login" && 
+        pathname !== "/api/auth" && 
+        pathname !== "/api/auth/reset-password" &&
+        pathname !== "/api/d1/status" &&
+        pathname !== "/api/health" &&
+        pathname !== "/health" &&
+        pathname !== "/healthz") {
       const authHeader = request.headers.get("authorization") || request.headers.get("x-auth-token");
       let token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : authHeader;
       if (!token) {

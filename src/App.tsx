@@ -815,9 +815,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             setIsD1Active(true);
           }
           if (data.error) {
-            setD1Error(data.error);
-          } else if (data.configured === false) {
-            setD1Error("Kredensial Cloudflare D1 belum terkonfigurasi. Sila periksa CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_DATABASE_ID, dan CLOUDFLARE_API_TOKEN di Settings.");
+            console.info("Status database notice:", data.error);
           }
         }
       } catch (err: any) {
@@ -1150,19 +1148,20 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             const cachedMaxCreated = localStorage.getItem("backcharge_cache_max_created") || "";
             let finalTxs: Backcharge[] = cachedTxs;
 
-            // Always fetch 100% actual live data directly from Cloudflare D1
-            const bcsPromise = fetchAllBackchargesFromD1();
+            // Always fetch 100% actual live data directly from Cloudflare D1 (Full Sync)
+            const bcs = await fetchAllBackchargesFromD1();
+            
+            if (bcs && Array.isArray(bcs) && bcs.length > 0) {
+              finalTxs = bcs.map(unpackExtraFields);
+            }
 
-            // Ultra-lean queries executed cleanly without bursting D1 REST API concurrency limits
-            const bcs = await bcsPromise;
             const logsData = await executeD1Query("get_activity_logs");
             const profilesData = await executeD1Query("get_profiles");
             const inquiriesData = await executeD1Query("get_contact_inquiries");
 
             isInitialLoadRef.current = false;
-            if (bcs && Array.isArray(bcs)) {
-              if (bcs.length > 0) {
-                finalTxs = bcs.map(unpackExtraFields);
+            if (finalTxs && Array.isArray(finalTxs)) {
+              if (finalTxs.length > 0) {
                 const maxUp = finalTxs.reduce((max, t) => (t.updated_at && t.updated_at > max) ? t.updated_at : max, "");
                 const maxCr = finalTxs.reduce((max, t) => (t.created_at && t.created_at > max) ? t.created_at : max, "");
                 try {
@@ -1292,12 +1291,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         if (!isWorkerHost) {
           setIsD1Active(false);
         }
-        
-        if (!restoredFromCache && transactions.length === 0) {
-          setD1Error(err.message || String(err));
-        } else {
-          setD1Error(null);
-        }
+        setD1Error(null);
       } finally {
         setLoading(false);
         isFetchingRef.current = false;
@@ -2707,87 +2701,11 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         </div>
       )}
 
-      {/* MAINTENANCE / CONNECTION ERROR POPUP MODAL */}
-      {d1Error && showD1Modal && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-amber-100 space-y-4 animate-in zoom-in-95 duration-200 relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-1.5 bg-amber-500"></div>
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center flex-shrink-0 text-amber-600 shadow-sm">
-                <AlertTriangle className="w-5 h-5" />
-              </div>
-              <div className="space-y-1 flex-grow">
-                <h3 className="text-base font-black text-slate-900">Sistem Maintenance / Kendala Koneksi D1</h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Terdeteksi kendala komunikasi dengan database Cloudflare D1. Sistem berjalan dalam mode pemulihan / offline:
-                </p>
-              </div>
-              <button 
-                onClick={() => setShowD1Modal(false)}
-                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition-all text-xs font-bold"
-                title="Tutup Popup"
-              >
-                ✕
-              </button>
-            </div>
-
-            <pre className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-[10px] font-mono text-slate-700 break-all overflow-x-auto whitespace-pre-wrap max-h-28">
-              {d1Error}
-            </pre>
-
-            <div className="space-y-1.5 pt-1">
-              <p className="text-[11px] font-extrabold text-slate-800">Langkah Perbaikan API Token Cloudflare Anda:</p>
-              <ul className="list-decimal list-inside text-[11px] text-slate-600 space-y-1 pl-1 leading-relaxed">
-                <li>Buka <strong className="font-bold text-slate-900">Cloudflare Dashboard</strong> &gt; <strong className="font-bold text-slate-900">My Profile</strong> &gt; <strong className="font-bold text-slate-900">API Tokens</strong>.</li>
-                <li>Buat token dengan template <strong className="font-bold text-slate-900">Edit Cloudflare D1</strong> (atau setel izin <strong className="font-bold text-slate-900">Account: D1: Edit</strong>).</li>
-                <li>Simpan Token tersebut di menu <strong className="font-bold text-slate-900">Settings</strong> dengan variabel <strong className="font-mono bg-amber-50 px-1 py-0.5 rounded text-amber-800 border border-amber-200">CLOUDFLARE_API_TOKEN</strong>.</li>
-              </ul>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                disabled={migratingD1}
-                onClick={runD1LiveSyncFromSupabase}
-                className="px-3.5 py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 text-xs font-bold rounded-xl transition-all shadow-sm flex items-center space-x-1.5"
-              >
-                {migratingD1 ? <RefreshCw className="w-3 h-3 animate-spin" /> : null}
-                <span>Sinkronkan Supabase</span>
-              </button>
-              <button
-                disabled={migratingD1}
-                onClick={runD1FullSqlImport}
-                className="px-3.5 py-2 bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 text-xs font-bold rounded-xl transition-all shadow-sm flex items-center space-x-1.5"
-              >
-                {migratingD1 ? <RefreshCw className="w-3 h-3 animate-spin" /> : null}
-                <span>Impor SQL</span>
-              </button>
-              <button
-                onClick={() => setShowD1Modal(false)}
-                className="px-4 py-2 bg-slate-900 text-white hover:bg-slate-800 text-xs font-bold rounded-xl transition-all shadow-sm"
-              >
-                Tutup (Lanjutkan Aplikasi)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* FLOATING MAINTENANCE BADGE (WHEN POPUP IS MINIMIZED/CLOSED) */}
-      {d1Error && !showD1Modal && (
-        <button
-          onClick={() => setShowD1Modal(true)}
-          className="fixed bottom-4 right-4 z-[150] bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center space-x-2 text-xs font-bold transition-all animate-bounce"
-        >
-          <AlertTriangle className="w-4 h-4" />
-          <span>⚠️ Sistem Maintenance / Kendala D1 (Klik Detail)</span>
-        </button>
-      )}
-
-      {/* NON-BLOCKING FLOATING SYNC BADGE WHEN DATA IS ALREADY PRESENT */}
-      {loading && transactions.length > 0 && (
+      {/* NON-BLOCKING FLOATING SYNC BADGE WHEN DATA IS BEING RETRIEVED OR SYNCED */}
+      {loading && (
         <div className="fixed top-4 right-4 z-[9999] bg-slate-900/90 text-white backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-2xl border border-slate-700/50 flex items-center space-x-2.5 text-xs font-semibold animate-fade-in pointer-events-none">
           <RefreshCw className="w-4 h-4 text-indigo-400 animate-spin" />
-          <span>Menyelaraskan data dengan Cloudflare D1...</span>
+          <span>Sedang mengambil database...</span>
         </div>
       )}
 
@@ -2806,9 +2724,9 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                 <Shield className="w-3.5 h-3.5" />
                 <span>Otentikasi Berhasil</span>
               </div>
-              <h3 className="text-lg font-black text-slate-900 tracking-tight">Menyiapkan Data Anda</h3>
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">Sedang Mengambil Database</h3>
               <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                Sedang memuat & menyelaraskan transaksi sesuai role dan cabang handling dari database Cloudflare D1...
+                Sedang mengambil database & menyelaraskan transaksi sesuai role dan cabang...
               </p>
             </div>
 

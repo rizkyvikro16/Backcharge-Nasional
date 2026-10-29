@@ -1135,9 +1135,9 @@ export default function Dashboard({
             <td class="${pStatus}">${t.status_payment}</td>
             <td>${brokerName}</td>
             <td>${reasonText}</td>
-            <td class="${appASO}">${t.status_approval || 'Belum Approval'}</td>
-            <td class="${appReg}">${t.regional_approval_status || 'Belum Approval'}</td>
-            <td class="${appDiv}">${t.division_approval_status || 'Belum Approval'}</td>
+            <td class="${appASO}">${t.status_approval && t.status_approval !== 'Belum Approval' ? t.status_approval : 'N/A'}</td>
+            <td class="${appReg}">${t.regional_approval_status && t.regional_approval_status !== 'Belum Approval' ? t.regional_approval_status : 'N/A'}</td>
+            <td class="${appDiv}">${t.division_approval_status && t.division_approval_status !== 'Belum Approval' ? t.division_approval_status : 'N/A'}</td>
             <td class="text-center subtitle-text">${t.created_at ? new Date(t.created_at).toLocaleString('id-ID') : '-'}</td>
           </tr>
         `;

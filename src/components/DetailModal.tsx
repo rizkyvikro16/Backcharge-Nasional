@@ -1304,7 +1304,7 @@ export default function DetailModal({
     (!isRegionalHeadReq || transaction.regional_approval_status === 'Disetujui') &&
     (!isDivisionHeadReq || transaction.division_approval_status === 'Disetujui');
 
-  const canManageSAP = isSuperAdmin || isSalesHeadRole || isKacabRole;
+  const canManageSAP = (isSuperAdmin || isSalesHeadRole || isKacabRole) && transaction.category === 'Own Risk';
   const showBlockSAP = canManageSAP;
   const showBlockApprovalL1 = isSuperAdmin || ((isKacabUser && (isKacabCat)) || (isSalesHeadUser && isOtherCat));
   const showBlockRegionalApproval = isSuperAdmin || (isRegionalHeadUser && isRegionalHeadReq);
