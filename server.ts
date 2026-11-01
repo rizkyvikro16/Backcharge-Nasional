@@ -7,7 +7,36 @@ import fs from "fs";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
+import sharp from "sharp";
 import { queryD1, ensureD1TablesExist, importFullMigrationFile, saveBase64ToDisk, cleanExistingD1Base64 } from "./src/cloudflareD1Client.ts";
+
+async function optimizePayloadImages(obj: Record<string, any>): Promise<void> {
+  if (!obj || typeof obj !== 'object') return;
+  const fileCols = [
+    'file_bak_url',
+    'file_handover_aso_sales_url',
+    'file_handover_sales_admin_url',
+    'approval_attachment_1_url',
+    'approval_attachment_2_url',
+    'approval_attachment_3_url'
+  ];
+  for (const col of fileCols) {
+    const val = obj[col];
+    if (typeof val === 'string' && val.startsWith('data:image/') && val.length > 70000) {
+      try {
+        const b64 = val.split(',')[1];
+        const buf = Buffer.from(b64, 'base64');
+        const compressed = await sharp(buf)
+          .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 60, mozjpeg: true })
+          .toBuffer();
+        obj[col] = 'data:image/jpeg;base64,' + compressed.toString('base64');
+      } catch (e: any) {
+        console.warn('[SERVER COMPRESS] Notice:', e.message);
+      }
+    }
+  }
+}
 
 dotenv.config();
 const SECRET_KEY = process.env.DATABASE_SECRET_KEY || 'b9fee9224e290f7c8989888ea76e67ca7015134aeeb20e2a8337e3f31bb900fc';
@@ -1535,7 +1564,7 @@ async function startServer() {
   ]);
 
   // Secure allowlist-only execution gateway on D1 (Parameterized queries only, never accepts raw SQL)
-  app.post("/api/d1/execute", requireAuth, async (req: any, res: any) => {
+  app.post(["/api/d1/execute", "/api/cloudflare-d1"], requireAuth, async (req: any, res: any) => {
     // 1. Strict rejection of raw SQL text from client
     if (req.body.sql) {
       return res.status(403).json({
@@ -1544,7 +1573,8 @@ async function startServer() {
       });
     }
 
-    const { operationId, params } = req.body;
+    const operationId = req.body.operationId || req.body.action;
+    const params = req.body.params;
     
     try {
       switch (operationId) {
@@ -1825,6 +1855,7 @@ async function startServer() {
           if (!data || typeof data !== 'object') {
             return res.status(400).json({ success: false, error: "Data transaksi diperlukan" });
           }
+          await optimizePayloadImages(data);
           const validCols = Object.keys(data).filter(col => ALLOWED_BACKCHARGE_COLUMNS.has(col));
           if (validCols.length === 0 || !data.id) {
             return res.status(400).json({ success: false, error: "Data transaksi tidak valid atau ID hilang" });
@@ -1844,6 +1875,7 @@ async function startServer() {
           if (!targetId || typeof data !== 'object') {
             return res.status(400).json({ success: false, error: "ID dan data update diperlukan" });
           }
+          await optimizePayloadImages(data);
           const validCols = Object.keys(data).filter(col => col !== 'id' && ALLOWED_BACKCHARGE_COLUMNS.has(col));
           if (validCols.length === 0) {
             return res.json({ success: true, results: [] });
@@ -1862,6 +1894,7 @@ async function startServer() {
           for (const item of items) {
             const { id, updates } = item;
             if (!id || !updates || typeof updates !== 'object') continue;
+            await optimizePayloadImages(updates);
             const validCols = Object.keys(updates).filter(col => col !== 'id' && ALLOWED_BACKCHARGE_COLUMNS.has(col));
             if (validCols.length > 0) {
               const setClause = validCols.map(col => `${col} = ?`).join(', ');
@@ -1899,7 +1932,10 @@ async function startServer() {
 
           const items = req.body.items;
           if (!Array.isArray(items) || items.length === 0) {
-            return res.status(400).json({ success: false, error: "Data upsert massal harus berupa array" });
+            return res.status(400).json({ success: false, error: "Array items diperlukan" });
+          }
+          for (const it of items) {
+            await optimizePayloadImages(it);
           }
           for (const tx of items) {
             if (!tx || typeof tx !== 'object' || !tx.id) continue;
@@ -1920,8 +1956,43 @@ async function startServer() {
 
         // --- ACTIVITY LOGS ---
         case "get_activity_logs": {
-          const limit = Number(req.body.limit) || 50;
-          const results = await queryD1("SELECT * FROM activity_logs ORDER BY id DESC LIMIT ?", [limit]);
+          const limit = Math.min(Number(req.body.limit) || 200, 1000);
+          const offset = Number(req.body.offset) || 0;
+          const search = req.body.search ? `%${String(req.body.search).trim()}%` : null;
+          const performedBy = req.body.performedBy ? `%${String(req.body.performedBy).trim()}%` : null;
+          const txId = req.body.transactionId ? `%${String(req.body.transactionId).trim()}%` : null;
+          const startDate = req.body.startDate ? String(req.body.startDate).trim() : null;
+          const endDate = req.body.endDate ? `${String(req.body.endDate).trim()} 23:59:59` : null;
+
+          const whereClauses: string[] = [];
+          const queryParams: any[] = [];
+
+          if (txId) {
+            whereClauses.push("transaction_id LIKE ?");
+            queryParams.push(txId);
+          }
+          if (performedBy) {
+            whereClauses.push("performed_by LIKE ?");
+            queryParams.push(performedBy);
+          }
+          if (startDate) {
+            whereClauses.push("timestamp >= ?");
+            queryParams.push(startDate);
+          }
+          if (endDate) {
+            whereClauses.push("timestamp <= ?");
+            queryParams.push(endDate);
+          }
+          if (search) {
+            whereClauses.push("(action_description LIKE ? OR transaction_id LIKE ? OR performed_by LIKE ?)");
+            queryParams.push(search, search, search);
+          }
+
+          const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+          const sql = `SELECT * FROM activity_logs ${whereSql} ORDER BY id DESC LIMIT ? OFFSET ?`;
+          queryParams.push(limit, offset);
+
+          const results = await queryD1(sql, queryParams);
           return res.json({ success: true, results: results || [] });
         }
 

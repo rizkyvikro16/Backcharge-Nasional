@@ -19,7 +19,12 @@ import {
   hasRole, 
   BackchargeCategory,
   unpackExtraFields,
-  isRegionalHeadRole
+  isRegionalHeadRole,
+  getEffectiveSapStatus,
+  isTransactionFullyApproved,
+  REGIONAL_WEST_BRANCHES,
+  REGIONAL_CENTRAL_BRANCHES,
+  REGIONAL_EAST_BRANCHES
 } from '../types';
 import { canPerformAction } from '../lib/rbac';
 import { compressImageIfNeeded, uploadFileToDrive } from '../lib/googleDrive';
@@ -115,26 +120,6 @@ const formatDate = (dateStr?: string | null) => {
   }
 };
 
-export const getEffectiveSapStatus = (tx: Backcharge): string => {
-  if (tx.status_sap === 'Not Bill' || String(tx.status_sap || '').toLowerCase() === 'not bill') {
-    return 'Not Bill';
-  }
-  const summary = getApprovalSummary(tx);
-  const hasInvoice = Boolean(tx.no_invoice && typeof tx.no_invoice === 'string' && tx.no_invoice.trim() !== '' && tx.no_invoice.trim() !== '-');
-  const isPaid = tx.status_payment === 'Lunas';
-
-  if (!summary.isFullyApproved && !hasInvoice && !isPaid) {
-    return 'N/A';
-  }
-
-  const stage = getTransactionStage(tx);
-  const isInvoiceStageOrBeyond = hasInvoice || isPaid || stage === 'Menunggu Cetak & Kirim Invoice' || stage === 'Menunggu Pelunasan Backcharge' || stage === 'Selesai (Lunas)';
-
-  if (isInvoiceStageOrBeyond && (!tx.status_sap || tx.status_sap === 'N/A' || tx.status_sap.trim() === '')) {
-    return 'Bill';
-  }
-  return tx.status_sap || 'N/A';
-};
 
 const getLeadTimeDays = (bakDateStr?: string | null, paymentDateStr?: string | null, isLunas?: boolean): number => {
   if (!bakDateStr) return 0;
@@ -467,8 +452,6 @@ export default function DatabaseView({
     if (!canPerformAction(currentUser?.role, 'approve')) return false;
     return hasRole(currentUser?.role, 'Administrator') ||
       hasRole(currentUser?.role, 'Admin Head') ||
-      hasRole(currentUser?.role, 'Kepala Cabang') ||
-      hasRole(currentUser?.role, 'Sales Head') ||
       hasRole(currentUser?.role, 'Division Head') ||
       isRegionalHeadRole(currentUser?.role || '');
   }, [currentUser]);
@@ -1088,10 +1071,10 @@ export default function DatabaseView({
     if (onClearDashboardFilter) onClearDashboardFilter();
   };
 
-  // EXCEL EXPORT (Comprehensive, Beautiful, and Formatted)
+  // EXCEL EXPORT (Comprehensive Executive Summary: 3 Multi-Sheets)
   const handleExportExcel = async () => {
     try {
-      if (addToast) addToast('Menyiapkan file Rekap Excel lengkap...', 'info');
+      if (addToast) addToast('Menyiapkan file Rekap Eksekutif Excel (3 Sheet Terpisah)...', 'info');
 
       const dataToExport = selectedIds.size > 0 
         ? sortedTransactions.filter(t => selectedIds.has(t.id))
@@ -1108,24 +1091,6 @@ export default function DatabaseView({
       workbook.created = new Date();
       workbook.modified = new Date();
 
-      const worksheet = workbook.addWorksheet('Rekap Backcharge Nasional', {
-        views: [{ state: 'frozen', ySplit: 8, xSplit: 2 }]
-      });
-
-      // 1. BANNER HEADER
-      worksheet.mergeCells('A1:AC1');
-      const titleRow = worksheet.getCell('A1');
-      titleRow.value = 'PT ADIRA SARANA ARMADA TBK (ASSA RENT) - REKAPITULASI BACKCHARGE NASIONAL';
-      titleRow.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
-      titleRow.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF0F172A' } // Dark Navy
-      };
-      titleRow.alignment = { vertical: 'middle', horizontal: 'center' };
-      worksheet.getRow(1).height = 34;
-
-      // 2. METADATA BLOCK
       const nowStr = new Date().toLocaleDateString('id-ID', {
         day: '2-digit',
         month: 'long',
@@ -1134,23 +1099,514 @@ export default function DatabaseView({
         minute: '2-digit'
       }) + ' WIB';
 
-      worksheet.getCell('A3').value = 'Tanggal Unduh:';
-      worksheet.getCell('B3').value = nowStr;
-      worksheet.getCell('A4').value = 'Diunduh Oleh:';
-      worksheet.getCell('B4').value = `${currentUser?.full_name || 'User'} (${currentUser?.role || '-'} - ${currentUser?.branch || 'Nasional'})`;
-      worksheet.getCell('A5').value = 'Total Transaksi:';
-      worksheet.getCell('B5').value = `${dataToExport.length} Data`;
-      worksheet.getCell('A6').value = 'Total Nilai:';
-      worksheet.getCell('B6').value = formatCurrency(dataToExport.reduce((sum, t) => sum + (Number(t.value) || 0), 0));
+      // ==========================================
+      // SHEET 1: RINGKASAN PERFORMA CABANG & REGIONAL
+      // ==========================================
+      const wsSheet1 = workbook.addWorksheet('Performa Cabang & Regional', {
+        views: [{ showGridLines: true }]
+      });
 
+      // Title Banner Sheet 1
+      wsSheet1.mergeCells('A1:I1');
+      const s1Title = wsSheet1.getCell('A1');
+      s1Title.value = 'PT ADIRA SARANA ARMADA TBK (ASSA RENT) - RINGKASAN EKSEKUTIF PERFORMA CABANG & REGIONAL';
+      s1Title.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+      s1Title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+      s1Title.alignment = { vertical: 'middle', horizontal: 'center' };
+      wsSheet1.getRow(1).height = 32;
+
+      // Metadata Sheet 1
+      wsSheet1.getCell('A3').value = 'Tanggal Unduh:';
+      wsSheet1.getCell('B3').value = nowStr;
+      wsSheet1.getCell('A4').value = 'Diunduh Oleh:';
+      wsSheet1.getCell('B4').value = `${currentUser?.full_name || 'User'} (${currentUser?.role || '-'})`;
+      wsSheet1.getCell('A5').value = 'Cakupan Data:';
+      wsSheet1.getCell('B5').value = `${dataToExport.length} Total Transaksi Terfilter`;
+      ['A3', 'A4', 'A5'].forEach(c => {
+        wsSheet1.getCell(c).font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF475569' } };
+      });
+      ['B3', 'B4', 'B5'].forEach(c => {
+        wsSheet1.getCell(c).font = { name: 'Arial', size: 9, bold: false, color: { argb: 'FF0F172A' } };
+      });
+
+      // Calculate Branch & Regional Stats
+      const branchMap = new Map<string, {
+        branch: string;
+        regional: string;
+        totalCases: number;
+        totalValue: number;
+        lunasCases: number;
+        lunasValue: number;
+        osCases: number;
+        osValue: number;
+        totalLeadDays: number;
+      }>();
+
+      dataToExport.forEach(tx => {
+        const br = tx.branch || 'Lainnya';
+        let reg = 'Regional Central';
+        if (REGIONAL_WEST_BRANCHES.includes(br)) reg = 'Regional West';
+        else if (REGIONAL_EAST_BRANCHES.includes(br)) reg = 'Regional East';
+        else if (REGIONAL_CENTRAL_BRANCHES.includes(br)) reg = 'Regional Central';
+        else reg = 'Pusat / Lainnya';
+
+        let item = branchMap.get(br);
+        if (!item) {
+          item = {
+            branch: br,
+            regional: reg,
+            totalCases: 0,
+            totalValue: 0,
+            lunasCases: 0,
+            lunasValue: 0,
+            osCases: 0,
+            osValue: 0,
+            totalLeadDays: 0
+          };
+          branchMap.set(br, item);
+        }
+
+        const val = Number(tx.value) || 0;
+        item.totalCases++;
+        item.totalValue += val;
+        const isPaid = tx.status_payment === 'Lunas';
+        if (isPaid) {
+          item.lunasCases++;
+          item.lunasValue += val;
+        } else {
+          item.osCases++;
+          item.osValue += val;
+        }
+        item.totalLeadDays += getLeadTimeDays(tx.tanggal || tx.created_at, tx.payment_date, isPaid);
+      });
+
+      const branchList = Array.from(branchMap.values()).sort((a, b) => b.totalValue - a.totalValue);
+
+      // Regional aggregation
+      const regionalMap = new Map<string, {
+        regional: string;
+        totalCases: number;
+        totalValue: number;
+        lunasCases: number;
+        lunasValue: number;
+        osCases: number;
+        osValue: number;
+        totalLeadDays: number;
+      }>();
+
+      branchList.forEach(b => {
+        let r = regionalMap.get(b.regional);
+        if (!r) {
+          r = {
+            regional: b.regional,
+            totalCases: 0,
+            totalValue: 0,
+            lunasCases: 0,
+            lunasValue: 0,
+            osCases: 0,
+            osValue: 0,
+            totalLeadDays: 0
+          };
+          regionalMap.set(b.regional, r);
+        }
+        r.totalCases += b.totalCases;
+        r.totalValue += b.totalValue;
+        r.lunasCases += b.lunasCases;
+        r.lunasValue += b.lunasValue;
+        r.osCases += b.osCases;
+        r.osValue += b.osValue;
+        r.totalLeadDays += b.totalLeadDays;
+      });
+
+      const regionalList = Array.from(regionalMap.values()).sort((a, b) => b.totalValue - a.totalValue);
+
+      // Section 1: Tabel Regional
+      wsSheet1.getCell('A7').value = '1. REKAPITULASI PERFORMA PER REGIONAL';
+      wsSheet1.getCell('A7').font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF1E3A8A' } };
+
+      const regHeaders = [
+        'Regional', 'Total Kasus', 'Total Tagihan (Rp)', 
+        'Kasus Lunas', 'Nilai Lunas (Rp)', 'Rasio Lunas (%)',
+        'Kasus Outstanding', 'Nilai Outstanding (Rp)', 'Rata-rata Lead Time (Hari)'
+      ];
+      const s1Cols = [
+        { width: 22 }, { width: 14 }, { width: 20 },
+        { width: 14 }, { width: 20 }, { width: 16 },
+        { width: 16 }, { width: 22 }, { width: 22 }
+      ];
+      s1Cols.forEach((col, idx) => { wsSheet1.getColumn(idx + 1).width = col.width; });
+
+      const regHeaderRow = wsSheet1.getRow(8);
+      regHeaderRow.height = 24;
+      regHeaders.forEach((h, idx) => {
+        const cell = regHeaderRow.getCell(idx + 1);
+        cell.value = h;
+        cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+        };
+      });
+
+      let curRow = 9;
+      regionalList.forEach((r, idx) => {
+        const row = wsSheet1.getRow(curRow);
+        row.height = 20;
+        const ratio = r.totalValue > 0 ? (r.lunasValue / r.totalValue) : 0;
+        const avgDays = r.totalCases > 0 ? Math.round(r.totalLeadDays / r.totalCases) : 0;
+
+        row.getCell(1).value = r.regional;
+        row.getCell(1).font = { name: 'Arial', size: 9, bold: true };
+        row.getCell(2).value = r.totalCases;
+        row.getCell(2).numFmt = '#,##0';
+        row.getCell(3).value = r.totalValue;
+        row.getCell(3).numFmt = '#,##0';
+        row.getCell(4).value = r.lunasCases;
+        row.getCell(4).numFmt = '#,##0';
+        row.getCell(5).value = r.lunasValue;
+        row.getCell(5).numFmt = '#,##0';
+        row.getCell(6).value = ratio;
+        row.getCell(6).numFmt = '0.0%';
+        row.getCell(7).value = r.osCases;
+        row.getCell(7).numFmt = '#,##0';
+        row.getCell(8).value = r.osValue;
+        row.getCell(8).numFmt = '#,##0';
+        row.getCell(9).value = avgDays;
+        row.getCell(9).numFmt = '#,##0';
+
+        const bg = idx % 2 === 1 ? 'FFF8FAFC' : 'FFFFFFFF';
+        for (let c = 1; c <= 9; c++) {
+          const cell = row.getCell(c);
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+          };
+          if (c === 1) cell.alignment = { vertical: 'middle', horizontal: 'left' };
+          else if ([2, 4, 7, 9].includes(c)) cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          else cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        }
+        curRow++;
+      });
+
+      // Section 2: Tabel Rincian Cabang
+      curRow += 2;
+      wsSheet1.getCell(`A${curRow}`).value = '2. RINCIAN PERFORMA PER CABANG OPERASIONAL';
+      wsSheet1.getCell(`A${curRow}`).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF1E3A8A' } };
+
+      curRow++;
+      const branchHeaders = [
+        'Nama Cabang', 'Regional', 'Total Kasus', 'Total Tagihan (Rp)',
+        'Kasus Lunas', 'Nilai Lunas (Rp)', 'Rasio Lunas (%)',
+        'Kasus Outstanding', 'Nilai Outstanding (Rp)', 'Rata-rata Lead Time (Hari)'
+      ];
+      const branchHeaderRow = wsSheet1.getRow(curRow);
+      branchHeaderRow.height = 24;
+      branchHeaders.forEach((h, idx) => {
+        const cell = branchHeaderRow.getCell(idx + 1);
+        cell.value = h;
+        cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F766E' } }; // Teal
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+        };
+      });
+
+      const branchStartRow = curRow + 1;
+      curRow++;
+      branchList.forEach((b, idx) => {
+        const row = wsSheet1.getRow(curRow);
+        row.height = 20;
+        const ratio = b.totalValue > 0 ? (b.lunasValue / b.totalValue) : 0;
+        const avgDays = b.totalCases > 0 ? Math.round(b.totalLeadDays / b.totalCases) : 0;
+
+        row.getCell(1).value = b.branch;
+        row.getCell(1).font = { name: 'Arial', size: 9, bold: true };
+        row.getCell(2).value = b.regional;
+        row.getCell(3).value = b.totalCases;
+        row.getCell(3).numFmt = '#,##0';
+        row.getCell(4).value = b.totalValue;
+        row.getCell(4).numFmt = '#,##0';
+        row.getCell(5).value = b.lunasCases;
+        row.getCell(5).numFmt = '#,##0';
+        row.getCell(6).value = b.lunasValue;
+        row.getCell(6).numFmt = '#,##0';
+        row.getCell(7).value = ratio;
+        row.getCell(7).numFmt = '0.0%';
+        row.getCell(8).value = b.osCases;
+        row.getCell(8).numFmt = '#,##0';
+        row.getCell(9).value = b.osValue;
+        row.getCell(9).numFmt = '#,##0';
+        row.getCell(10).value = avgDays;
+        row.getCell(10).numFmt = '#,##0';
+
+        const bg = idx % 2 === 1 ? 'FFF0FDFA' : 'FFFFFFFF';
+        for (let c = 1; c <= 10; c++) {
+          const cell = row.getCell(c);
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+          };
+          if ([1, 2].includes(c)) cell.alignment = { vertical: 'middle', horizontal: 'left' };
+          else if ([3, 5, 8, 10].includes(c)) cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          else cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        }
+        curRow++;
+      });
+
+      // Total Row for Branches
+      const branchEndRow = curRow - 1;
+      const bTotalRow = wsSheet1.getRow(curRow);
+      bTotalRow.height = 24;
+      bTotalRow.getCell(1).value = 'TOTAL NASIONAL';
+      bTotalRow.getCell(1).font = { name: 'Arial', size: 10, bold: true };
+      bTotalRow.getCell(3).value = { formula: `SUM(C${branchStartRow}:C${branchEndRow})` };
+      bTotalRow.getCell(3).numFmt = '#,##0';
+      bTotalRow.getCell(4).value = { formula: `SUM(D${branchStartRow}:D${branchEndRow})` };
+      bTotalRow.getCell(4).numFmt = '#,##0';
+      bTotalRow.getCell(5).value = { formula: `SUM(E${branchStartRow}:E${branchEndRow})` };
+      bTotalRow.getCell(5).numFmt = '#,##0';
+      bTotalRow.getCell(6).value = { formula: `SUM(F${branchStartRow}:F${branchEndRow})` };
+      bTotalRow.getCell(6).numFmt = '#,##0';
+      bTotalRow.getCell(7).value = { formula: `IF(D${curRow}>0, F${curRow}/D${curRow}, 0)` };
+      bTotalRow.getCell(7).numFmt = '0.0%';
+      bTotalRow.getCell(8).value = { formula: `SUM(H${branchStartRow}:H${branchEndRow})` };
+      bTotalRow.getCell(8).numFmt = '#,##0';
+      bTotalRow.getCell(9).value = { formula: `SUM(I${branchStartRow}:I${branchEndRow})` };
+      bTotalRow.getCell(9).numFmt = '#,##0';
+      bTotalRow.getCell(10).value = { formula: `AVERAGE(J${branchStartRow}:J${branchEndRow})` };
+      bTotalRow.getCell(10).numFmt = '#,##0';
+
+      for (let c = 1; c <= 10; c++) {
+        const cell = bTotalRow.getCell(c);
+        cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+        cell.border = {
+          top: { style: 'medium', color: { argb: 'FF0F172A' } },
+          bottom: { style: 'double', color: { argb: 'FF0F172A' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+        };
+        if ([1, 2].includes(c)) cell.alignment = { vertical: 'middle', horizontal: 'left' };
+        else if ([3, 5, 8, 10].includes(c)) cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        else cell.alignment = { vertical: 'middle', horizontal: 'right' };
+      }
+
+      // ==========================================
+      // SHEET 2: TOP 10 CUSTOMER OUTSTANDING
+      // ==========================================
+      const wsSheet2 = workbook.addWorksheet('Top 10 Customer Outstanding', {
+        views: [{ showGridLines: true }]
+      });
+
+      // Title Banner Sheet 2
+      wsSheet2.mergeCells('A1:I1');
+      const s2Title = wsSheet2.getCell('A1');
+      s2Title.value = 'PT ADIRA SARANA ARMADA TBK (ASSA RENT) - TOP CUSTOMER OUTSTANDING BACKCHARGE';
+      s2Title.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+      s2Title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF831843' } }; // Rose/Wine
+      s2Title.alignment = { vertical: 'middle', horizontal: 'center' };
+      wsSheet2.getRow(1).height = 32;
+
+      // Metadata Sheet 2
+      wsSheet2.getCell('A3').value = 'Tanggal Unduh:';
+      wsSheet2.getCell('B3').value = nowStr;
+      wsSheet2.getCell('A4').value = 'Kriteria Sorting:';
+      wsSheet2.getCell('B4').value = 'Nilai Outstanding (Belum Bayar) Tertinggi';
+      ['A3', 'A4'].forEach(c => {
+        wsSheet2.getCell(c).font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF475569' } };
+      });
+      ['B3', 'B4'].forEach(c => {
+        wsSheet2.getCell(c).font = { name: 'Arial', size: 9, bold: false, color: { argb: 'FF0F172A' } };
+      });
+
+      // Aggregate Customers
+      const custMap = new Map<string, {
+        customerName: string;
+        totalCases: number;
+        totalValue: number;
+        lunasCases: number;
+        lunasValue: number;
+        osCases: number;
+        osValue: number;
+        branchCounts: Map<string, number>;
+      }>();
+
+      dataToExport.forEach(tx => {
+        const name = (tx.customer_name || 'Umum / Tanpa Nama').trim();
+        let item = custMap.get(name);
+        if (!item) {
+          item = {
+            customerName: name,
+            totalCases: 0,
+            totalValue: 0,
+            lunasCases: 0,
+            lunasValue: 0,
+            osCases: 0,
+            osValue: 0,
+            branchCounts: new Map()
+          };
+          custMap.set(name, item);
+        }
+
+        const val = Number(tx.value) || 0;
+        item.totalCases++;
+        item.totalValue += val;
+        const isPaid = tx.status_payment === 'Lunas';
+        if (isPaid) {
+          item.lunasCases++;
+          item.lunasValue += val;
+        } else {
+          item.osCases++;
+          item.osValue += val;
+        }
+        const b = tx.branch || 'Lainnya';
+        item.branchCounts.set(b, (item.branchCounts.get(b) || 0) + 1);
+      });
+
+      const topCustomers = Array.from(custMap.values())
+        .sort((a, b) => b.osValue - a.osValue)
+        .slice(0, 15);
+
+      const custHeaders = [
+        'Peringkat', 'Nama Mitra / Customer', 'Total Kasus', 'Total Tagihan (Rp)',
+        'Kasus Lunas', 'Kasus Outstanding', 'Nominal Outstanding (Rp)',
+        'Rasio Pelunasan (%)', 'Cabang Terbanyak'
+      ];
+      const s2Cols = [
+        { width: 12 }, { width: 34 }, { width: 14 }, { width: 22 },
+        { width: 14 }, { width: 18 }, { width: 24 },
+        { width: 18 }, { width: 24 }
+      ];
+      s2Cols.forEach((col, idx) => { wsSheet2.getColumn(idx + 1).width = col.width; });
+
+      const custHeaderRow = wsSheet2.getRow(6);
+      custHeaderRow.height = 24;
+      custHeaders.forEach((h, idx) => {
+        const cell = custHeaderRow.getCell(idx + 1);
+        cell.value = h;
+        cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBE123C' } }; // Crimson
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+        };
+      });
+
+      let s2Row = 7;
+      topCustomers.forEach((c, idx) => {
+        const row = wsSheet2.getRow(s2Row);
+        row.height = 22;
+
+        let domBranch = '-';
+        let maxBCount = 0;
+        c.branchCounts.forEach((cnt, br) => {
+          if (cnt > maxBCount) {
+            maxBCount = cnt;
+            domBranch = br;
+          }
+        });
+
+        const ratio = c.totalValue > 0 ? (c.lunasValue / c.totalValue) : 0;
+
+        row.getCell(1).value = `Rank ${idx + 1}`;
+        row.getCell(2).value = c.customerName;
+        row.getCell(3).value = c.totalCases;
+        row.getCell(3).numFmt = '#,##0';
+        row.getCell(4).value = c.totalValue;
+        row.getCell(4).numFmt = '#,##0';
+        row.getCell(5).value = c.lunasCases;
+        row.getCell(5).numFmt = '#,##0';
+        row.getCell(6).value = c.osCases;
+        row.getCell(6).numFmt = '#,##0';
+        row.getCell(7).value = c.osValue;
+        row.getCell(7).numFmt = '#,##0';
+        row.getCell(8).value = ratio;
+        row.getCell(8).numFmt = '0.0%';
+        row.getCell(9).value = `${domBranch} (${maxBCount} kasus)`;
+
+        const bg = idx < 3 ? 'FFFFF1F2' : (idx % 2 === 1 ? 'FFF8FAFC' : 'FFFFFFFF');
+        for (let colIdx = 1; colIdx <= 9; colIdx++) {
+          const cell = row.getCell(colIdx);
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+          };
+          if (colIdx === 1) {
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: idx < 3 ? 'FFE11D48' : 'FF475569' } };
+          } else if (colIdx === 2) {
+            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+            cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF0F172A' } };
+          } else if ([3, 5, 6].includes(colIdx)) {
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            cell.font = { name: 'Arial', size: 9 };
+          } else if (colIdx === 7) {
+            cell.alignment = { vertical: 'middle', horizontal: 'right' };
+            cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFE11D48' } };
+          } else if (colIdx === 9) {
+            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+            cell.font = { name: 'Arial', size: 8.5, color: { argb: 'FF475569' } };
+          } else {
+            cell.alignment = { vertical: 'middle', horizontal: 'right' };
+            cell.font = { name: 'Arial', size: 9 };
+          }
+        }
+        s2Row++;
+      });
+
+      // ==========================================
+      // SHEET 3: DATA MENTAH TRANSAKSI (RAW DATA)
+      // ==========================================
+      const wsSheet3 = workbook.addWorksheet('Data Mentah Transaksi', {
+        views: [{ state: 'frozen', ySplit: 8, xSplit: 2 }]
+      });
+
+      // Banner Header Sheet 3
+      wsSheet3.mergeCells('A1:AC1');
+      const s3Title = wsSheet3.getCell('A1');
+      s3Title.value = 'PT ADIRA SARANA ARMADA TBK (ASSA RENT) - REKAPITULASI DETAIL TRANSAKSI BACKCHARGE';
+      s3Title.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+      s3Title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+      s3Title.alignment = { vertical: 'middle', horizontal: 'center' };
+      wsSheet3.getRow(1).height = 32;
+
+      // Metadata Sheet 3
+      wsSheet3.getCell('A3').value = 'Tanggal Unduh:';
+      wsSheet3.getCell('B3').value = nowStr;
+      wsSheet3.getCell('A4').value = 'Diunduh Oleh:';
+      wsSheet3.getCell('B4').value = `${currentUser?.full_name || 'User'} (${currentUser?.role || '-'})`;
+      wsSheet3.getCell('A5').value = 'Total Transaksi:';
+      wsSheet3.getCell('B5').value = `${dataToExport.length} Data`;
+      wsSheet3.getCell('A6').value = 'Total Nilai:';
+      wsSheet3.getCell('B6').value = formatCurrency(dataToExport.reduce((sum, t) => sum + (Number(t.value) || 0), 0));
       ['A3', 'A4', 'A5', 'A6'].forEach(cellId => {
-        worksheet.getCell(cellId).font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF475569' } };
+        wsSheet3.getCell(cellId).font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF475569' } };
       });
       ['B3', 'B4', 'B5', 'B6'].forEach(cellId => {
-        worksheet.getCell(cellId).font = { name: 'Arial', size: 9, bold: false, color: { argb: 'FF0F172A' } };
+        wsSheet3.getCell(cellId).font = { name: 'Arial', size: 9, bold: false, color: { argb: 'FF0F172A' } };
       });
 
-      // 3. TABLE COLUMN DEFINITIONS
+      // Table Columns Config for Sheet 3
       const columnsConfig = [
         { header: 'No', key: 'no', width: 6 },
         { header: 'ID Transaksi', key: 'id', width: 16 },
@@ -1185,33 +1641,29 @@ export default function DatabaseView({
         { header: 'Catatan / Alasan', key: 'alasan', width: 30 }
       ];
 
-      const headerRowIndex = 8;
-      const headerRow = worksheet.getRow(headerRowIndex);
-      headerRow.height = 26;
+      const s3HeaderRowIndex = 8;
+      const s3HeaderRow = wsSheet3.getRow(s3HeaderRowIndex);
+      s3HeaderRow.height = 26;
 
       columnsConfig.forEach((col, idx) => {
-        const cell = headerRow.getCell(idx + 1);
+        const cell = s3HeaderRow.getCell(idx + 1);
         cell.value = col.header;
         cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FF1E3A8A' } // Royal Blue
-        };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
         cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
         cell.border = {
           top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
           bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
           right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
         };
-        worksheet.getColumn(idx + 1).width = col.width;
+        wsSheet3.getColumn(idx + 1).width = col.width;
       });
 
-      // 4. POPULATE DATA ROWS
+      // Populate Sheet 3 rows
       dataToExport.forEach((tx, index) => {
-        const rowIndex = headerRowIndex + 1 + index;
-        const row = worksheet.getRow(rowIndex);
+        const rowIndex = s3HeaderRowIndex + 1 + index;
+        const row = wsSheet3.getRow(rowIndex);
         row.height = 20;
 
         const isZebra = index % 2 === 1;
@@ -1255,71 +1707,58 @@ export default function DatabaseView({
           const cell = row.getCell(colIdx + 1);
           cell.value = val;
           cell.font = { name: 'Arial', size: 9, color: { argb: 'FF1E293B' } };
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: rowBgColor }
-          };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBgColor } };
           cell.border = {
             top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
             bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
             right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
           };
 
-          // Alignment & format specs
-          if (colIdx === 0) { // No
+          if (colIdx === 0) {
             cell.alignment = { vertical: 'middle', horizontal: 'center' };
-          } else if (colIdx === 1) { // ID
+          } else if (colIdx === 1) {
             cell.alignment = { vertical: 'middle', horizontal: 'center' };
             cell.font = { name: 'Courier New', size: 9, bold: true, color: { argb: 'FF1E40AF' } };
-          } else if (colIdx === 2) { // Tanggal
+          } else if (colIdx === 2) {
             cell.alignment = { vertical: 'middle', horizontal: 'center' };
-          } else if (colIdx === 7) { // Nilai
+          } else if (colIdx === 8) { // Nilai
             cell.alignment = { vertical: 'middle', horizontal: 'right' };
             cell.numFmt = '#,##0';
             cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF0F172A' } };
-          } else if (colIdx === 26) { // Status Bayar
+          } else if (colIdx === 28) { // Status Bayar
             cell.alignment = { vertical: 'middle', horizontal: 'center' };
-            if (val === 'Lunas') {
-              cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF047857' } };
-            } else {
-              cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFE11D48' } };
-            }
+            cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: val === 'Lunas' ? 'FF047857' : 'FFE11D48' } };
           } else {
             cell.alignment = { vertical: 'middle', horizontal: 'left' };
           }
         });
       });
 
-      // 5. SUMMARY ROW AT BOTTOM
-      const lastDataRow = headerRowIndex + dataToExport.length;
-      const totalRowIndex = lastDataRow + 1;
-      const totalRow = worksheet.getRow(totalRowIndex);
-      totalRow.height = 24;
+      // Total Row Sheet 3
+      const lastDataRow = s3HeaderRowIndex + dataToExport.length;
+      const s3TotalRowIndex = lastDataRow + 1;
+      const s3TotalRow = wsSheet3.getRow(s3TotalRowIndex);
+      s3TotalRow.height = 24;
 
-      worksheet.mergeCells(`A${totalRowIndex}:G${totalRowIndex}`);
-      const labelCell = worksheet.getCell(`A${totalRowIndex}`);
-      labelCell.value = 'TOTAL KESELURUHAN';
-      labelCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
-      labelCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      wsSheet3.mergeCells(`A${s3TotalRowIndex}:H${s3TotalRowIndex}`);
+      const s3LabelCell = wsSheet3.getCell(`A${s3TotalRowIndex}`);
+      s3LabelCell.value = 'TOTAL KESELURUHAN';
+      s3LabelCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+      s3LabelCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
-      const valueCell = worksheet.getCell(`H${totalRowIndex}`);
-      valueCell.value = {
-        formula: `SUM(H${headerRowIndex + 1}:H${lastDataRow})`,
+      const s3ValueCell = wsSheet3.getCell(`I${s3TotalRowIndex}`);
+      s3ValueCell.value = {
+        formula: `SUM(I${s3HeaderRowIndex + 1}:I${lastDataRow})`,
         result: dataToExport.reduce((sum, t) => sum + (Number(t.value) || 0), 0)
       };
-      valueCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
-      valueCell.numFmt = '#,##0';
-      valueCell.alignment = { vertical: 'middle', horizontal: 'right' };
+      s3ValueCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+      s3ValueCell.numFmt = '#,##0';
+      s3ValueCell.alignment = { vertical: 'middle', horizontal: 'right' };
 
       for (let c = 1; c <= columnsConfig.length; c++) {
-        const cell = totalRow.getCell(c);
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFE2E8F0' }
-        };
+        const cell = s3TotalRow.getCell(c);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
         cell.border = {
           top: { style: 'medium', color: { argb: 'FF0F172A' } },
           bottom: { style: 'double', color: { argb: 'FF0F172A' } },
@@ -1328,11 +1767,11 @@ export default function DatabaseView({
         };
       }
 
-      // 6. GENERATE BLOB & DOWNLOAD
+      // Generate & Download Workbook
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const nowFormatted = new Date().toISOString().replace(/[-:T.]/g, '').substring(0, 14);
-      const filename = `Rekap_Backcharge_ASSA_Nasional_${nowFormatted}.xlsx`;
+      const filename = `Rekap_Eksekutif_Backcharge_ASSA_${nowFormatted}.xlsx`;
 
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -1343,44 +1782,13 @@ export default function DatabaseView({
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
 
-      if (addToast) addToast(`Rekap Excel berhasil diunduh (${dataToExport.length} data)!`, 'success');
+      if (addToast) addToast(`Laporan Rekap Eksekutif 3 Sheet berhasil diunduh (${dataToExport.length} data)!`, 'success');
     } catch (err: any) {
       console.error('Error exporting Excel:', err);
-      // SheetJS Fallback
-      try {
-        const fallbackData = sortedTransactions.map((tx, idx) => ({
-          'No': idx + 1,
-          'ID Transaksi': tx.id,
-          'Tanggal': tx.tanggal || formatDate(tx.created_at),
-          'Cabang': tx.branch,
-          'Kategori': tx.category,
-          'Nama CUSTOMER': tx.customer_name,
-          'No. Polisi': tx.license_plate,
-          'Nilai (Rp)': tx.value,
-          'No. BAK': tx.no_bak,
-          'No. SPK': tx.no_spk,
-          'No. SAP': tx.no_sap,
-          'No. Tilang': tx.no_tilang || '-',
-          'Nama BRO': tx.nama_bro || tx.bro_name || '-',
-          'Status SAP': getEffectiveSapStatus(tx),
-          'Status Konfirmasi': tx.status_confirm,
-          'Status Serah Terima': tx.status_handover,
-          'Status Approval': getApprovalText(tx),
-          'No. Invoice': tx.no_invoice,
-          'Status Pembayaran': tx.status_payment,
-          'Tanggal Pembayaran': tx.payment_date || '-',
-          'Alasan': tx.alasan || '-'
-        }));
-        const ws = XLSX.utils.json_to_sheet(fallbackData);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Rekap Backcharge');
-        XLSX.writeFile(wb, `Rekap_Backcharge_${Date.now()}.xlsx`);
-        if (addToast) addToast('Rekap Excel diekspor via modul standar.', 'success');
-      } catch (fallbackErr: any) {
-        if (addToast) addToast(`Gagal export Excel: ${err.message}`, 'error');
-      }
+      if (addToast) addToast(`Gagal export Excel: ${err.message}`, 'error');
     }
   };
+
 
   // EXCEL IMPORT WORKFLOW
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1775,20 +2183,14 @@ export default function DatabaseView({
             statusPayment = 'Lunas';
           }
 
-          let statusSap = getVal(['status sap (bill/not bill/na)', 'status sap', 'sap status']) || 'Bill';
-          if (statusSap.toLowerCase().includes('not bill')) {
-            statusSap = 'Not Bill';
-          } else if (statusSap.toLowerCase().includes('n/a') || statusSap.toLowerCase() === 'na' || !statusSap) {
-            const inv = getVal(['no invoice', 'no. invoice', 'invoice']) || '-';
-            const pay = getVal(['status bayar', 'status pembayaran']) || '';
-            const appr = getVal(['status approval', 'approval']) || '';
-            if (inv !== '-' || pay.toLowerCase() === 'lunas' || pay.toLowerCase() === 'belum bayar' || appr.toLowerCase().includes('disetujui')) {
-              statusSap = 'Bill';
-            } else {
-              statusSap = 'N/A';
-            }
-          } else {
+          const rawSapVal = getVal(['status sap (bill/not bill/na)', 'status sap', 'sap status']).trim();
+          let statusSap = 'N/A';
+          if (rawSapVal.toLowerCase() === 'bill') {
             statusSap = 'Bill';
+          } else if (rawSapVal.toLowerCase().includes('not bill')) {
+            statusSap = 'Not Bill';
+          } else {
+            statusSap = 'N/A';
           }
 
           parsedItems.push({
@@ -2043,6 +2445,7 @@ export default function DatabaseView({
     setBulkFile(null);
     setIsUploadingBulkFile(false);
     setIsDraggingFile(false);
+    setIsSubmitting(false);
     setIsBulkUpdateModalOpen(true);
   };
 
@@ -2057,7 +2460,8 @@ export default function DatabaseView({
     if (addToast) addToast(`Mengunggah berkas bukti "${rawFile.name}"... Mohon tunggu hingga selesai terverifikasi.`, 'info');
     try {
       const safeName = `Bukti_Massal_${Date.now()}_${rawFile.name}`;
-      const uploadedUrl = await uploadFileToDrive(rawFile, safeName);
+      const fileToUpload = await compressImageIfNeeded(rawFile);
+      const uploadedUrl = await uploadFileToDrive(fileToUpload, safeName);
       if (!uploadedUrl) {
         throw new Error('Gagal mendapatkan tautan penyimpanan dokumen.');
       }
@@ -2102,34 +2506,21 @@ export default function DatabaseView({
   const handleConfirmBulkUpdate = async () => {
     if (selectedIds.size === 0) return;
 
-    // 1. Mandatory audit note check
-    if (!bulkAuditNote.trim()) {
-      if (addToast) addToast('Catatan audit / keterangan update massal wajib diisi!', 'error');
-      return;
-    }
-
-    if (isUploadingBulkFile) {
-      if (addToast) addToast('Harap tunggu! Berkas bukti serah terima masih dalam proses pengunggahan.', 'error');
-      return;
-    }
-
-    // 2. Mandatory file/photo attachment check
-    if (!bulkFile) {
-      if (addToast) addToast('Wajib melampirkan foto atau file bukti serah terima / lampiran yang telah berhasil terunggah!', 'error');
-      return;
-    }
-
-    // 3. Status selection verification - require at least one status change
     const willUpdateHandover = canUpdateHandover && bulkHandoverStatus !== '-- Tidak Diubah --';
     const willUpdateHandoverDate = canUpdateHandover && Boolean(bulkHandoverDate && bulkHandoverDate.trim());
     const willUpdateSap = canUpdateSap && bulkSapStatus !== '-- Tidak Diubah --';
     const willUpdatePayment = canUpdatePayment && bulkPaymentStatus !== '-- Tidak Diubah --';
     const willUpdateApproval = canUpdateApproval && bulkApprovalStatus !== '-- Tidak Diubah --';
 
-    if (!willUpdateHandover && !willUpdateSap && !willUpdatePayment && !willUpdateApproval) {
-      if (addToast) addToast('Silakan pilih setidaknya satu status yang ingin diperbarui!', 'error');
+    if (isUploadingBulkFile) {
+      if (addToast) addToast('Harap tunggu! Berkas bukti serah terima masih dalam proses pengunggahan.', 'error');
       return;
     }
+
+
+
+    // 3. Mandatory audit note check (auto-fill default if empty)
+    const auditNoteToUse = bulkAuditNote.trim() || `Update status massal oleh ${currentUser?.full_name || 'User'} (${currentUser?.role || 'Admin'})`;
 
     setIsSubmitting(true);
     try {
@@ -2236,7 +2627,7 @@ export default function DatabaseView({
 
       await onBulkUpdateTransactions(
         updatesList,
-        bulkAuditNote
+        auditNoteToUse
       );
 
       setIsBulkUpdateModalOpen(false);
@@ -2332,10 +2723,10 @@ export default function DatabaseView({
             <button
               onClick={handleExportExcel}
               className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
-              title="Unduh Rekap Data Transaksi ke File Excel"
+              title="Unduh Rekap Eksekutif 3 Sheet (Performa Cabang & Regional, Top 10 Customer Outstanding, dan Data Mentah Transaksi)"
             >
               <Download className="w-4 h-4" />
-              <span>Ekspor Rekap Excel</span>
+              <span>Ekspor Rekap Eksekutif (3 Sheet)</span>
             </button>
           )}
         </div>
@@ -3953,268 +4344,235 @@ export default function DatabaseView({
               </div>
 
               {/* Section 1: SERAH TERIMA BERKAS & DOKUMEN LAMPIRAN MASSAL */}
-              <div className="p-4 sm:p-5 rounded-2xl border transition-all bg-white border-slate-200 shadow-2xs space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-blue-600 shrink-0" />
-                    <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
-                      SERAH TERIMA BERKAS &amp; DOKUMEN LAMPIRAN MASSAL
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {!canUpdateHandover && (
-                      <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                        <Lock className="w-3 h-3 text-slate-400" />
-                        Terkunci
-                      </span>
-                    )}
-                    <span className="px-3 py-1 bg-purple-100 text-purple-700 text-[10.5px] font-black rounded-full">
-                      Otorisasi ASO
-                    </span>
-                  </div>
-                </div>
-
-                <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${!canUpdateHandover ? 'opacity-60' : ''}`}>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
-                      STATUS SERAH TERIMA
-                    </label>
-                    <select
-                      disabled={!canUpdateHandover}
-                      value={bulkHandoverStatus}
-                      onChange={(e) => setBulkHandoverStatus(e.target.value)}
-                      className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
-                    >
-                      <option value="-- Tidak Diubah --">-- Tidak Diubah --</option>
-                      <option value="Diterima Admin">Diterima Admin</option>
-                      <option value="Pending">Pending</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
-                      TANGGAL SERAH TERIMA
-                    </label>
-                    <input
-                      type="date"
-                      disabled={!canUpdateHandover}
-                      value={bulkHandoverDate}
-                      onChange={(e) => setBulkHandoverDate(e.target.value)}
-                      className="w-full text-xs py-2 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                    />
-                  </div>
-                </div>
-
-                {/* Sub-upload: UPLOAD DOKUMEN / BERKAS BUKTI SERAH TERIMA MASSAL */}
-                <div className="space-y-2 pt-1">
+              {canUpdateHandover && (
+                <div className="p-4 sm:p-5 rounded-2xl border transition-all bg-white border-slate-200 shadow-2xs space-y-4">
                   <div className="flex items-center justify-between flex-wrap gap-2">
-                    <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-600">
-                      UPLOAD DOKUMEN / BERKAS BUKTI SERAH TERIMA MASSAL <span className="text-rose-500">*</span>
-                    </span>
-                    <span className="px-2.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-black rounded-full uppercase">
-                      {selectedIds.size} TRANSAKSI TERPILIH
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
+                        SERAH TERIMA BERKAS &amp; DOKUMEN LAMPIRAN MASSAL
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-3 py-1 bg-purple-100 text-purple-700 text-[10.5px] font-black rounded-full">
+                        Otorisasi ASO
+                      </span>
+                    </div>
                   </div>
 
-                  <input
-                    type="file"
-                    ref={bulkFileInputRef}
-                    onChange={handleBulkFileInputChange}
-                    accept="image/*,application/pdf"
-                    className="hidden"
-                    id="bulk-file-upload-input"
-                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                        STATUS SERAH TERIMA
+                      </label>
+                      <select
+                        value={bulkHandoverStatus}
+                        onChange={(e) => setBulkHandoverStatus(e.target.value)}
+                        className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+                      >
+                        <option value="-- Tidak Diubah --">-- Tidak Diubah --</option>
+                        <option value="Diterima Admin">Diterima Admin</option>
+                        <option value="Pending">Pending</option>
+                      </select>
+                    </div>
 
-                  {isUploadingBulkFile ? (
-                    <div className="border-2 border-dashed border-blue-400 bg-blue-50/70 rounded-2xl p-6 text-center transition-all animate-pulse">
-                      <RefreshCw className="w-7 h-7 text-blue-600 mx-auto mb-2 animate-spin" />
-                      <p className="text-xs font-bold text-blue-900">
-                        Sedang Mengunggah &amp; Memverifikasi Berkas...
-                      </p>
-                      <p className="text-[10.5px] text-blue-600 mt-1 font-medium">
-                        Mohon tunggu, berkas sedang disimpan secara aman ke Cloud Storage sebelum dapat disimpan.
-                      </p>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                        TANGGAL SERAH TERIMA
+                      </label>
+                      <input
+                        type="date"
+                        value={bulkHandoverDate}
+                        onChange={(e) => setBulkHandoverDate(e.target.value)}
+                        className="w-full text-xs py-2 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      />
                     </div>
-                  ) : !bulkFile ? (
-                    <div
-                      onClick={() => bulkFileInputRef.current?.click()}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        setIsDraggingFile(true);
-                      }}
-                      onDragLeave={() => setIsDraggingFile(false)}
-                      onDrop={handleFileDrop}
-                      className={`border-2 border-dashed ${
-                        isDraggingFile ? 'border-blue-500 bg-blue-100/50' : 'border-blue-200 bg-blue-50/30 hover:bg-blue-50/70'
-                      } rounded-2xl p-5 text-center cursor-pointer transition-all group`}
-                    >
-                      <Upload className="w-6 h-6 text-blue-500 mx-auto mb-1.5 group-hover:scale-110 transition-transform" />
-                      <p className="text-xs font-bold text-slate-800">
-                        Pilih / Unggah Berkas Bukti Serah Terima (PDF / Foto)
-                      </p>
-                      <p className="text-[10.5px] text-slate-400 mt-0.5">
-                        File ini akan otomatis dilampirkan ke {selectedIds.size} transaksi yang dipilih sekaligus
-                      </p>
+                  </div>
+
+                  {/* Sub-upload: UPLOAD DOKUMEN / BERKAS BUKTI SERAH TERIMA MASSAL */}
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-600">
+                        UPLOAD DOKUMEN / BERKAS BUKTI SERAH TERIMA MASSAL (OPSIONAL)
+                      </span>
+                      <span className="px-2.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-black rounded-full uppercase">
+                        {selectedIds.size} TRANSAKSI TERPILIH
+                      </span>
                     </div>
-                  ) : (
-                    <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center justify-between gap-3 animate-in fade-in">
-                      <div className="flex items-center gap-3 min-w-0">
-                        {bulkFile.type.startsWith('image/') ? (
-                          <img
-                            src={bulkFile.dataUrl}
-                            alt="Preview"
-                            className="w-10 h-10 object-cover rounded-lg border border-blue-200 shrink-0"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
-                            PDF
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-800 truncate" title={bulkFile.name}>
-                            {bulkFile.name}
-                          </p>
-                          <div className="flex items-center gap-2 text-[10.5px] text-slate-500 mt-0.5">
-                            <span>{formatFileSize(bulkFile.size)}</span>
-                            <span>•</span>
-                            <span className="text-emerald-700 font-bold flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              Siap Dilampirkan
-                            </span>
+
+                    <input
+                      type="file"
+                      ref={bulkFileInputRef}
+                      onChange={handleBulkFileInputChange}
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      id="bulk-file-upload-input"
+                    />
+
+                    {isUploadingBulkFile ? (
+                      <div className="border-2 border-dashed border-blue-400 bg-blue-50/70 rounded-2xl p-6 text-center transition-all animate-pulse">
+                        <RefreshCw className="w-7 h-7 text-blue-600 mx-auto mb-2 animate-spin" />
+                        <p className="text-xs font-bold text-blue-900">
+                          Sedang Mengunggah &amp; Memverifikasi Berkas...
+                        </p>
+                        <p className="text-[10.5px] text-blue-600 mt-1 font-medium">
+                          Mohon tunggu, berkas sedang disimpan secara aman ke Cloud Storage sebelum dapat disimpan.
+                        </p>
+                      </div>
+                    ) : !bulkFile ? (
+                      <div
+                        onClick={() => bulkFileInputRef.current?.click()}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setIsDraggingFile(true);
+                        }}
+                        onDragLeave={() => setIsDraggingFile(false)}
+                        onDrop={handleFileDrop}
+                        className={`border-2 border-dashed ${
+                          isDraggingFile ? 'border-blue-500 bg-blue-100/50' : 'border-blue-200 bg-blue-50/30 hover:bg-blue-50/70'
+                        } rounded-2xl p-5 text-center cursor-pointer transition-all group`}
+                      >
+                        <Upload className="w-6 h-6 text-blue-500 mx-auto mb-1.5 group-hover:scale-110 transition-transform" />
+                        <p className="text-xs font-bold text-slate-800">
+                          Pilih / Unggah Berkas Bukti Serah Terima (PDF / Foto)
+                        </p>
+                        <p className="text-[10.5px] text-slate-400 mt-0.5">
+                          File ini akan otomatis dilampirkan ke {selectedIds.size} transaksi yang dipilih sekaligus
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center justify-between gap-3 animate-in fade-in">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {bulkFile.type.startsWith('image/') ? (
+                            <img
+                              src={bulkFile.dataUrl}
+                              alt="Preview"
+                              className="w-10 h-10 object-cover rounded-lg border border-blue-200 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
+                              PDF
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-800 truncate" title={bulkFile.name}>
+                              {bulkFile.name}
+                            </p>
+                            <div className="flex items-center gap-2 text-[10.5px] text-slate-500 mt-0.5">
+                              <span>{formatFileSize(bulkFile.size)}</span>
+                              <span>•</span>
+                              <span className="text-emerald-700 font-bold flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Siap Dilampirkan
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => bulkFileInputRef.current?.click()}
-                          className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all cursor-pointer"
-                        >
-                          Ganti
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setBulkFile(null)}
-                          className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
-                          title="Hapus file"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => bulkFileInputRef.current?.click()}
+                            className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Ganti
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBulkFile(null)}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                            title="Hapus file"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Section 2: STATUS SAP / ERP CLAIM */}
-              <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
-                canUpdateSap ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50/80 border-slate-200/70 opacity-60'
-              } space-y-2`}>
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
-                    STATUS SAP / ERP CLAIM
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {!canUpdateSap && (
-                      <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                        <Lock className="w-3 h-3 text-slate-400" />
-                        Terkunci
-                      </span>
-                    )}
+              {canUpdateSap && (
+                <div className="p-4 sm:p-5 rounded-2xl border transition-all bg-white border-slate-200 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
+                      STATUS SAP / ERP CLAIM
+                    </span>
                     <span className="text-[11px] font-black text-purple-600 uppercase tracking-wider">
                       WEWENANG: ADMINISTRATOR, SALES HEAD, &amp; KEPALA CABANG
                     </span>
                   </div>
-                </div>
 
-                <select
-                  disabled={!canUpdateSap}
-                  value={bulkSapStatus}
-                  onChange={(e) => setBulkSapStatus(e.target.value)}
-                  className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  <option value="-- Tidak Diubah --">-- Tidak Diubah --</option>
-                  <option value="Bill">Bill</option>
-                  <option value="Not Bill">Not Bill</option>
-                  <option value="N/A">N/A</option>
-                </select>
-              </div>
-
-              {/* Section 3: STATUS PELUNASAN PEMBAYARAN */}
-              <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
-                canUpdatePayment ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50/80 border-slate-200/70 opacity-60'
-              } space-y-2`}>
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
-                    STATUS PELUNASAN PEMBAYARAN
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {!canUpdatePayment && (
-                      <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                        <Lock className="w-3 h-3 text-slate-400" />
-                        Terkunci
-                      </span>
-                    )}
-                    <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">
-                      Wewenang Admin
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
-                    STATUS PELUNASAN
-                  </label>
                   <select
-                    disabled={!canUpdatePayment}
-                    value={bulkPaymentStatus}
-                    onChange={(e) => setBulkPaymentStatus(e.target.value)}
-                    className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
+                    value={bulkSapStatus}
+                    onChange={(e) => setBulkSapStatus(e.target.value)}
+                    className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
                   >
                     <option value="-- Tidak Diubah --">-- Tidak Diubah --</option>
-                    <option value="Lunas">Lunas</option>
-                    <option value="Belum Bayar">Belum Bayar</option>
+                    <option value="Bill">Bill</option>
+                    <option value="Not Bill">Not Bill</option>
+                    <option value="N/A">N/A</option>
                   </select>
                 </div>
-              </div>
+              )}
+
+              {/* Section 3: STATUS PELUNASAN PEMBAYARAN */}
+              {canUpdatePayment && (
+                <div className="p-4 sm:p-5 rounded-2xl border transition-all bg-white border-slate-200 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
+                      STATUS PELUNASAN PEMBAYARAN
+                    </span>
+                    <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">
+                      Wewenang Admin &amp; Finance
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      STATUS PELUNASAN
+                    </label>
+                    <select
+                      value={bulkPaymentStatus}
+                      onChange={(e) => setBulkPaymentStatus(e.target.value)}
+                      className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+                    >
+                      <option value="-- Tidak Diubah --">-- Tidak Diubah --</option>
+                      <option value="Lunas">Lunas</option>
+                      <option value="Belum Bayar">Belum Bayar</option>
+                    </select>
+                  </div>
+                </div>
+              )}
 
               {/* Section 4: STATUS APPROVAL BACKCHARGE */}
-              <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
-                canUpdateApproval ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50/80 border-slate-200/70 opacity-60'
-              } space-y-2`}>
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
-                    STATUS APPROVAL BACKCHARGE
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {!canUpdateApproval && (
-                      <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                        <Lock className="w-3 h-3 text-slate-400" />
-                        Terkunci
-                      </span>
-                    )}
+              {canUpdateApproval && (
+                <div className="p-4 sm:p-5 rounded-2xl border transition-all bg-white border-slate-200 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
+                      STATUS APPROVAL BACKCHARGE
+                    </span>
                     <span className="text-[11px] font-black text-amber-600 uppercase tracking-wider">
                       WEWENANG RH / DH / KACAB / SALES HEAD
                     </span>
                   </div>
+
+                  <select
+                    value={bulkApprovalStatus}
+                    onChange={(e) => setBulkApprovalStatus(e.target.value)}
+                    className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="-- Tidak Diubah --">-- Tidak Diubah --</option>
+                    <option value="Disetujui">Disetujui</option>
+                    <option value="Ditolak">Ditolak</option>
+                  </select>
+
+                  <p className="text-[10.5px] text-slate-400 italic mt-1.5">
+                    * Memproses status approval dan menyinkronkan seluruh tier wewenang nominal yang berlaku.
+                  </p>
                 </div>
-
-                <select
-                  disabled={!canUpdateApproval}
-                  value={bulkApprovalStatus}
-                  onChange={(e) => setBulkApprovalStatus(e.target.value)}
-                  className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  <option value="-- Tidak Diubah --">-- Tidak Diubah --</option>
-                  <option value="Disetujui">Disetujui</option>
-                  <option value="Ditolak">Ditolak</option>
-                </select>
-
-                <p className="text-[10.5px] text-slate-400 italic mt-1.5">
-                  * Memproses status approval dan menyinkronkan seluruh tier wewenang nominal yang berlaku.
-                </p>
-              </div>
+              )}
 
               {/* Section 5: CATATAN AUDIT / KETERANGAN UPDATE MASSAL */}
               <div className="space-y-1.5">
@@ -4242,7 +4600,7 @@ export default function DatabaseView({
               </button>
               <button
                 type="button"
-                disabled={isSubmitting || isUploadingBulkFile || !bulkFile}
+                disabled={isSubmitting || isUploadingBulkFile}
                 onClick={handleConfirmBulkUpdate}
                 className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 cursor-pointer"
               >

@@ -1458,6 +1458,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         dok_pendukung_alasan: newTx.alasan || newTx.dok_pendukung_alasan || '-',
         upload_dok_pendukung: newTx.upload_dok_pendukung || null
       };
+      syncNonOrSapStatus(txObj);
 
       const newLog: ActivityLog = {
         id: String(Date.now()),
@@ -1645,6 +1646,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         dok_pendukung_alasan: newTx.alasan || newTx.dok_pendukung_alasan || existingBase.dok_pendukung_alasan || '-',
         upload_dok_pendukung: newTx.upload_dok_pendukung || existingBase.upload_dok_pendukung || null
       };
+      syncNonOrSapStatus(txObj);
 
       preparedTxsMap.set(targetId, txObj);
     }
@@ -2621,7 +2623,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
           )}
 
           {currentTab === 'audit' && canView(currentUser?.role, 'audit') && (
-            <AuditView logs={logs} profiles={profiles} />
+            <AuditView logs={logs} profiles={profiles} currentUser={currentUser!} addToast={addToast} />
           )}
 
           {currentTab === 'users' && canView(currentUser?.role, 'users') && (

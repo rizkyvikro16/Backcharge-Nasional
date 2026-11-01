@@ -4,7 +4,7 @@ import {
   Image, Eye,
   Cloud, Loader2, ExternalLink, User, AlertCircle
 } from 'lucide-react';
-import { Backcharge, Profile, isRegionalHeadRole, hasRole } from '../types';
+import { Backcharge, Profile, isRegionalHeadRole, hasRole, getEffectiveSapStatus } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
 import { getApiUrl, getAuthHeaders } from '../lib/api';
 import { resolveFileUrl, openFileInNewTab, extractDriveId, toSecureProxyUrl } from '../lib/fileResolver';
@@ -2042,15 +2042,20 @@ export default function DetailModal({
                           <span className="text-[9px] text-slate-500 font-bold">Wewenang: Administrator, Sales Head, &amp; Kepala Cabang</span>
                         </div>
                       </div>
-                      <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold ${
-                        transaction.status_sap === 'Bill'
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          : transaction.status_sap === 'Not Bill'
-                          ? 'bg-red-100 text-red-800 border border-red-200'
-                          : 'bg-slate-100 text-slate-600 border border-slate-200'
-                      }`}>
-                        {transaction.status_sap ? `Status: ${transaction.status_sap}` : 'Belum Set (N/A)'}
-                      </span>
+                      {(() => {
+                        const effSap = getEffectiveSapStatus(transaction);
+                        return (
+                          <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold ${
+                            effSap === 'Bill'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : effSap === 'Not Bill'
+                              ? 'bg-red-100 text-red-800 border border-red-200'
+                              : 'bg-slate-100 text-slate-600 border border-slate-200'
+                          }`}>
+                            {`Status: ${effSap}`}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {showActionForm === 'sap' ? (
@@ -3244,7 +3249,7 @@ export default function DetailModal({
               </div>
               <div className="border border-slate-200 p-2 rounded bg-slate-50">
                 <span className="block text-slate-400 font-extrabold uppercase">2. Status SAP</span>
-                <span className="font-bold text-slate-900">{transaction.status_sap || '-'}</span>
+                <span className="font-bold text-slate-900">{getEffectiveSapStatus(transaction)}</span>
               </div>
               <div className="border border-slate-200 p-2 rounded bg-slate-50">
                 <span className="block text-slate-400 font-extrabold uppercase">3. Pelunasan</span>

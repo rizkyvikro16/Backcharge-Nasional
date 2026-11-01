@@ -9,7 +9,7 @@ import {
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, getRoleAllowedBranches, isNationalOrAllBranches, BackchargeCategory, hasRole, isRegionalHeadRole } from '../types';
+import { Backcharge, Profile, DashboardFilter, BRANCH_LIST, MEGABRANCH_LIST, ALL_SYSTEM_BRANCHES, getUserBranches, getRoleAllowedBranches, isNationalOrAllBranches, BackchargeCategory, hasRole, isRegionalHeadRole, getEffectiveSapStatus } from '../types';
 import MultiSelect from './MultiSelect';
 
 interface DashboardProps {
@@ -1129,7 +1129,7 @@ export default function Dashboard({
             <td style="font-weight: 500;">${t.customer_name}</td>
             <td class="font-mono text-center force-text" style="font-weight: bold;">${t.license_plate || '-'}</td>
             <td class="currency-format">${t.value}</td>
-            <td class="text-center force-text" style="font-weight: 500;">${t.status_sap || '-'}</td>
+            <td class="text-center force-text" style="font-weight: 500;">${getEffectiveSapStatus(t)}</td>
             <td class="${hStatus}">${t.status_handover}</td>
             <td class="force-text">${t.no_invoice || '-'}</td>
             <td class="${pStatus}">${t.status_payment}</td>
@@ -3426,8 +3426,6 @@ export default function Dashboard({
       {/* 4. DISTRIBUSI KATEGORI & regional BREAKDOWN GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* RANKING BEST PERFORMANCE PELUNASAN BACKCHARGE (Full Width) - Hidden for Admin role */}
-        {!isAdmin && (
           <div className="lg:col-span-12 bg-white p-6 rounded-3xl border border-slate-200 shadow-md space-y-5 flex flex-col justify-between">
             
             {/* Header Title & Controls */}
@@ -3690,15 +3688,13 @@ export default function Dashboard({
               </span>
             </div>
           </div>
-        )}
 
       </div>
 
 
 
       {/* 5. INSIGHTS & REAL TREND GRAPHS ROW (7. INSIGHT & TREND) */}
-      {!isCleanExecutive && !isAdmin && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
           {/* GRAPH 1: TREN TRANSAKSI (Left - 4 cols) */}
           <div className="lg:col-span-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-md space-y-3">
@@ -3840,7 +3836,6 @@ export default function Dashboard({
           </div>
 
         </div>
-      )}
 
       {/* 6. BOTTOM TOOLBAR: QUICK ACTIONS & UPDATE INFORMATION (8. & 9.) - HIDDEN AS REQUESTED */}
       <div className="hidden bg-slate-50 border border-slate-200 p-4 rounded-3xl shadow-sm flex-col md:flex-row justify-between md:items-center gap-4">

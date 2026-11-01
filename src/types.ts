@@ -431,10 +431,87 @@ export function unpackExtraFields(item: any): any {
 }
 
 /**
+ * Evaluates whether all required approval tiers have approved the transaction.
+ * - Kacab / Sales Head: Tier 1 (Always required)
+ * - Regional Head: Required if Value > 7.5jt (Maintenance) or > 5jt (Others)
+ * - Division Head: Required if Value > 15jt
+ */
+export function isTransactionFullyApproved(tx: Partial<Backcharge>): boolean {
+  if (!tx) return false;
+  if (
+    tx.status_approval === 'Ditolak' ||
+    tx.regional_approval_status === 'Ditolak' ||
+    tx.division_approval_status === 'Ditolak' ||
+    tx.status_confirm === 'Ditolak / Negosiasi Ulang'
+  ) {
+    return false;
+  }
+
+  // Tier 1 must be 'Disetujui'
+  if (tx.status_approval !== 'Disetujui') {
+    return false;
+  }
+
+  const transVal = Number(tx.value) || 0;
+  const isMaintenance = tx.category === 'Maintenance';
+  const isRegionalHeadReq = isMaintenance ? transVal > 7500000 : transVal > 5000000;
+  const isDivisionHeadReq = transVal > 15000000;
+
+  if (isRegionalHeadReq && tx.regional_approval_status !== 'Disetujui') {
+    return false;
+  }
+  if (isDivisionHeadReq && tx.division_approval_status !== 'Disetujui') {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Returns the effective SAP status for display, reporting, and filtering:
+ * - 'Not Bill' if rejected
+ * - 'N/A' if approval is not yet completed AND no invoice AND not paid
+ *   (Strict rule: "pada list data backcharge untuk text bill statusnya belum approval ubah textnya menjadi N/A")
+ * - 'Bill' if approved, or invoice issued, or paid
+ */
+export function getEffectiveSapStatus(tx: Partial<Backcharge>): string {
+  if (!tx) return 'N/A';
+  if (tx.status_sap === 'Not Bill' || String(tx.status_sap || '').toLowerCase() === 'not bill') {
+    return 'Not Bill';
+  }
+
+  const hasInvoice = Boolean(
+    tx.no_invoice &&
+    typeof tx.no_invoice === 'string' &&
+    tx.no_invoice.trim() !== '' &&
+    tx.no_invoice.trim() !== '-'
+  );
+  const isPaid = tx.status_payment === 'Lunas';
+  const fullyApproved = isTransactionFullyApproved(tx);
+
+  // If not fully approved and no invoice and not paid, display 'N/A'
+  if (!fullyApproved && !hasInvoice && !isPaid) {
+    return 'N/A';
+  }
+
+  if (tx.category && tx.category !== 'Own Risk') {
+    return 'Bill';
+  }
+
+  // For Own Risk, if explicitly set to Bill or has invoice/paid, display 'Bill'
+  if (tx.status_sap === 'Bill' || hasInvoice || isPaid) {
+    return 'Bill';
+  }
+
+  return tx.status_sap || 'N/A';
+}
+
+/**
  * Harmonizes SAP Status for Non-Own Risk categories:
  * - Kategori selain Own Risk (Maintenance, Ekspedisi, ETLE, Dokumen Kendaraan, dll):
- *   - Otomatis 'Bill' jika disetujui (status_approval = 'Disetujui', regional/division disetujui, invoice terbit, atau lunas)
- *   - Otomatis 'Not Bill' jika ditolak (status_approval = 'Ditolak', regional/division ditolak, atau negosiasi ulang ditolak)
+ *   - Otomatis 'Bill' jika disetujui penuh / invoice terbit / lunas
+ *   - Otomatis 'Not Bill' jika ditolak
+ *   - Otomatis 'N/A' jika belum selesai approval
  */
 export function syncNonOrSapStatus<T extends Partial<Backcharge>>(tx: T): T {
   if (tx.category && tx.category !== 'Own Risk') {
@@ -443,10 +520,7 @@ export function syncNonOrSapStatus<T extends Partial<Backcharge>>(tx: T): T {
                        tx.division_approval_status === 'Ditolak' || 
                        tx.status_confirm === 'Ditolak / Negosiasi Ulang';
 
-    // Transaksi dianggap 'Bill' HANYA jika sudah disetujui penuh & sudah ada invoice/lunas
-    const isApproved = (tx.status_approval === 'Disetujui' && 
-                        tx.regional_approval_status === 'Disetujui' && 
-                        tx.division_approval_status === 'Disetujui') ||
+    const isApproved = isTransactionFullyApproved(tx) ||
                        (tx.no_invoice && tx.no_invoice !== '-' && tx.no_invoice.trim() !== '') ||
                        tx.status_payment === 'Lunas';
 
@@ -455,13 +529,16 @@ export function syncNonOrSapStatus<T extends Partial<Backcharge>>(tx: T): T {
     } else if (isApproved) {
       tx.status_sap = 'Bill';
     } else {
-      // Force 'N/A' if not fully approved, even if currently 'Bill'
+      // Force 'N/A' if not fully approved
       tx.status_sap = 'N/A';
     }
   } else {
     // For Own Risk, ensure N/A if not set
-    if (!tx.status_sap) tx.status_sap = 'N/A';
+    if (!tx.status_sap || tx.status_sap.trim() === '') {
+      tx.status_sap = 'N/A';
+    }
   }
   return tx;
 }
+
 

@@ -37,8 +37,8 @@ export const compressImageIfNeeded = async (file: File | Blob): Promise<Blob | F
     return file; // Hanya mengompres gambar (PDF, DOCX, dll. dibiarkan utuh)
   }
 
-  // Jika ukuran file di bawah 200KB, sudah sangat ringan dan tidak perlu dikompres
-  if (file.size < 200 * 1024) {
+  // Jika ukuran file di bawah 80KB, sudah sangat ringan dan tidak perlu dikompres
+  if (file.size < 80 * 1024) {
     return file;
   }
 
@@ -55,9 +55,9 @@ export const compressImageIfNeeded = async (file: File | Blob): Promise<Blob | F
       img.src = event.target?.result as string;
       img.onload = () => {
         clearTimeout(timeout);
-        // Resolusi maksimum 1400px (Sangat jernih & tajam untuk foto bukti/faktur/surat, namun ukuran file turun drastis ke ~100-250KB)
-        const MAX_WIDTH = 1400;
-        const MAX_HEIGHT = 1400;
+        // Resolusi maksimum 1000px (Sangat jernih & tajam untuk foto bukti/faktur/surat, namun ukuran file mikro ~40-70KB)
+        const MAX_WIDTH = 1000;
+        const MAX_HEIGHT = 1000;
         let width = img.width;
         let height = img.height;
 
@@ -83,12 +83,11 @@ export const compressImageIfNeeded = async (file: File | Blob): Promise<Blob | F
           return;
         }
 
-        // Kualitas rendering canvas tinggi
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Kompres dengan kualitas 0.78 (keseimbangan optimal antara kejernihan teks/faktur dan ukuran file mikro)
+        // Kompres dengan kualitas 0.70 (keseimbangan optimal antara kejernihan dan ukuran file mikro)
         canvas.toBlob(
           (blob) => {
             if (blob && blob.size < file.size) {
@@ -104,7 +103,7 @@ export const compressImageIfNeeded = async (file: File | Blob): Promise<Blob | F
             }
           },
           'image/jpeg',
-          0.78
+          0.70
         );
       };
       img.onerror = () => {
