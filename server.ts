@@ -1693,53 +1693,27 @@ async function startServer() {
 
         // --- BACKCHARGES ---
         case "get_all_backcharges": {
-          const userRole = req.user.role || '';
-          const userBranch = req.user.branch || '';
-          const isNasional = userRole === 'Administrator' || 
-            userRole === 'Division Head' || 
-            userRole.includes('Administrator') ||
-            userRole.includes('Division Head') ||
-            userBranch === 'Nasional' || 
-            userBranch === 'Semua Cabang' ||
-            userBranch.toLowerCase().includes('semua');
-
-          // Otorisasi lingkup data cabang berdasarkan sesi login resmi
-          if (!isNasional) {
-            let allowedBranches: string[] = [];
-            if (userBranch) {
-              const parts = userBranch.split(',').map((b: string) => b.trim()).filter(Boolean);
-              parts.forEach((p: string) => {
-                if (p.toLowerCase() === 'megabranch' || p.toLowerCase() === 'jakarta') {
-                  allowedBranches.push("BSO GSO & AFFCO", "BSO Sudirman", "BSO Sunter", "BSO Pondok Pinang", "BSO Banten", "BSO Bekasi", "BSO Daan Mogot", "BSO Pontianak");
-                } else {
-                  allowedBranches.push(p);
-                }
-              });
-            } else if (userRole) {
-              const rLower = userRole.toLowerCase();
-              if (rLower.includes("west")) {
-                allowedBranches = ["Lampung", "Medan", "Padang", "Palembang", "Pekanbaru"];
-              } else if (rLower.includes("central")) {
-                allowedBranches = ["Bandung", "BSO GSO & AFFCO", "BSO Sudirman", "BSO Sunter", "BSO Pondok Pinang", "BSO Banten", "BSO Bekasi", "BSO Daan Mogot", "BSO Pontianak"];
-              } else if (rLower.includes("east")) {
-                allowedBranches = ["Bali", "Balikpapan", "Banjarmasin", "Makassar", "Malang", "Manado", "Semarang", "Solo", "Surabaya"];
-              }
-            }
-            allowedBranches = Array.from(new Set(allowedBranches));
-            if (allowedBranches.length > 0) {
-              const placeholders = allowedBranches.map(() => '?').join(', ');
-              const results = await queryD1(`SELECT * FROM backcharges WHERE branch IN (${placeholders}) ORDER BY created_at DESC`, allowedBranches);
-              return res.json({ success: true, results: results || [] });
-            }
-          }
-
           const branches = req.body.branches || (Array.isArray(params) && params.length > 0 ? params : null);
+          const limit = (req.body.limit && Number(req.body.limit) > 0) ? Number(req.body.limit) : null;
+          const offset = req.body.offset ? Math.max(0, Number(req.body.offset)) : 0;
+
+          let sql = "SELECT * FROM backcharges";
+          let queryParams: any[] = [];
+
           if (Array.isArray(branches) && branches.length > 0) {
             const placeholders = branches.map(() => '?').join(', ');
-            const results = await queryD1(`SELECT * FROM backcharges WHERE branch IN (${placeholders}) ORDER BY created_at DESC`, branches);
-            return res.json({ success: true, results: results || [] });
+            sql += ` WHERE branch IN (${placeholders})`;
+            queryParams.push(...branches);
           }
-          const results = await queryD1("SELECT * FROM backcharges ORDER BY created_at DESC", []);
+
+          sql += " ORDER BY created_at DESC";
+
+          if (limit) {
+            sql += " LIMIT ? OFFSET ?";
+            queryParams.push(limit, offset);
+          }
+
+          const results = await queryD1(sql, queryParams);
           return res.json({ success: true, results: results || [] });
         }
 

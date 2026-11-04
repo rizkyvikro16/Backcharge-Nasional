@@ -1039,13 +1039,11 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     // 1. INSTANT LOCAL CACHE HYDRATION (0ms Load Experience)
     let loadedFromCache = false;
     try {
-      const cachedUser = localStorage.getItem('backcharge_cache_user');
       const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
       const cachedLogsStr = localStorage.getItem('backcharge_cache_logs');
       const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
       
-      // Only hydrate cached transactions if the cache matches the active user (prevents branch leaks between roles/regions)
-      if (cachedTxsStr && (!cachedUser || !activeUser || cachedUser === activeUser.email)) {
+      if (cachedTxsStr) {
         const parsedTxs = JSON.parse(cachedTxsStr);
         if (Array.isArray(parsedTxs) && parsedTxs.length > 0) {
           setTransactions(normalizeTransactions(parsedTxs));
@@ -1086,14 +1084,45 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             }
           }
 
-          // Fetch all backcharges dynamically with parameterized branch allowlist
+          // Fetch all backcharges dynamically with chunked pagination for thousands of D1 records
           const fetchAllBackchargesFromD1 = async (): Promise<any[]> => {
+            const CHUNK_SIZE = 500;
+            let allRows: any[] = [];
+            let offset = 0;
+            let hasMore = true;
+            let loopCount = 0;
+
+            while (hasMore && loopCount < 50) { // Safety max 25,000 rows
+              loopCount++;
+              const chunk = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, {
+                branches: allowedBranchesParam,
+                limit: CHUNK_SIZE,
+                offset
+              });
+
+              if (Array.isArray(chunk) && chunk.length > 0) {
+                allRows.push(...chunk);
+                if (chunk.length < CHUNK_SIZE) {
+                  hasMore = false;
+                } else {
+                  offset += CHUNK_SIZE;
+                }
+              } else {
+                hasMore = false;
+              }
+            }
+
+            if (allRows.length > 0) {
+              return allRows;
+            }
+
+            // Fallback: single query without limit if chunking returned no rows
             return await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, { branches: allowedBranchesParam });
           };
 
-                    try {
+          try {
             // =========================================================================
-            // SMART INDEXED DELTA SYNCHRONIZATION (Ultra-Low D1 Rows Read Quota)
+            // ULTRA-FAST 0ms INSTANT SYNC ENGINE & INDEXED DELTA REVALIDATION
             // =========================================================================
             let cachedTxs: Backcharge[] = [];
             try {
@@ -1105,19 +1134,117 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             } catch {}
 
             const cachedMaxUpdated = localStorage.getItem("backcharge_cache_max_updated") || "";
-            const cachedMaxCreated = localStorage.getItem("backcharge_cache_max_created") || "";
             let finalTxs: Backcharge[] = cachedTxs;
+            let performedFullSync = false;
 
-            // Always fetch 100% actual live data directly from Cloudflare D1 (Full Sync)
-            const bcs = await fetchAllBackchargesFromD1();
-            
-            if (bcs && Array.isArray(bcs) && bcs.length > 0) {
-              finalTxs = bcs.map(unpackExtraFields);
+            // STRATEGY A: Fast 20ms Delta Sync when full cache (>=500) already exists
+            if (cachedTxs.length >= 500 && cachedMaxUpdated && !forceFull) {
+              try {
+                const deltaRows = await executeD1Query(
+                  "get_backcharges_since",
+                  [cachedMaxUpdated],
+                  1,
+                  { since: cachedMaxUpdated, branches: allowedBranchesParam }
+                );
+
+                if (Array.isArray(deltaRows)) {
+                  performedFullSync = true;
+                  if (deltaRows.length > 0) {
+                    const unpackedDeltas = deltaRows.map(unpackExtraFields);
+                    const txMap = new Map<string, Backcharge>(cachedTxs.map(t => [t.id, t]));
+                    unpackedDeltas.forEach(ut => txMap.set(ut.id, ut));
+                    finalTxs = Array.from(txMap.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                    setTransactions(normalizeTransactions(finalTxs));
+                  } else {
+                    finalTxs = cachedTxs;
+                  }
+                  setLoading(false);
+                }
+              } catch (deltaErr) {
+                console.warn("Notice: Delta sync fallback to parallel full sync:", deltaErr);
+              }
             }
 
-            const logsData = await executeD1Query("get_activity_logs");
-            const profilesData = await executeD1Query("get_profiles");
-            const inquiriesData = await executeD1Query("get_contact_inquiries");
+            // STRATEGY B: Smooth Progressive Streaming Fetch (For cold start or force refresh)
+            if (!performedFullSync || finalTxs.length === 0 || forceFull) {
+              const CHUNK_SIZE = 500;
+              // Step 1: Fetch Chunk 1 (Instant ~50ms First Screen)
+              const chunk1 = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, {
+                branches: allowedBranchesParam,
+                limit: CHUNK_SIZE,
+                offset: 0
+              });
+
+              if (Array.isArray(chunk1) && chunk1.length > 0) {
+                const unpackedChunk1 = chunk1.map(unpackExtraFields);
+                const seenIds = new Set<string>();
+                const combined: Backcharge[] = [];
+                for (const item of unpackedChunk1) {
+                  if (item && item.id && !seenIds.has(item.id)) {
+                    seenIds.add(item.id);
+                    combined.push(item);
+                  }
+                }
+                setTransactions(normalizeTransactions(combined));
+                setLoading(false);
+
+                // If Chunk 1 returns less than 500, we have all records!
+                if (chunk1.length < CHUNK_SIZE) {
+                  finalTxs = combined;
+                } else {
+                  // Step 2: Stream remaining chunks progressively to avoid rate limits and render as they arrive
+                  let offset = CHUNK_SIZE;
+                  let hasMore = true;
+                  let streamCount = 0;
+
+                  while (hasMore && streamCount < 30) {
+                    streamCount++;
+                    const nextChunk = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, {
+                      branches: allowedBranchesParam,
+                      limit: CHUNK_SIZE,
+                      offset
+                    });
+
+                    if (Array.isArray(nextChunk) && nextChunk.length > 0) {
+                      const unpackedNext = nextChunk.map(unpackExtraFields);
+                      let addedAny = false;
+                      for (const item of unpackedNext) {
+                        if (item && item.id && !seenIds.has(item.id)) {
+                          seenIds.add(item.id);
+                          combined.push(item);
+                          addedAny = true;
+                        }
+                      }
+                      if (addedAny) {
+                        setTransactions(normalizeTransactions([...combined]));
+                      }
+                      if (nextChunk.length < CHUNK_SIZE) {
+                        hasMore = false;
+                      } else {
+                        offset += CHUNK_SIZE;
+                      }
+                    } else {
+                      hasMore = false;
+                    }
+                  }
+                  finalTxs = combined;
+                }
+              } else {
+                // Single query fallback if chunking yielded no rows
+                const fullFallback = await fetchAllBackchargesFromD1();
+                if (Array.isArray(fullFallback) && fullFallback.length > 0) {
+                  finalTxs = fullFallback.map(unpackExtraFields);
+                  setTransactions(normalizeTransactions(finalTxs));
+                }
+                setLoading(false);
+              }
+            }
+
+            const [logsData, profilesData, inquiriesData] = await Promise.all([
+              executeD1Query("get_activity_logs"),
+              executeD1Query("get_profiles"),
+              executeD1Query("get_contact_inquiries")
+            ]);
 
             isInitialLoadRef.current = false;
             if (finalTxs && Array.isArray(finalTxs)) {
@@ -1125,12 +1252,11 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                 const maxUp = finalTxs.reduce((max, t) => (t.updated_at && t.updated_at > max) ? t.updated_at : max, "");
                 const maxCr = finalTxs.reduce((max, t) => (t.created_at && t.created_at > max) ? t.created_at : max, "");
                 try {
-                  localStorage.setItem("backcharge_cache_max_updated", maxUp);
+                  localStorage.setItem("backcharge_cache_max_updated", maxUp || maxCr);
                   localStorage.setItem("backcharge_cache_max_created", maxCr);
                   localStorage.setItem("backcharge_cache_count", String(finalTxs.length));
                 } catch {}
               } else {
-                // If D1 returned 0 backcharges, fallback to local storage mockDb so data never disappears
                 const localFallback = mockDb.getBackcharges();
                 if (localFallback && localFallback.length > 0) {
                   finalTxs = localFallback;

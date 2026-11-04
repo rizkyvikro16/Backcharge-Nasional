@@ -931,12 +931,26 @@ export default {
 
           case "get_all_backcharges": {
             const branches = body.branches || (Array.isArray(params) && params.length > 0 ? params : null);
+            const limit = body.limit ? parseInt(body.limit, 10) : (body.pageSize ? parseInt(body.pageSize, 10) : 0);
+            const offset = body.offset ? parseInt(body.offset, 10) : 0;
+
+            let sql = "SELECT * FROM backcharges";
+            let qParams = [];
+
             if (Array.isArray(branches) && branches.length > 0) {
               const placeholders = branches.map(() => '?').join(', ');
-              const results = await executeD1(`SELECT * FROM backcharges WHERE branch IN (${placeholders}) ORDER BY created_at DESC`, branches);
-              return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+              sql += ` WHERE branch IN (${placeholders})`;
+              qParams.push(...branches);
             }
-            const results = await executeD1("SELECT * FROM backcharges ORDER BY created_at DESC");
+
+            sql += " ORDER BY created_at DESC";
+
+            if (limit > 0) {
+              sql += " LIMIT ? OFFSET ?";
+              qParams.push(limit, offset);
+            }
+
+            const results = await executeD1(sql, qParams);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
@@ -976,8 +990,8 @@ export default {
             
             const branches = body.branches || (Array.isArray(params) && params.length > 1 ? params.slice(1) : null);
             
-            let sql = "SELECT * FROM backcharges WHERE updated_at > ? OR updated_at IS NULL OR updated_at = ''";
-            let queryParams = [since];
+            let sql = "SELECT * FROM backcharges WHERE (updated_at > ? OR created_at > ?)";
+            let queryParams = [since, since];
 
             if (Array.isArray(branches) && branches.length > 0) {
               const placeholders = branches.map(() => '?').join(', ');
@@ -985,7 +999,7 @@ export default {
               queryParams.push(...branches);
             }
             
-            sql += " ORDER BY updated_at DESC";
+            sql += " ORDER BY updated_at DESC LIMIT 500";
 
             const results = await executeD1(sql, queryParams);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
