@@ -1830,6 +1830,24 @@ async function startServer() {
             return res.status(400).json({ success: false, error: "Data transaksi diperlukan" });
           }
           await optimizePayloadImages(data);
+
+          // ID Collision Protection Guard
+          let targetId = String(data.id || '').trim();
+          const match = targetId.match(/^BC-(\d{4})-(\d+)$/);
+          if (match) {
+            const yearStr = match[1];
+            let num = parseInt(match[2], 10);
+            let checkAttempts = 0;
+            let existing = await queryD1("SELECT id FROM backcharges WHERE id = ? LIMIT 1", [targetId]);
+            while (existing && existing.length > 0 && checkAttempts < 50) {
+              checkAttempts++;
+              num++;
+              targetId = `BC-${yearStr}-${String(num).padStart(4, '0')}`;
+              existing = await queryD1("SELECT id FROM backcharges WHERE id = ? LIMIT 1", [targetId]);
+            }
+            data.id = targetId;
+          }
+
           const validCols = Object.keys(data).filter(col => ALLOWED_BACKCHARGE_COLUMNS.has(col));
           if (validCols.length === 0 || !data.id) {
             return res.status(400).json({ success: false, error: "Data transaksi tidak valid atau ID hilang" });
@@ -1840,7 +1858,7 @@ async function startServer() {
             `INSERT INTO backcharges (${validCols.join(', ')}) VALUES (${placeholders})`,
             vals
           );
-          return res.json({ success: true, results: results || [] });
+          return res.json({ success: true, newId: targetId, results: results || [] });
         }
 
         case "update_backcharge": {

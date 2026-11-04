@@ -275,20 +275,20 @@ Terima kasih atas bantuannya.`;
             )}
             {error.includes("Database binding 'DB'") && (
               <div className="mt-1 p-3 bg-white/90 rounded-lg border border-red-200 text-[11px] text-slate-700 space-y-2">
-                <p className="font-bold text-red-800">Petunjuk Menghubungkan Database D1 di Cloudflare Pages:</p>
+                <p className="font-bold text-red-800">Petunjuk Menghubungkan Database Server:</p>
                 <ol className="list-decimal pl-4 space-y-1.5 text-slate-600">
-                  <li>Buka <b>dash.cloudflare.com</b> &rarr; <b>Workers & Pages</b> &rarr; klik project <b>backcharge-nasional</b>.</li>
+                  <li>Buka <b>dash.cloudflare.com</b> &rarr; <b>Workers &amp; Pages</b> &rarr; klik project <b>backcharge-nasional</b>.</li>
                   <li>Buka tab <b>Settings</b> &rarr; pilih menu <b>Functions</b> (atau <b>Bindings</b>).</li>
-                  <li>Di bagian <b>D1 database bindings</b>, klik <b>Add binding</b>:
+                  <li>Di bagian <b>database bindings</b>, klik <b>Add binding</b>:
                     <div className="mt-1 pl-2">
                       • Variable name: <code className="bg-slate-100 px-1.5 py-0.5 rounded font-bold text-blue-600">DB</code> (Wajib huruf kapital)<br/>
-                      • D1 database: pilih database D1 Anda (misal: <code className="bg-slate-100 px-1 py-0.5 rounded font-bold">backcharge-d1</code>).
+                      • database: pilih database Anda (misal: <code className="bg-slate-100 px-1 py-0.5 rounded font-bold">backcharge-d1</code>).
                     </div>
                   </li>
                   <li>Klik <b>Save</b>, lalu buka tab <b>Deployments</b> &rarr; klik titik tiga pada deployment terbaru &rarr; pilih <b>Retry deployment</b>.</li>
                 </ol>
                 <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-500 italic">Ingin masuk sekarang tanpa menunggu D1?</span>
+                  <span className="text-[10px] text-slate-500 italic">Ingin masuk sekarang tanpa menunggu database?</span>
                   <button
                     type="button"
                     onClick={() => {

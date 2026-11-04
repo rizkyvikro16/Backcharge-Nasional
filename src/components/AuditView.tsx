@@ -203,7 +203,7 @@ export default function AuditView({ logs, profiles = [], currentUser, onRefreshL
       if (resData.success && Array.isArray(resData.results)) {
         setServerLogs(resData.results);
         if (addToast) {
-          addToast(`Pencarian mendalam D1 selesai: Ditemukan ${resData.results.length} log audit relevan dari database Cloudflare.`, 'success');
+          addToast(`Pencarian mendalam selesai: Ditemukan ${resData.results.length} log audit relevan dari database.`, 'success');
         }
       } else {
         throw new Error(resData.error || 'Format data respon tidak valid');
@@ -211,7 +211,7 @@ export default function AuditView({ logs, profiles = [], currentUser, onRefreshL
     } catch (err: any) {
       console.error('Server search error:', err);
       if (addToast) {
-        addToast(`Pencarian D1 dialihkan ke cache lokal: ${err.message}`, 'info');
+        addToast(`Pencarian dialihkan ke cache lokal: ${err.message}`, 'info');
       }
     } finally {
       setIsServerSearching(false);
@@ -299,7 +299,7 @@ export default function AuditView({ logs, profiles = [], currentUser, onRefreshL
               <h2 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-2">
                 Audit Trail &amp; Rekam Jejak Sistem
                 <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-black rounded-full border border-emerald-400/30">
-                  Real-time D1 Indexed
+                  Real-time Database Indexed
                 </span>
               </h2>
               <p className="text-xs text-slate-300 font-medium">
@@ -314,14 +314,14 @@ export default function AuditView({ logs, profiles = [], currentUser, onRefreshL
             onClick={handleDeepServerSearch}
             disabled={isServerSearching}
             className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
-            title="Cari riwayat mendalam langsung ke server database Cloudflare D1"
+            title="Cari riwayat mendalam langsung ke server database"
           >
             {isServerSearching ? (
               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Database className="w-3.5 h-3.5" />
             )}
-            <span>{isServerSearching ? 'Mencari di D1...' : 'Query Database D1'}</span>
+            <span>{isServerSearching ? 'Mencari di Database...' : 'Query Database'}</span>
           </button>
 
           <button

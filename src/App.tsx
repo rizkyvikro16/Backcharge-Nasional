@@ -789,12 +789,12 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
   // Toast trigger helper
   const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-    const finalMessage = (import.meta.env.PROD && type === 'error') ? 'Terjadi kesalahan. Coba lagi nanti.' : message;
+    const finalMessage = message;
     const id = Math.random().toString(36).substring(7);
     setToasts(prev => [...prev.slice(-1), { id, message: finalMessage, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 3500);
+    }, 4500);
   };
 
   // Restore login session on mount
@@ -1778,11 +1778,11 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
           ['SYSTEM', creatorEmail, `Melakukan import data secara massal sebanyak ${newTxs.length} data Backcharge`]
         );
 
-        addToast(`Berhasil mengimpor ${newTxs.length} data Backcharge secara massal ke Cloudflare D1!`, 'success');
+        addToast(`Berhasil mengimpor ${newTxs.length} data Backcharge secara massal ke database!`, 'success');
         fetchData(true);
       } catch (err: any) {
         console.error("Bulk D1 insert failed:", err);
-        addToast(`Gagal mengimpor massal ke Cloudflare D1: ${err.message}`, 'error');
+        addToast(`Gagal mengimpor massal ke database: ${err.message}`, 'error');
       }
       return;
     } else {
@@ -2843,13 +2843,13 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
               </div>
               <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold">
                 <span>Memuat Transaksi Cabang...</span>
-                <span>Cloudflare D1 Aktif</span>
+                <span>Database Aktif</span>
               </div>
             </div>
 
             <div className="w-full bg-slate-50 border border-slate-100 p-2.5 rounded-xl flex items-center justify-center space-x-2 text-[10px] text-slate-600 font-bold uppercase tracking-wider">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-              <span>Koneksi Terenkripsi & Aman D1</span>
+              <span>Koneksi Terenkripsi &amp; Aman Database</span>
             </div>
           </div>
         </div>
