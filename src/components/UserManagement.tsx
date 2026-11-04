@@ -189,13 +189,15 @@ export default function UserManagement({
       } else {
         list.push(itemId);
       }
-      return {
+      const nextMatrix = {
         ...prev,
         [roleName]: {
           ...current,
           [type]: list
         }
       };
+      saveRbacMatrix(nextMatrix);
+      return nextMatrix;
     });
   };
 
@@ -203,13 +205,15 @@ export default function UserManagement({
     setRbacMatrix(prev => {
       const current = prev[roleName] || { menus: [], actions: [] };
       const allIds = type === 'menus' ? SYSTEM_MENUS.map(m => m.id) : SYSTEM_ACTIONS.map(a => a.id);
-      return {
+      const nextMatrix = {
         ...prev,
         [roleName]: {
           ...current,
           [type]: enableAll ? allIds : []
         }
       };
+      saveRbacMatrix(nextMatrix);
+      return nextMatrix;
     });
   };
 

@@ -24,6 +24,7 @@ async function ensureD1SchemaWorker(db) {
           no_spk TEXT DEFAULT '-',
           no_sap TEXT DEFAULT '-',
           no_tilang TEXT DEFAULT '-',
+          no_cmd TEXT DEFAULT '-',
           customer_name TEXT NOT NULL,
           license_plate TEXT DEFAULT '-',
           value REAL NOT NULL DEFAULT 0,
@@ -72,15 +73,16 @@ async function ensureD1SchemaWorker(db) {
     `),
     db.prepare(`
       CREATE TABLE IF NOT EXISTS contact_inquiries (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
+          id TEXT PRIMARY KEY,
+          name TEXT,
           email TEXT NOT NULL,
-          phone TEXT,
-          branch TEXT,
           subject TEXT NOT NULL,
           message TEXT NOT NULL,
           status TEXT DEFAULT 'UNREAD',
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          feedback TEXT,
+          feedback_by TEXT,
+          feedback_at TEXT
       );
     `),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_created_at ON backcharges (created_at DESC);`),
@@ -88,6 +90,39 @@ async function ensureD1SchemaWorker(db) {
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles (email);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_timestamp ON activity_logs (timestamp DESC);`)
   ]);
+
+  // Migration: Ensure no_cmd column exists in backcharges
+  try {
+    const colInfo = await db.prepare("PRAGMA table_info(backcharges)").all();
+    const cols = (colInfo.results || []).map((c) => c.name);
+    if (!cols.includes('no_cmd')) {
+      await db.prepare("ALTER TABLE backcharges ADD COLUMN no_cmd TEXT DEFAULT '-'").run();
+    }
+  } catch (e) {}
+
+  // Migration: Ensure force_password_reset column exists in profiles
+  try {
+    const colInfoP = await db.prepare("PRAGMA table_info(profiles)").all();
+    const colsP = (colInfoP.results || []).map((c) => c.name);
+    if (!colsP.includes('force_password_reset')) {
+      await db.prepare("ALTER TABLE profiles ADD COLUMN force_password_reset INTEGER DEFAULT 0").run();
+    }
+  } catch (e) {}
+
+  // Migration: Ensure feedback columns exist in contact_inquiries
+  try {
+    const colInfoInq = await db.prepare("PRAGMA table_info(contact_inquiries)").all();
+    const colsInq = (colInfoInq.results || []).map((c) => c.name);
+    if (!colsInq.includes('feedback')) {
+      await db.prepare("ALTER TABLE contact_inquiries ADD COLUMN feedback TEXT").run();
+    }
+    if (!colsInq.includes('feedback_by')) {
+      await db.prepare("ALTER TABLE contact_inquiries ADD COLUMN feedback_by TEXT").run();
+    }
+    if (!colsInq.includes('feedback_at')) {
+      await db.prepare("ALTER TABLE contact_inquiries ADD COLUMN feedback_at TEXT").run();
+    }
+  } catch (e) {}
 
   // Seed default profiles if empty
   try {
@@ -793,7 +828,7 @@ export default {
         }
 
         const ALLOWED_BACKCHARGE_COLS = new Set([
-          'id', 'category', 'branch', 'no_bak', 'no_spk', 'no_sap', 'no_tilang',
+          'id', 'category', 'branch', 'no_bak', 'no_spk', 'no_sap', 'no_tilang', 'no_cmd',
           'customer_name', 'license_plate', 'value', 'status_sap', 'status_confirm',
           'status_handover', 'no_invoice', 'status_payment', 'payment_date',
           'created_by', 'created_at', 'updated_at', 'file_bak_url',
@@ -933,6 +968,77 @@ export default {
               [prefix]
             );
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "get_backcharges_since": {
+            const since = (params && params[0]) || body.since;
+            if (!since) return new Response(JSON.stringify({ success: false, error: "Parameter 'since' diperlukan" }), { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } });
+            
+            const branches = body.branches || (Array.isArray(params) && params.length > 1 ? params.slice(1) : null);
+            
+            let sql = "SELECT * FROM backcharges WHERE updated_at > ? OR updated_at IS NULL OR updated_at = ''";
+            let queryParams = [since];
+
+            if (Array.isArray(branches) && branches.length > 0) {
+              const placeholders = branches.map(() => '?').join(', ');
+              sql += ` AND branch IN (${placeholders})`;
+              queryParams.push(...branches);
+            }
+            
+            sql += " ORDER BY updated_at DESC";
+
+            const results = await executeD1(sql, queryParams);
+            return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
+          case "get_dashboard_stats": {
+            const { whereSql: sWhereSql, params: sParams } = body;
+            const safeWhere = (sWhereSql && typeof sWhereSql === 'string' && !sWhereSql.includes(';') && !sWhereSql.includes('--')) ? sWhereSql : '1=1';
+            const summaryResult = await executeD1(`
+              SELECT 
+                COUNT(*) as total_count,
+                SUM(value) as total_value,
+                SUM(CASE WHEN status_payment = 'Lunas' THEN value ELSE 0 END) as total_paid_value,
+                SUM(CASE WHEN status_payment = 'Lunas' THEN 1 ELSE 0 END) as total_paid_count,
+                SUM(CASE WHEN status_payment = 'Belum Bayar' AND status_sap != 'Not Bill' THEN value ELSE 0 END) as total_os_value,
+                SUM(CASE WHEN status_payment = 'Belum Bayar' AND status_sap != 'Not Bill' THEN 1 ELSE 0 END) as total_os_count,
+                SUM(CASE WHEN status_sap = 'Not Bill' THEN value ELSE 0 END) as total_not_bill_value,
+                SUM(CASE WHEN status_sap = 'Not Bill' THEN 1 ELSE 0 END) as total_not_bill_count
+              FROM backcharges 
+              WHERE ${safeWhere}
+            `, sParams || []);
+
+            const branchAggResult = await executeD1(`
+              SELECT 
+                branch, 
+                COUNT(*) as total_count,
+                SUM(value) as total_value,
+                SUM(CASE WHEN status_payment = 'Lunas' THEN value ELSE 0 END) as paid_value,
+                SUM(CASE WHEN status_payment = 'Belum Bayar' AND status_sap != 'Not Bill' THEN value ELSE 0 END) as os_value
+              FROM backcharges 
+              WHERE ${safeWhere}
+              GROUP BY branch
+            `, sParams || []);
+
+            const catAggResult = await executeD1(`
+              SELECT 
+                category, 
+                COUNT(*) as total_count,
+                SUM(value) as total_value,
+                SUM(CASE WHEN status_payment = 'Lunas' THEN value ELSE 0 END) as paid_value
+              FROM backcharges 
+              WHERE ${safeWhere}
+              GROUP BY category
+            `, sParams || []);
+
+            return new Response(JSON.stringify({ 
+              success: true, 
+              results: {
+                summary: summaryResult?.[0] || {},
+                branchStats: branchAggResult || [],
+                categoryStats: catAggResult || []
+              }
+            }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
           case "insert_backcharge": {

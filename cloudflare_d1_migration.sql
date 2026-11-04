@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS backcharges (
     no_spk TEXT DEFAULT '-',
     no_sap TEXT DEFAULT '-',
     no_tilang TEXT DEFAULT '-',
+    no_cmd TEXT DEFAULT '-',
     customer_name TEXT NOT NULL,
     license_plate TEXT DEFAULT '-',
     value REAL NOT NULL DEFAULT 0,

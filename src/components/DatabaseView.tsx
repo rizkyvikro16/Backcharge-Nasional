@@ -26,7 +26,7 @@ import {
   REGIONAL_CENTRAL_BRANCHES,
   REGIONAL_EAST_BRANCHES
 } from '../types';
-import { canPerformAction } from '../lib/rbac';
+import { useRbac, canPerformAction } from '../lib/rbac';
 import { compressImageIfNeeded, uploadFileToDrive } from '../lib/googleDrive';
 import MultiSelect from './MultiSelect';
 
@@ -265,8 +265,6 @@ const PROCESS_STAGES = [
   'Berkas di Admin (Belum Selesai Approval)',
   'Belum Approve SH',
   'Belum Approve KACAB',
-  'Belum Approve RH',
-  'Belum Approve DH',
   'Menunggu Cetak & Kirim Invoice',
   'Menunggu Pelunasan Backcharge',
   'Selesai (Lunas)',
@@ -277,11 +275,6 @@ const getTransactionStage = (t: Backcharge): string => {
   if (t.status_sap === 'Not Bill' || String(t.status_sap || '').toLowerCase() === 'not bill') {
     return 'Dokumen Ditolak (Reject)';
   }
-
-  const transVal = Number(t.value) || 0;
-  const isMaintenance = t.category === 'Maintenance';
-  const isRegionalHeadReq = isMaintenance ? (transVal > 7500000) : (transVal > 5000000);
-  const isDivisionHeadReq = transVal > 15000000;
 
   const isDocRejected = Boolean(
     t.status_approval === 'Ditolak' || 
@@ -305,20 +298,10 @@ const getTransactionStage = (t: Backcharge): string => {
 
   const isPendingL1 = !t.status_approval || t.status_approval === 'Belum Approval' || t.status_approval === 'Pending';
   const isL1Approved = t.status_approval === 'Disetujui';
-  const isRegionalApproved = !isRegionalHeadReq || t.regional_approval_status === 'Disetujui';
-  const isDivisionApproved = !isDivisionHeadReq || t.division_approval_status === 'Disetujui';
 
   if (!isL1Approved || isPendingL1) {
     const isKacabCat = ['Maintenance', 'TPL', 'Dokumen Kendaraan', 'Unclaimable Insurance'].includes(t.category);
     return isKacabCat ? 'Belum Approve KACAB' : 'Belum Approve SH';
-  }
-
-  if (isRegionalHeadReq && !isRegionalApproved) {
-    return 'Belum Approve RH';
-  }
-
-  if (isDivisionHeadReq && !isDivisionApproved) {
-    return 'Belum Approve DH';
   }
 
   const stepInvoice = Boolean(t.no_invoice && typeof t.no_invoice === 'string' && t.no_invoice.trim() !== '' && t.no_invoice.trim() !== '-');
@@ -409,52 +392,59 @@ export default function DatabaseView({
   onClearDashboardFilter,
   addToast
 }: DatabaseViewProps) {
-  // Permission helpers aligned with RBAC
-  const canDelete = canPerformAction(currentUser?.role, 'delete') && (
+  // Reactive Permission helpers aligned with RBAC hook
+  const { canAction } = useRbac();
+
+  const canDelete = canAction(currentUser?.role, 'delete') && (
     hasRole(currentUser?.role, 'Administrator') ||
     hasRole(currentUser?.role, 'ASO') ||
     hasRole(currentUser?.role, 'ASO Megabranch') ||
     hasRole(currentUser?.role, 'Maintenance Center')
   );
 
-  const canAdd = canPerformAction(currentUser?.role, 'create');
-  const canExport = canPerformAction(currentUser?.role, 'export');
+  const canAdd = canAction(currentUser?.role, 'create');
+  const canExport = canAction(currentUser?.role, 'export');
 
   // Role authority checks for each section of Bulk Update
   const canUpdateHandover = useMemo(() => {
-    if (!canPerformAction(currentUser?.role, 'update')) return false;
+    if (!canAction(currentUser?.role, 'update')) return false;
     return hasRole(currentUser?.role, 'Administrator') ||
       hasRole(currentUser?.role, 'Admin') ||
       hasRole(currentUser?.role, 'Admin Head') ||
       hasRole(currentUser?.role, 'ASO') ||
       hasRole(currentUser?.role, 'ASO Megabranch') ||
       hasRole(currentUser?.role, 'Maintenance Center');
-  }, [currentUser]);
+  }, [currentUser, canAction]);
 
   const canUpdateSap = useMemo(() => {
-    if (!canPerformAction(currentUser?.role, 'update')) return false;
+    if (!canAction(currentUser?.role, 'update')) return false;
     return hasRole(currentUser?.role, 'Administrator') ||
       hasRole(currentUser?.role, 'Sales Head') ||
       hasRole(currentUser?.role, 'Sales / Sales Head') ||
       hasRole(currentUser?.role, 'Kepala Cabang') ||
       hasRole(currentUser?.role, 'kacab');
-  }, [currentUser]);
+  }, [currentUser, canAction]);
 
   const canUpdatePayment = useMemo(() => {
-    if (!canPerformAction(currentUser?.role, 'update')) return false;
+    if (!canAction(currentUser?.role, 'update')) return false;
     return hasRole(currentUser?.role, 'Administrator') ||
       hasRole(currentUser?.role, 'Admin') ||
       hasRole(currentUser?.role, 'Admin Head') ||
       hasRole(currentUser?.role, 'Finance');
-  }, [currentUser]);
+  }, [currentUser, canAction]);
 
   const canUpdateApproval = useMemo(() => {
-    if (!canPerformAction(currentUser?.role, 'approve')) return false;
-    return hasRole(currentUser?.role, 'Administrator') ||
-      hasRole(currentUser?.role, 'Admin Head') ||
-      hasRole(currentUser?.role, 'Division Head') ||
-      isRegionalHeadRole(currentUser?.role || '');
-  }, [currentUser]);
+    const r = currentUser?.role || '';
+    if (hasRole(r, 'Administrator')) return true;
+    if (!canAction(r, 'approve')) return false;
+    const lower = r.toLowerCase();
+    return hasRole(r, 'Sales Head') ||
+      hasRole(r, 'Kepala Cabang') ||
+      hasRole(r, 'Admin Head') ||
+      lower.includes('sales head') ||
+      lower.includes('kepala cabang') ||
+      lower.includes('kacab');
+  }, [currentUser, canAction]);
 
   const canBulkAction = canUpdateHandover || canUpdateSap || canUpdatePayment || canUpdateApproval;
 
@@ -778,14 +768,10 @@ export default function DatabaseView({
           setSelectedProcessStages(['Menunggu Serah Terima Berkas']);
         } else if (activeDashboardFilter.stage === '2_at_admin' || activeDashboardFilter.stage === '2_confirm') {
           setSelectedProcessStages(['Berkas di Admin (Belum Selesai Approval)']);
-        } else if (activeDashboardFilter.stage === '3_sap_sh') {
+        } else if (activeDashboardFilter.stage === '3_sap_sh' || activeDashboardFilter.stage === '3_sap_rh') {
           setSelectedProcessStages(['Belum Approve SH']);
-        } else if (activeDashboardFilter.stage === '3_sap_kacab') {
+        } else if (activeDashboardFilter.stage === '3_sap_kacab' || activeDashboardFilter.stage === '3_sap_dh') {
           setSelectedProcessStages(['Belum Approve KACAB']);
-        } else if (activeDashboardFilter.stage === '3_sap_rh') {
-          setSelectedProcessStages(['Belum Approve RH']);
-        } else if (activeDashboardFilter.stage === '3_sap_dh') {
-          setSelectedProcessStages(['Belum Approve DH']);
         } else if (activeDashboardFilter.stage === '4_invoice') {
           setSelectedProcessStages(['Menunggu Cetak & Kirim Invoice']);
         } else if (activeDashboardFilter.stage === '5_payment') {
@@ -887,9 +873,7 @@ export default function DatabaseView({
               'Berkas di Admin',
               'Berkas di Admin (Belum Selesai Approval)',
               'Belum Approve SH',
-              'Belum Approve KACAB',
-              'Belum Approve RH',
-              'Belum Approve DH'
+              'Belum Approve KACAB'
             ].includes(stage);
           }
           return stage === selStage;
@@ -2306,10 +2290,6 @@ export default function DatabaseView({
       if (addToast) addToast('No. CMD wajib diisi dan tidak boleh kosong!', 'error');
       return false;
     }
-    if (!/^\d+$/.test(formData.no_cmd.trim())) {
-      if (addToast) addToast('No. CMD hanya boleh diisi angka saja!', 'error');
-      return false;
-    }
     if (formData.no_bak && formData.no_bak.trim() && !/^\d+$/.test(formData.no_bak.trim())) {
       if (addToast) addToast('No. BAK hanya boleh diisi angka saja!', 'error');
       return false;
@@ -2564,60 +2544,54 @@ export default function DatabaseView({
           }
         }
 
-        // 4. Status Approval Backcharge (Strict Category and Nominal Tier Guarding)
+        // 4. Status Approval Backcharge (Wewenang: Administrator, Sales Head, & Kepala Cabang)
         if (willUpdateApproval) {
           const existingTx = transactions.find(t => t.id === id);
-          const txVal = Number(existingTx?.value) || 0;
-          const isMaintenance = existingTx?.category === 'Maintenance';
-          const isRhReq = isMaintenance ? (txVal > 7500000) : (txVal > 5000000);
-          const isDhReq = txVal > 15000000;
-          const isKacabCat = ['Maintenance', 'TPL', 'Dokumen Kendaraan', 'Unclaimable Insurance'].includes(existingTx?.category || '');
-          const isShCat = ['Own Risk', 'Ekspedisi', 'ETLE'].includes(existingTx?.category || '');
+          const category = existingTx?.category || '';
+          
+          let roleTitle = currentUser?.role || 'Approver';
+          if (['Maintenance', 'TPL', 'Dokumen Kendaraan', 'Unclaimable Insurance'].includes(category)) {
+            roleTitle = 'Kepala Cabang';
+          } else if (['Own Risk', 'Ekspedisi', 'ETLE'].includes(category)) {
+            roleTitle = 'Sales Head';
+          }
+          if (hasRole(role, 'Administrator')) {
+            roleTitle = 'Administrator';
+          }
 
-          if (hasRole(role, 'Administrator') || hasRole(role, 'Admin Head')) {
-            u.status_approval = bulkApprovalStatus;
-            u.approved_by = approverLabel;
-            u.approved_at = nowIso;
-            u.approval_note = bulkAuditNote;
-            if (isRhReq) {
-              u.regional_approval_status = bulkApprovalStatus;
-              u.regional_approved_by = approverLabel;
-              u.regional_approved_at = nowIso;
-              u.regional_approval_note = bulkAuditNote;
-            }
-            if (isDhReq) {
-              u.division_approval_status = bulkApprovalStatus;
-              u.division_approved_by = approverLabel;
-              u.division_approved_at = nowIso;
-              u.division_approval_note = bulkAuditNote;
-            }
-          } else if (hasRole(role, 'Division Head')) {
-            if (isDhReq) {
-              u.division_approval_status = bulkApprovalStatus;
-              u.division_approved_by = approverLabel;
-              u.division_approved_at = nowIso;
-              u.division_approval_note = bulkAuditNote;
-            }
-          } else if (isRegionalHeadRole(role)) {
-            if (isRhReq) {
-              u.regional_approval_status = bulkApprovalStatus;
-              u.regional_approved_by = approverLabel;
-              u.regional_approved_at = nowIso;
-              u.regional_approval_note = bulkAuditNote;
-            }
-          } else if (hasRole(role, 'Kepala Cabang')) {
-            if (isKacabCat) {
-              u.status_approval = bulkApprovalStatus;
-              u.approved_by = approverLabel;
-              u.approved_at = nowIso;
-              u.approval_note = bulkAuditNote;
-            }
-          } else if (hasRole(role, 'Sales Head')) {
-            if (isShCat) {
-              u.status_approval = bulkApprovalStatus;
-              u.approved_by = approverLabel;
-              u.approved_at = nowIso;
-              u.approval_note = bulkAuditNote;
+          const dynamicApprover = `${currentUser?.full_name || 'User'} (${roleTitle})`;
+
+          u.status_approval = bulkApprovalStatus;
+          if (bulkApprovalStatus === 'Disetujui' || bulkApprovalStatus === 'Ditolak') {
+            u.approved_by = dynamicApprover;
+            u.approved_at = new Date().toLocaleString('id-ID');
+            u.approval_note = bulkAuditNote.trim() || `Approval massal: ${bulkApprovalStatus}`;
+            
+            // Sinkronkan field regional dan division agar data bersih dan konsisten
+            u.regional_approval_status = bulkApprovalStatus;
+            u.regional_approved_by = dynamicApprover;
+            u.regional_approved_at = new Date().toLocaleString('id-ID');
+            u.division_approval_status = bulkApprovalStatus;
+            u.division_approved_by = dynamicApprover;
+            u.division_approved_at = new Date().toLocaleString('id-ID');
+          } else if (bulkApprovalStatus === 'Belum Approval') {
+            u.approved_by = null;
+            u.approved_at = null;
+            u.approval_note = null;
+            u.regional_approval_status = 'Belum Approval';
+            u.regional_approved_by = null;
+            u.regional_approved_at = null;
+            u.division_approval_status = 'Belum Approval';
+            u.division_approved_by = null;
+            u.division_approved_at = null;
+          }
+
+          // Otomatis sinkronisasi status SAP untuk kategori Non-Own Risk
+          if (category !== 'Own Risk') {
+            if (bulkApprovalStatus === 'Disetujui') {
+              u.status_sap = 'Bill';
+            } else if (bulkApprovalStatus === 'Ditolak') {
+              u.status_sap = 'Not Bill';
             }
           }
         }
@@ -2768,14 +2742,10 @@ export default function DatabaseView({
                           ? 'Tahap: Berkas di Admin (Belum Selesai Approval)'
                           : activeDashboardFilter.stage === '1_handover' || activeDashboardFilter.stage === '1_in_aso'
                           ? 'Tahap: Berkas ASO (Menunggu Serah Terima)'
-                          : activeDashboardFilter.stage === '3_sap_sh'
+                          : activeDashboardFilter.stage === '3_sap_sh' || activeDashboardFilter.stage === '3_sap_rh'
                           ? 'Tahap: Belum Approve SH'
-                          : activeDashboardFilter.stage === '3_sap_kacab'
+                          : activeDashboardFilter.stage === '3_sap_kacab' || activeDashboardFilter.stage === '3_sap_dh'
                           ? 'Tahap: Belum Approve KACAB'
-                          : activeDashboardFilter.stage === '3_sap_rh'
-                          ? 'Tahap: Belum Approve RH'
-                          : activeDashboardFilter.stage === '3_sap_dh'
-                          ? 'Tahap: Belum Approve DH'
                           : activeDashboardFilter.stage === '4_invoice'
                           ? 'Tahap: Menunggu Cetak & Kirim Invoice'
                           : activeDashboardFilter.stage === '5_payment'
@@ -3053,10 +3023,31 @@ export default function DatabaseView({
           </div>
 
           <div className="flex items-center flex-wrap gap-2 mt-2 sm:mt-0">
+            {canUpdateApproval && (
+              <button
+                onClick={() => {
+                  setBulkHandoverStatus('-- Tidak Diubah --');
+                  setBulkSapStatus('-- Tidak Diubah --');
+                  setBulkPaymentStatus('-- Tidak Diubah --');
+                  setBulkApprovalStatus('Disetujui');
+                  setBulkAuditNote(`Approval massal oleh ${currentUser?.full_name || 'User'} (${currentUser?.role || 'Approver'})`);
+                  setBulkFile(null);
+                  setIsUploadingBulkFile(false);
+                  setIsDraggingFile(false);
+                  setIsSubmitting(false);
+                  setIsBulkUpdateModalOpen(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-black rounded-xl shadow-md transition-all cursor-pointer ring-2 ring-amber-400/30 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Check className="w-4 h-4 stroke-[3]" />
+                <span>Approval Massal ({selectedIds.size})</span>
+              </button>
+            )}
+
             {canBulkAction && (
               <button
                 onClick={handleOpenBulkModal}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
               >
                 <Edit3 className="w-3.5 h-3.5" />
                 <span>Update Status Massal ({selectedIds.size})</span>
@@ -3676,24 +3667,22 @@ export default function DatabaseView({
                   <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
                     NO. CMD <span className="text-rose-500">*</span>
                   </label>
-                  <span className="text-[10px] text-slate-400 font-semibold bg-slate-100 px-1.5 py-0.5 rounded">
-                    Khusus Angka
+                  <span className="text-[10px] text-blue-600 font-semibold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                    Wajib Diisi
                   </span>
                 </div>
                 <div className="relative">
                   <input
                     type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
                     value={formData.no_cmd || ''}
                     onFocus={() => setActiveAutocompleteField('no_cmd')}
                     onBlur={() => setTimeout(() => setActiveAutocompleteField(prev => prev === 'no_cmd' ? null : prev), 200)}
                     onKeyDown={(e) => { if (e.key === 'Escape') setActiveAutocompleteField(null); }}
                     onChange={(e) => {
-                      setFormData({ ...formData, no_cmd: e.target.value.replace(/\D/g, '') });
+                      setFormData({ ...formData, no_cmd: e.target.value.trimStart() });
                       setActiveAutocompleteField('no_cmd');
                     }}
-                    placeholder="Contoh: 2026001"
+                    placeholder="Contoh: 2026001 atau CMD-001"
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all pr-8"
                     required
                   />
@@ -4344,7 +4333,7 @@ export default function DatabaseView({
               </div>
 
               {/* Section 1: SERAH TERIMA BERKAS & DOKUMEN LAMPIRAN MASSAL */}
-              {canUpdateHandover && (
+              {(canUpdateHandover && !['Admin', 'Admin Head'].includes(currentUser?.role || '')) && (
                 <div className="p-4 sm:p-5 rounded-2xl border transition-all bg-white border-slate-200 shadow-2xs space-y-4">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
@@ -4493,7 +4482,7 @@ export default function DatabaseView({
               )}
 
               {/* Section 2: STATUS SAP / ERP CLAIM */}
-              {canUpdateSap && (
+              {(canUpdateSap && !['Admin', 'Admin Head'].includes(currentUser?.role || '')) && (
                 <div className="p-4 sm:p-5 rounded-2xl border transition-all bg-white border-slate-200 shadow-2xs space-y-2">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
@@ -4516,6 +4505,7 @@ export default function DatabaseView({
                   </select>
                 </div>
               )}
+
 
               {/* Section 3: STATUS PELUNASAN PEMBAYARAN */}
               {canUpdatePayment && (
@@ -4547,29 +4537,35 @@ export default function DatabaseView({
               )}
 
               {/* Section 4: STATUS APPROVAL BACKCHARGE */}
-              {canUpdateApproval && (
-                <div className="p-4 sm:p-5 rounded-2xl border transition-all bg-white border-slate-200 shadow-2xs space-y-2">
+              {(canUpdateApproval && !['Admin', 'Admin Head'].includes(currentUser?.role || '')) && (
+                <div className="p-4 sm:p-5 rounded-2xl border transition-all bg-white border-amber-200/80 shadow-2xs space-y-2 bg-gradient-to-br from-white to-amber-50/20">
                   <div className="flex items-center justify-between flex-wrap gap-2">
-                    <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
-                      STATUS APPROVAL BACKCHARGE
+                    <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide flex items-center gap-1.5">
+                      <span className="text-amber-600">⚡</span>
+                      <span>STATUS APPROVAL BACKCHARGE</span>
                     </span>
-                    <span className="text-[11px] font-black text-amber-600 uppercase tracking-wider">
-                      WEWENANG RH / DH / KACAB / SALES HEAD
+                    <span className="text-[11px] font-black text-amber-600 uppercase tracking-wider bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60">
+                      WEWENANG: ADMINISTRATOR, SALES HEAD, &amp; KEPALA CABANG
                     </span>
                   </div>
 
-                  <select
-                    value={bulkApprovalStatus}
-                    onChange={(e) => setBulkApprovalStatus(e.target.value)}
-                    className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
-                  >
-                    <option value="-- Tidak Diubah --">-- Tidak Diubah --</option>
-                    <option value="Disetujui">Disetujui</option>
-                    <option value="Ditolak">Ditolak</option>
-                  </select>
-
-                  <p className="text-[10.5px] text-slate-400 italic mt-1.5">
-                    * Memproses status approval dan menyinkronkan seluruh tier wewenang nominal yang berlaku.
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      KEPUTUSAN APPROVAL
+                    </label>
+                    <select
+                      value={bulkApprovalStatus}
+                      onChange={(e) => setBulkApprovalStatus(e.target.value)}
+                      className="w-full text-xs py-2.5 px-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 cursor-pointer"
+                    >
+                      <option value="-- Tidak Diubah --">-- Tidak Diubah --</option>
+                      <option value="Disetujui">✅ Disetujui (Approved)</option>
+                      <option value="Ditolak">❌ Ditolak (Rejected)</option>
+                      <option value="Belum Approval">⏳ Belum Approval</option>
+                    </select>
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    * Kategori Non-Own Risk: status "Disetujui" otomatis menyelaraskan SAP menjadi "Bill", dan "Ditolak" menjadi "Not Bill".
                   </p>
                 </div>
               )}

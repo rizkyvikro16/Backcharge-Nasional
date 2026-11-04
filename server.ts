@@ -1298,8 +1298,8 @@ async function startServer() {
       const searchPattern = `%${search}%`;
       const searchWithDash = `%${search.replace(/\s+/g, '-')}%`;
       const searchWithSpace = `%${search.replace(/-/g, ' ')}%`;
-      whereClauses.push("(id LIKE ? OR customer_name LIKE ? OR license_plate LIKE ? OR license_plate LIKE ? OR license_plate LIKE ? OR no_bak LIKE ? OR no_invoice LIKE ? OR no_spk LIKE ? OR no_sap LIKE ? OR nama_bro LIKE ?)");
-      params.push(searchPattern, searchPattern, searchPattern, searchWithDash, searchWithSpace, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+      whereClauses.push("(id LIKE ? OR no_cmd LIKE ? OR customer_name LIKE ? OR license_plate LIKE ? OR license_plate LIKE ? OR license_plate LIKE ? OR no_bak LIKE ? OR no_invoice LIKE ? OR no_spk LIKE ? OR no_sap LIKE ? OR nama_bro LIKE ?)");
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchWithDash, searchWithSpace, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
     }
 
     // 4. Category
@@ -1939,17 +1939,11 @@ async function startServer() {
           }
           for (const tx of items) {
             if (!tx || typeof tx !== 'object' || !tx.id) continue;
-            const validCols = Object.keys(tx).filter(col => ALLOWED_BACKCHARGE_COLUMNS.has(col));
+            const validCols = Object.keys(tx).filter(col => col !== 'id' && ALLOWED_BACKCHARGE_COLUMNS.has(col));
             if (validCols.length === 0) continue;
-            const placeholders = validCols.map(() => '?').join(', ');
-            const updateAssigns = validCols.filter(col => col !== 'id').map(col => `${col} = excluded.${col}`).join(', ');
-            const vals = validCols.map(col => tx[col] !== undefined ? tx[col] : null);
-            const upsertSql = `
-              INSERT INTO backcharges (${validCols.join(', ')}) 
-              VALUES (${placeholders})
-              ON CONFLICT(id) DO UPDATE SET ${updateAssigns || 'updated_at = CURRENT_TIMESTAMP'}
-            `;
-            await queryD1(upsertSql, vals);
+            const setClause = validCols.map(col => `${col} = ?`).join(', ');
+            const vals = [...validCols.map(col => tx[col] !== undefined ? tx[col] : null), tx.id];
+            await queryD1(`UPDATE backcharges SET ${setClause} WHERE id = ?`, vals);
           }
           return res.json({ success: true });
         }

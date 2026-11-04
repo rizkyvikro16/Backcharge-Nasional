@@ -103,48 +103,8 @@ function deriveNotifications(transactionsList: Backcharge[], user: Profile, read
         });
       }
     }
-    const val = t.value || 0;
-    const isRegionalHead = isRegionalHeadRole(user.role as string);
-    const isDivisionHead = hasRole(user.role, 'Division Head');
-    const isMaintenance = t.category === 'Maintenance';
-    const isRegionalHeadReq = isMaintenance 
-      ? (val > 7500000 && val <= 15000000) 
-      : (val > 5000000 && val <= 15000000);
+    // RH and DH approval tasks removed (monitoring only)
 
-    const tier1Approved = t.status_approval === 'Disetujui';
-    const tier2Approved = !isRegionalHeadReq || t.regional_approval_status === 'Disetujui';
-
-    if ((isRegionalHead || hasRole(user.role, 'Administrator')) && isRegionalHeadReq && tier1Approved && (!t.regional_approval_status || t.regional_approval_status === 'Belum Approval')) {
-      const id = `notif-rh-approval-${t.id}`;
-      list.push({
-        id,
-        transaction_id: t.id,
-        customer_name: t.customer_name,
-        category: t.category,
-        branch: t.branch,
-        type: 'APPROVAL_RH',
-        typeLabel: 'Approval Regional Head',
-        description: `Approval Backcharge: Backcharge ${t.category} ${t.id} (${t.customer_name}) membutuhkan persetujuan Regional Head.`,
-        created_at: t.created_at || new Date().toISOString(),
-        read: readIds.includes(id)
-      });
-    }
-
-    if ((isDivisionHead || hasRole(user.role, 'Administrator')) && val > 15000000 && tier1Approved && tier2Approved && (!t.division_approval_status || t.division_approval_status === 'Belum Approval')) {
-      const id = `notif-dh-approval-${t.id}`;
-      list.push({
-        id,
-        transaction_id: t.id,
-        customer_name: t.customer_name,
-        category: t.category,
-        branch: t.branch,
-        type: 'APPROVAL_DH',
-        typeLabel: 'Approval Division Head',
-        description: `Approval Backcharge: Backcharge ${t.category} ${t.id} (${t.customer_name}) membutuhkan persetujuan Division Head.`,
-        created_at: t.created_at || new Date().toISOString(),
-        read: readIds.includes(id)
-      });
-    }
 
 
     // 2. Kepala Cabang Role Tasks
@@ -1427,8 +1387,8 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     try {
       // Check duplicate No. BAK if provided and not '-'
       const cleanBak = (newTx.no_bak || '').trim().toLowerCase();
-      if (cleanBak && cleanBak !== '-') {
-        const existingBak = transactions.find(t => t.no_bak && t.no_bak.trim().toLowerCase() === cleanBak);
+      if (cleanBak && cleanBak !== '-' && cleanBak !== '0') {
+        const existingBak = transactions.find(t => t.no_bak && t.no_bak.trim().toLowerCase() === cleanBak && t.no_bak !== '-' && t.no_bak !== '0');
         if (existingBak) {
           throw new Error(`No. BAK "${newTx.no_bak}" sudah terdaftar pada data transaksi ${existingBak.id} (${existingBak.customer_name}). Penyimpanan dibatalkan untuk menghindari duplikasi data.`);
         }
@@ -1436,8 +1396,8 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
       // Check duplicate No. SPK if provided and not '-'
       const cleanSpk = (newTx.no_spk || '').trim().toLowerCase();
-      if (cleanSpk && cleanSpk !== '-') {
-        const existingSpk = transactions.find(t => t.no_spk && t.no_spk.trim().toLowerCase() === cleanSpk);
+      if (cleanSpk && cleanSpk !== '-' && cleanSpk !== '0') {
+        const existingSpk = transactions.find(t => t.no_spk && t.no_spk.trim().toLowerCase() === cleanSpk && t.no_spk !== '-' && t.no_spk !== '0');
         if (existingSpk) {
           throw new Error(`No. SPK "${newTx.no_spk}" sudah terdaftar pada data transaksi ${existingSpk.id} (${existingSpk.customer_name}). Penyimpanan dibatalkan untuk menghindari duplikasi data.`);
         }
@@ -1452,6 +1412,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         created_by: creatorEmail,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        no_cmd: (newTx.no_cmd || '-').trim(),
         nama_bro: newTx.nama_bro || newTx.bro_name || '-',
         bro_name: newTx.nama_bro || newTx.bro_name || '-',
         alasan: newTx.alasan || newTx.dok_pendukung_alasan || '-',
@@ -1568,39 +1529,31 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
       let existingMatch: Backcharge | null = null;
 
       const cleanIdParam = newTx.id ? String(newTx.id).trim().toUpperCase() : '';
-      const cleanBakParam = (newTx.no_bak && newTx.no_bak !== '-') ? newTx.no_bak.trim().toLowerCase() : '';
-      const cleanSpkParam = (newTx.no_spk && newTx.no_spk !== '-') ? newTx.no_spk.trim().toLowerCase() : '';
-      const cleanSapParam = (newTx.no_sap && newTx.no_sap !== '-') ? newTx.no_sap.trim().toLowerCase() : '';
-      const cleanCustomerParam = newTx.customer_name ? newTx.customer_name.trim().toLowerCase() : '';
-      const cleanPlateParam = newTx.license_plate ? newTx.license_plate.trim().toLowerCase() : '';
-      const cleanTanggalParam = newTx.tanggal || '';
-      const cleanBranchParam = newTx.branch || '';
+      const cleanCmdParam = (newTx.no_cmd && newTx.no_cmd !== '-' && newTx.no_cmd !== '0') ? String(newTx.no_cmd).trim().toLowerCase() : '';
+      const cleanBakParam = (newTx.no_bak && newTx.no_bak !== '-' && newTx.no_bak !== '0') ? newTx.no_bak.trim().toLowerCase() : '';
+      const cleanSpkParam = (newTx.no_spk && newTx.no_spk !== '-' && newTx.no_spk !== '0') ? newTx.no_spk.trim().toLowerCase() : '';
+      const cleanSapParam = (newTx.no_sap && newTx.no_sap !== '-' && newTx.no_sap !== '0') ? newTx.no_sap.trim().toLowerCase() : '';
 
       // 1. DUPLICATE MATCHING against existing database records:
       // a) Explicit ID
       if (cleanIdParam) {
         existingMatch = transactions.find(t => t.id?.toUpperCase() === cleanIdParam) || null;
       }
-      // b) No BAK
+      // b) No CMD (Exact match on real document number)
+      if (!existingMatch && cleanCmdParam) {
+        existingMatch = transactions.find(t => t.no_cmd && t.no_cmd !== '-' && t.no_cmd !== '0' && String(t.no_cmd).trim().toLowerCase() === cleanCmdParam) || null;
+      }
+      // c) No BAK (Exact match on real document number)
       if (!existingMatch && cleanBakParam) {
-        existingMatch = transactions.find(t => t.no_bak && t.no_bak !== '-' && t.no_bak.trim().toLowerCase() === cleanBakParam) || null;
+        existingMatch = transactions.find(t => t.no_bak && t.no_bak !== '-' && t.no_bak !== '0' && t.no_bak.trim().toLowerCase() === cleanBakParam) || null;
       }
-      // c) No SPK
+      // d) No SPK (Exact match on real document number)
       if (!existingMatch && cleanSpkParam) {
-        existingMatch = transactions.find(t => t.no_spk && t.no_spk !== '-' && t.no_spk.trim().toLowerCase() === cleanSpkParam) || null;
+        existingMatch = transactions.find(t => t.no_spk && t.no_spk !== '-' && t.no_spk !== '0' && t.no_spk.trim().toLowerCase() === cleanSpkParam) || null;
       }
-      // d) No SAP
+      // e) No SAP (Exact match on real document number)
       if (!existingMatch && cleanSapParam) {
-        existingMatch = transactions.find(t => t.no_sap && t.no_sap !== '-' && t.no_sap.trim().toLowerCase() === cleanSapParam) || null;
-      }
-      // e) Composite (Tanggal + Customer + Cabang + No Polisi)
-      if (!existingMatch && cleanCustomerParam && cleanTanggalParam) {
-        existingMatch = transactions.find(t => 
-          t.tanggal === cleanTanggalParam &&
-          t.customer_name?.trim().toLowerCase() === cleanCustomerParam &&
-          t.branch === cleanBranchParam &&
-          (t.license_plate || '').trim().toLowerCase() === cleanPlateParam
-        ) || null;
+        existingMatch = transactions.find(t => t.no_sap && t.no_sap !== '-' && t.no_sap !== '0' && t.no_sap.trim().toLowerCase() === cleanSapParam) || null;
       }
 
       // 2. DUPLICATE MATCHING against previously prepared items in current batch:
@@ -1608,10 +1561,10 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
       if (!targetId) {
         for (const [pId, pTx] of preparedTxsMap.entries()) {
           if (cleanIdParam && pId.toUpperCase() === cleanIdParam) { targetId = pId; break; }
-          if (cleanBakParam && pTx.no_bak && pTx.no_bak !== '-' && pTx.no_bak.trim().toLowerCase() === cleanBakParam) { targetId = pId; break; }
-          if (cleanSpkParam && pTx.no_spk && pTx.no_spk !== '-' && pTx.no_spk.trim().toLowerCase() === cleanSpkParam) { targetId = pId; break; }
-          if (cleanSapParam && pTx.no_sap && pTx.no_sap !== '-' && pTx.no_sap.trim().toLowerCase() === cleanSapParam) { targetId = pId; break; }
-          if (cleanCustomerParam && pTx.tanggal === cleanTanggalParam && pTx.customer_name?.trim().toLowerCase() === cleanCustomerParam && pTx.branch === cleanBranchParam && (pTx.license_plate || '').trim().toLowerCase() === cleanPlateParam) { targetId = pId; break; }
+          if (cleanCmdParam && pTx.no_cmd && pTx.no_cmd !== '-' && pTx.no_cmd !== '0' && String(pTx.no_cmd).trim().toLowerCase() === cleanCmdParam) { targetId = pId; break; }
+          if (cleanBakParam && pTx.no_bak && pTx.no_bak !== '-' && pTx.no_bak !== '0' && pTx.no_bak.trim().toLowerCase() === cleanBakParam) { targetId = pId; break; }
+          if (cleanSpkParam && pTx.no_spk && pTx.no_spk !== '-' && pTx.no_spk !== '0' && pTx.no_spk.trim().toLowerCase() === cleanSpkParam) { targetId = pId; break; }
+          if (cleanSapParam && pTx.no_sap && pTx.no_sap !== '-' && pTx.no_sap !== '0' && pTx.no_sap.trim().toLowerCase() === cleanSapParam) { targetId = pId; break; }
         }
       }
 
@@ -1637,6 +1590,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         ...(existingBase as Backcharge),
         ...newTx,
         id: targetId,
+        no_cmd: (newTx.no_cmd || existingBase.no_cmd || '-').trim(),
         created_by: existingBase.created_by || creatorEmail,
         created_at: existingBase.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -1655,7 +1609,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
     const cleanSupabasePayload = (payload: any) => {
       const DB_COLUMNS = [
-        'id', 'category', 'branch', 'no_bak', 'no_spk', 'no_sap', 'no_tilang',
+        'id', 'category', 'branch', 'no_bak', 'no_spk', 'no_sap', 'no_tilang', 'no_cmd',
         'customer_name', 'license_plate', 'value', 'status_sap', 'status_confirm',
         'status_handover', 'no_invoice', 'status_payment', 'created_by', 'created_at',
         'updated_at', 'file_bak_url', 'file_handover_aso_sales_url',
@@ -1671,7 +1625,6 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
           cleaned[key] = payload[key];
         }
       }
-      return cleaned;
     };
 
     if (isD1Active) {
@@ -1832,8 +1785,8 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
       });
 
       if (isD1Active) {
-        // Execute in safe chunks of 15 to stay within HTTP payload and execution limits
-        const BATCH_SIZE = 15;
+        // Execute in safe chunks to stay within HTTP payload and execution limits
+        const BATCH_SIZE = 50;
         for (let i = 0; i < itemsToUpdate.length; i += BATCH_SIZE) {
           const batch = itemsToUpdate.slice(i, i + BATCH_SIZE).map(({ id, updates }) => {
             const up = updatedMap.get(id);
@@ -1852,6 +1805,9 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
           processed = Math.min(i + batch.length, total);
           if (onProgress) onProgress(processed, total);
+          
+          // Delay to prevent Cloudflare D1 rate limiting for larger updates
+          await new Promise(r => setTimeout(r, 200));
         }
 
         // Insert batch summary into activity_logs

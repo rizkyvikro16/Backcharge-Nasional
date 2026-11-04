@@ -67,6 +67,7 @@ export default defineConfig(() => {
       cloudflarePagesWorkerPlugin(),
       VitePWA({
         registerType: "autoUpdate",
+        includeAssets: ["favicon.ico", "apple-touch-icon.png", "masked-icon.svg"],
         injectRegister: "auto",
         workbox: {
           importScripts: ["/sw-notification.js"],

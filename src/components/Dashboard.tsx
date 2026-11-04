@@ -2635,7 +2635,7 @@ export default function Dashboard({
                       </p>
                     </div>
                   ) : (
-                    <div className="flex items-stretch gap-2.5 sm:gap-3 min-w-[1400px]">
+                    <div className="flex items-stretch gap-2.5 sm:gap-3 w-full min-w-[1200px]">
                       {/* PANEL 0: KATEGORI BACKCHARGE (Left Panel) */}
                       <div className="w-[230px] shrink-0 flex flex-col justify-between">
                         {/* Header */}
@@ -2706,7 +2706,7 @@ export default function Dashboard({
                       </div>
 
                       {/* PANEL 1: DOCUMENT FLOW & FINAL STATUS (6 Sub-columns in 1 border) */}
-                      <div className="flex-1 min-w-[720px] flex flex-col border-2 border-[#1A1D20] rounded-2xl shadow-md bg-white overflow-hidden">
+                      <div className="flex-[3] min-w-[720px] flex flex-col border-2 border-[#1A1D20] rounded-2xl shadow-md bg-white overflow-hidden">
                         {/* Dark Header with centered badge and 6 sub-headers */}
                         <div className="h-[58px] bg-[#1A1D20] text-white flex flex-col justify-between shrink-0">
                           <div className="flex items-center justify-center pt-1.5 pb-0.5 px-3">
@@ -3124,20 +3124,18 @@ export default function Dashboard({
                         </div>
                       </div>
 
-                      {/* PANEL 2: APPROVAL (4 Sub-columns) */}
-                      <div className="flex-1 min-w-[460px] flex flex-col border-2 border-[#1A1D20] rounded-2xl shadow-md bg-white overflow-hidden">
-                        {/* Dark Header with centered badge and 4 sub-headers */}
+                      {/* PANEL 2: APPROVAL (2 Sub-columns: SH & Kacab) */}
+                      <div className="flex-[1] min-w-[240px] flex flex-col border-2 border-[#1A1D20] rounded-2xl shadow-md bg-white overflow-hidden">
+                        {/* Dark Header with centered badge and 2 sub-headers */}
                         <div className="h-[58px] bg-[#1A1D20] text-white flex flex-col justify-between shrink-0">
                           <div className="flex items-center justify-center pt-1.5 pb-0.5 px-3">
-                            <span className="inline-flex items-center gap-1.5 bg-[#2A2E33] border border-slate-600/80 text-orange-300 px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm">
-                              <span>☑️</span> APPROVAL FLOW BERJENJANG ATAS BERKAS DI ADMIN
+                            <span className="inline-flex items-center gap-1.5 bg-[#2A2E33] border border-slate-600/80 text-orange-300 px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm truncate">
+                              <span>☑️</span> APPROVAL FLOW DI ADMIN
                             </span>
                           </div>
-                          <div className="grid grid-cols-4 text-center divide-x divide-slate-800/80 pb-1 text-[8.5px] font-black tracking-wider uppercase">
+                          <div className="grid grid-cols-2 text-center divide-x divide-slate-800/80 pb-1 text-[8.5px] font-black tracking-wider uppercase">
                             <span className="text-orange-300">2.1 BELUM APPR. SH</span>
                             <span className="text-orange-300">2.2 BELUM APPR. KACAB</span>
-                            <span className="text-orange-300">2.3 BELUM APPR. RH</span>
-                            <span className="text-orange-300">2.4 BELUM APPR. DH</span>
                           </div>
                         </div>
 
@@ -3156,7 +3154,7 @@ export default function Dashboard({
                             };
 
                             return (
-                              <div key={cat} className="h-[76px] grid grid-cols-4 gap-1.5 p-1.5">
+                              <div key={cat} className="h-[76px] grid grid-cols-2 gap-1.5 p-1.5">
                                  {/* 1. Belum Appr. SH */}
                                 <div
                                   onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat, stage: '3_sap_sh' }))}
@@ -3219,74 +3217,13 @@ export default function Dashboard({
                                   </div>
                                 </div>
 
-                                {/* 3. Belum Appr. RH */}
-                                <div
-                                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat, stage: '3_sap_rh' }))}
-                                  className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
-                                    pipeline.stage5RegionalApprove > 0
-                                      ? 'bg-[#FFF7ED] border-orange-200 hover:border-orange-300 shadow-2xs'
-                                      : 'bg-slate-50/60 border-slate-200/60 opacity-60 hover:opacity-100'
-                                  }`}
-                                  title={`Klik untuk menyaring kategori ${cat} Belum Approve Regional Head (${formatRupiah(pipeline.stage5RegionalApproveValue || 0)})`}
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[8px] font-black text-orange-700 uppercase tracking-wider">BELUM APPR. RH</span>
-                                    <Info className="w-2.5 h-2.5 text-orange-400 opacity-70" />
-                                  </div>
-                                  <div className="flex items-baseline justify-between mt-0.5">
-                                    <span className="text-base font-black text-slate-900 tracking-tight leading-none">
-                                      {pipeline.stage5RegionalApprove}
-                                    </span>
-                                    {pipeline.stage5RegionalApprove > 0 && (
-                                      <span className="text-[7px] font-black bg-orange-100 text-orange-900 px-1 py-0.2 rounded uppercase tracking-wider">
-                                        Pending
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="mt-0.5 pt-0.5 border-t border-orange-200/60 flex items-center justify-between">
-                                    <span className="text-[9px] font-black text-slate-800 tracking-tight truncate">
-                                      {formatRupiah(pipeline.stage5RegionalApproveValue || 0)}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                {/* 4. Belum Appr. DH */}
-                                <div
-                                  onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ category: cat, stage: '3_sap_dh' }))}
-                                  className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
-                                    pipeline.stage6DivisionApprove > 0
-                                      ? 'bg-[#FFF7ED] border-orange-200 hover:border-orange-300 shadow-2xs'
-                                      : 'bg-slate-50/60 border-slate-200/60 opacity-60 hover:opacity-100'
-                                  }`}
-                                  title={`Klik untuk menyaring kategori ${cat} Belum Approve Division Head (${formatRupiah(pipeline.stage6DivisionApproveValue || 0)})`}
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[8px] font-black text-orange-700 uppercase tracking-wider">BELUM APPR. DH</span>
-                                    <Info className="w-2.5 h-2.5 text-orange-400 opacity-70" />
-                                  </div>
-                                  <div className="flex items-baseline justify-between mt-0.5">
-                                    <span className="text-base font-black text-slate-900 tracking-tight leading-none">
-                                      {pipeline.stage6DivisionApprove}
-                                    </span>
-                                    {pipeline.stage6DivisionApprove > 0 && (
-                                      <span className="text-[7px] font-black bg-orange-100 text-orange-900 px-1 py-0.2 rounded uppercase tracking-wider">
-                                        Pending
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="mt-0.5 pt-0.5 border-t border-orange-200/60 flex items-center justify-between">
-                                    <span className="text-[9px] font-black text-slate-800 tracking-tight truncate">
-                                      {formatRupiah(pipeline.stage6DivisionApproveValue || 0)}
-                                    </span>
-                                  </div>
-                                </div>
                               </div>
                             );
                           })}
                         </div>
 
                         {/* Footer Totals */}
-                        <div className="h-[76px] grid grid-cols-4 gap-1.5 p-1.5 bg-slate-50/90 border-t-2 border-slate-200 shrink-0">
+                        <div className="h-[76px] grid grid-cols-2 gap-1.5 p-1.5 bg-slate-50/90 border-t-2 border-slate-200 shrink-0">
                           {/* Total SH */}
                           <div
                             onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ stage: '3_sap_sh' }))}
@@ -3345,68 +3282,6 @@ export default function Dashboard({
                             <div className="mt-0.5 pt-0.5 border-t border-orange-200 flex items-center justify-between">
                               <span className="text-[9px] font-black text-slate-900 tracking-tight truncate">
                                 {formatRupiah(totalStage3KacabVal)}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Total RH */}
-                          <div
-                            onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ stage: '3_sap_rh' }))}
-                            className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
-                              totalStage4RH > 0
-                                ? 'bg-orange-100/80 border-orange-300 hover:border-orange-400 shadow-2xs'
-                                : 'bg-slate-50/60 border-slate-200/60 opacity-60'
-                            }`}
-                            title={`Klik untuk menyaring seluruh Belum Approve RH (${formatRupiah(totalStage4RHVal)})`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-[8px] font-black text-orange-800 uppercase tracking-wider">TOTAL RH</span>
-                              <Info className="w-2.5 h-2.5 text-indigo-600 opacity-80" />
-                            </div>
-                            <div className="flex items-baseline justify-between mt-0.5">
-                              <span className="text-base font-black text-slate-900 tracking-tight leading-none">
-                                {totalStage4RH}
-                              </span>
-                              {totalStage4RH > 0 && (
-                                <span className="text-[7px] font-black bg-orange-200 text-indigo-900 px-1 py-0.2 rounded uppercase tracking-wider">
-                                  Pending
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-0.5 pt-0.5 border-t border-orange-200 flex items-center justify-between">
-                              <span className="text-[9px] font-black text-slate-900 tracking-tight truncate">
-                                {formatRupiah(totalStage4RHVal)}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Total DH */}
-                          <div
-                            onClick={() => onSelectDashboardFilter?.(getPipelineFilter({ stage: '3_sap_dh' }))}
-                            className={`rounded-xl p-1.5 flex flex-col justify-between cursor-pointer active:scale-[0.98] transition-all border ${
-                              totalStage5DH > 0
-                                ? 'bg-orange-100/80 border-orange-300 hover:border-orange-400 shadow-2xs'
-                                : 'bg-slate-50/60 border-slate-200/60 opacity-60'
-                            }`}
-                            title={`Klik untuk menyaring seluruh Belum Approve DH (${formatRupiah(totalStage5DHVal)})`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-[8px] font-black text-orange-800 uppercase tracking-wider">TOTAL DH</span>
-                              <Info className="w-2.5 h-2.5 text-indigo-600 opacity-80" />
-                            </div>
-                            <div className="flex items-baseline justify-between mt-0.5">
-                              <span className="text-base font-black text-slate-900 tracking-tight leading-none">
-                                {totalStage5DH}
-                              </span>
-                              {totalStage5DH > 0 && (
-                                <span className="text-[7px] font-black bg-orange-200 text-indigo-900 px-1 py-0.2 rounded uppercase tracking-wider">
-                                  Pending
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-0.5 pt-0.5 border-t border-orange-200 flex items-center justify-between">
-                              <span className="text-[9px] font-black text-slate-900 tracking-tight truncate">
-                                {formatRupiah(totalStage5DHVal)}
                               </span>
                             </div>
                           </div>

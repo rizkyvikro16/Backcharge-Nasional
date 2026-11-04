@@ -265,6 +265,7 @@ export function packExtraFields(tx: any): string {
   if (!packed) packed = '-';
 
   if (tx.no_tilang && tx.no_tilang !== '-') packed += `||TILANG:${tx.no_tilang}`;
+  if (tx.no_cmd && tx.no_cmd !== '-') packed += `||NO_CMD:${tx.no_cmd}`;
   if (tx.tanggal) packed += `||TANGGAL:${tx.tanggal}`;
   if (tx.tanggal_handover) packed += `||TANGGAL_HANDOVER:${tx.tanggal_handover}`;
   if (tx.nama_bro && tx.nama_bro !== '-') packed += `||NAMA_BRO:${tx.nama_bro}`;
@@ -297,6 +298,7 @@ export function unpackExtraFields(item: any): any {
   if (!item) return item;
   let no_bak = item.no_bak || '-';
   let no_tilang = item.no_tilang || '-';
+  let no_cmd = item.no_cmd || '-';
   let tanggal = item.tanggal || null;
   let tanggal_handover = item.tanggal_handover || null;
   let nama_bro = item.nama_bro || item.bro_name || '-';
@@ -330,6 +332,12 @@ export function unpackExtraFields(item: any): any {
       if (part.startsWith('TILANG:')) {
         const val = part.substring(7);
         if (!no_tilang || no_tilang === '-') no_tilang = val;
+      } else if (part.startsWith('NO_CMD:')) {
+        const val = part.substring(7);
+        if (!no_cmd || no_cmd === '-') no_cmd = val;
+      } else if (part.startsWith('CMD:')) {
+        const val = part.substring(4);
+        if (!no_cmd || no_cmd === '-') no_cmd = val;
       } else if (part.startsWith('TANGGAL:')) {
         const val = part.substring(8);
         if (!tanggal) tanggal = val;
@@ -404,6 +412,7 @@ export function unpackExtraFields(item: any): any {
     status_handover,
     no_bak,
     no_tilang,
+    no_cmd: no_cmd || item.no_cmd || '-',
     tanggal,
     tanggal_handover,
     tanggal_invoice,
@@ -440,27 +449,13 @@ export function isTransactionFullyApproved(tx: Partial<Backcharge>): boolean {
   if (!tx) return false;
   if (
     tx.status_approval === 'Ditolak' ||
-    tx.regional_approval_status === 'Ditolak' ||
-    tx.division_approval_status === 'Ditolak' ||
     tx.status_confirm === 'Ditolak / Negosiasi Ulang'
   ) {
     return false;
   }
 
-  // Tier 1 must be 'Disetujui'
+  // Tier 1 (Sales Head / Kacab) must be 'Disetujui'
   if (tx.status_approval !== 'Disetujui') {
-    return false;
-  }
-
-  const transVal = Number(tx.value) || 0;
-  const isMaintenance = tx.category === 'Maintenance';
-  const isRegionalHeadReq = isMaintenance ? transVal > 7500000 : transVal > 5000000;
-  const isDivisionHeadReq = transVal > 15000000;
-
-  if (isRegionalHeadReq && tx.regional_approval_status !== 'Disetujui') {
-    return false;
-  }
-  if (isDivisionHeadReq && tx.division_approval_status !== 'Disetujui') {
     return false;
   }
 
@@ -516,8 +511,6 @@ export function getEffectiveSapStatus(tx: Partial<Backcharge>): string {
 export function syncNonOrSapStatus<T extends Partial<Backcharge>>(tx: T): T {
   if (tx.category && tx.category !== 'Own Risk') {
     const isRejected = tx.status_approval === 'Ditolak' || 
-                       tx.regional_approval_status === 'Ditolak' || 
-                       tx.division_approval_status === 'Ditolak' || 
                        tx.status_confirm === 'Ditolak / Negosiasi Ulang';
 
     const isApproved = isTransactionFullyApproved(tx) ||
