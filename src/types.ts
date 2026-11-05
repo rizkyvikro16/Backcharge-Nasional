@@ -474,6 +474,9 @@ export function getEffectiveSapStatus(tx: Partial<Backcharge>): string {
   if (tx.status_sap === 'Not Bill' || String(tx.status_sap || '').toLowerCase() === 'not bill') {
     return 'Not Bill';
   }
+  if (tx.status_sap === 'Bill' || String(tx.status_sap || '').toLowerCase() === 'bill') {
+    return 'Bill';
+  }
 
   const hasInvoice = Boolean(
     tx.no_invoice &&
@@ -484,21 +487,13 @@ export function getEffectiveSapStatus(tx: Partial<Backcharge>): string {
   const isPaid = tx.status_payment === 'Lunas';
   const fullyApproved = isTransactionFullyApproved(tx);
 
-  // If not fully approved and no invoice and not paid, display 'N/A'
-  if (!fullyApproved && !hasInvoice && !isPaid) {
-    return 'N/A';
-  }
-
   if (tx.category && tx.category !== 'Own Risk') {
-    return 'Bill';
+    if (fullyApproved || hasInvoice || isPaid) {
+      return 'Bill';
+    }
   }
 
-  // For Own Risk, if explicitly set to Bill or has invoice/paid, display 'Bill'
-  if (tx.status_sap === 'Bill' || hasInvoice || isPaid) {
-    return 'Bill';
-  }
-
-  return tx.status_sap || 'N/A';
+  return tx.status_sap && tx.status_sap !== 'N/A' && tx.status_sap !== '' ? tx.status_sap : 'N/A';
 }
 
 /**
