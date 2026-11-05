@@ -26,6 +26,7 @@ import {
 } from './lib/browserNotification';
 
 import { getApiUrl, getAuthHeaders, clearAuthToken } from './lib/api';
+import { saveAppCache, loadAppCache, getPersistentCache } from './lib/dbCache';
 import { useIdleTimeout } from './hooks/useIdleTimeout';
 import IdleTimeoutModal from './components/IdleTimeoutModal';
 import { useRbac } from './lib/rbac';
@@ -299,14 +300,9 @@ export default function App() {
     }
   });
 
-  // Handler auto-logout jika 1 jam tidak digunakan
+  // Handler auto-logout jika 1 jam tidak digunakan (Dataset cache tetap dipertahankan agar re-login instan tanpa 0)
   const handleAutoLogout = useCallback((reason: string) => {
     try {
-      localStorage.removeItem('backcharge_cache_txs');
-      localStorage.removeItem('backcharge_cache_logs');
-      localStorage.removeItem('backcharge_cache_profs');
-      localStorage.removeItem('backcharge_cache_time_v2');
-      localStorage.removeItem('backcharge_cache_user');
       localStorage.removeItem('backcharge_last_activity');
     } catch (e) {}
     clearAuthToken();
@@ -421,6 +417,24 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     }
   });
   
+  // Async IndexedDB hydration effect on startup to restore full high-capacity dataset instantly
+  useEffect(() => {
+    loadAppCache().then(cached => {
+      if (cached.txs && Array.isArray(cached.txs) && cached.txs.length > 0) {
+        setTransactions(prev => (prev.length >= cached.txs!.length ? prev : normalizeTransactions(cached.txs!)));
+      }
+      if (cached.logs && Array.isArray(cached.logs) && cached.logs.length > 0) {
+        setLogs(prev => (prev.length >= cached.logs!.length ? prev : cached.logs!));
+      }
+      if (cached.profiles && Array.isArray(cached.profiles) && cached.profiles.length > 0) {
+        setProfiles(prev => (prev.length >= cached.profiles!.length ? prev : cached.profiles!));
+      }
+      if (cached.inquiries && Array.isArray(cached.inquiries) && cached.inquiries.length > 0) {
+        setInquiries(prev => (prev.length >= cached.inquiries!.length ? prev : cached.inquiries!));
+      }
+    }).catch(err => console.warn("IndexedDB cache hydration notice:", err));
+  }, []);
+
   // UI states
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [activeDetailRecord, setActiveDetailRecord] = useState<Backcharge | null>(null);
@@ -988,27 +1002,19 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     return promise;
   }, []);
 
-  // Helper for 0ms Optimistic UI Updates & Instant Local Storage Cache Sync
+  // Helper for 0ms Optimistic UI Updates & Instant Storage Cache Sync
   const updateTransactionsStateAndCache = useCallback((updater: (prev: Backcharge[]) => Backcharge[]) => {
     setTransactions(prev => {
       const next = updater(prev);
-      try {
-        localStorage.setItem('backcharge_cache_txs', JSON.stringify(next));
-        localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
-        if (currentUser) {
-          localStorage.setItem('backcharge_cache_user', currentUser.email);
-        }
-      } catch (e) {}
+      saveAppCache({ txs: next });
       return next;
     });
-  }, [currentUser]);
+  }, []);
 
   const updateProfilesStateAndCache = useCallback((updater: (prev: Profile[]) => Profile[]) => {
     setProfiles(prev => {
       const next = updater(prev);
-      try {
-        localStorage.setItem('backcharge_cache_profs', JSON.stringify(next));
-      } catch (e) {}
+      saveAppCache({ profiles: next });
       return next;
     });
   }, []);
@@ -1016,9 +1022,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
   const updateInquiriesStateAndCache = useCallback((updater: (prev: ContactInquiry[]) => ContactInquiry[]) => {
     setInquiries(prev => {
       const next = updater(prev);
-      try {
-        localStorage.setItem('backcharge_cache_inquiries', JSON.stringify(next));
-      } catch (e) {}
+      saveAppCache({ inquiries: next });
       return next;
     });
   }, []);
@@ -1038,26 +1042,41 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
     // 1. INSTANT LOCAL CACHE HYDRATION (0ms Load Experience)
     let loadedFromCache = false;
-    try {
-      const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
-      const cachedLogsStr = localStorage.getItem('backcharge_cache_logs');
-      const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
-      
-      if (cachedTxsStr) {
-        const parsedTxs = JSON.parse(cachedTxsStr);
-        if (Array.isArray(parsedTxs) && parsedTxs.length > 0) {
-          setTransactions(normalizeTransactions(parsedTxs));
-          loadedFromCache = true;
+    if (transactions.length > 0) {
+      loadedFromCache = true;
+    } else {
+      try {
+        const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
+        const cachedLogsStr = localStorage.getItem('backcharge_cache_logs');
+        const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
+        
+        if (cachedTxsStr) {
+          const parsedTxs = JSON.parse(cachedTxsStr);
+          if (Array.isArray(parsedTxs) && parsedTxs.length > 0) {
+            setTransactions(normalizeTransactions(parsedTxs));
+            loadedFromCache = true;
+          }
         }
+        if (cachedLogsStr) {
+          setLogs(JSON.parse(cachedLogsStr));
+        }
+        if (cachedProfsStr) {
+          setProfiles(JSON.parse(cachedProfsStr));
+        }
+
+        if (!loadedFromCache) {
+          const idbCache = await loadAppCache();
+          if (idbCache.txs && Array.isArray(idbCache.txs) && idbCache.txs.length > 0) {
+            setTransactions(normalizeTransactions(idbCache.txs));
+            if (idbCache.logs) setLogs(idbCache.logs);
+            if (idbCache.profiles) setProfiles(idbCache.profiles);
+            if (idbCache.inquiries) setInquiries(idbCache.inquiries);
+            loadedFromCache = true;
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to read initial local cache:", e);
       }
-      if (cachedLogsStr) {
-        setLogs(JSON.parse(cachedLogsStr));
-      }
-      if (cachedProfsStr) {
-        setProfiles(JSON.parse(cachedProfsStr));
-      }
-    } catch (e) {
-      console.warn("Failed to read initial local cache:", e);
     }
 
     // Only set full-page blocking loading if we do NOT have any local data cached
@@ -1284,20 +1303,12 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             setProfiles(finalProfiles);
             setInquiries(finalInquiries);
 
-            try {
-              localStorage.setItem("backcharge_cache_txs", JSON.stringify(finalTxs));
-              localStorage.setItem("backcharge_cache_logs", JSON.stringify(finalLogs));
-              localStorage.setItem("backcharge_cache_profs", JSON.stringify(finalProfiles));
-              localStorage.setItem("backcharge_cache_time_v2", String(Date.now()));
-              localStorage.setItem("backcharge_cache_user", activeUser?.email || "");
-            } catch (cacheErr) {
-              try {
-                const lean = finalTxs.slice(0, 500);
-                localStorage.setItem("backcharge_cache_txs", JSON.stringify(lean));
-                localStorage.setItem("backcharge_cache_time_v2", String(Date.now()));
-                localStorage.setItem("backcharge_cache_user", activeUser?.email || "");
-              } catch {}
-            }
+            saveAppCache({
+              txs: finalTxs,
+              logs: finalLogs,
+              profiles: finalProfiles,
+              inquiries: finalInquiries
+            });
           } catch (e: any) {
             const errStr = String(e?.message || e || "").toLowerCase();
             const isSchemaError = errStr.includes("no such table") || 
@@ -1437,8 +1448,13 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     }
     addToast(`Otentikasi Berhasil! Selamat datang, ${profile.full_name}.`, 'success');
     
-    // Immediately fetch user data with profile object to ensure zero-lag data population
-    fetchData(true, profile);
+    // If local transactions are already cached, avoid triggering full-screen loading state (no 0 count flicker)
+    if (transactions.length > 0) {
+      setLoading(false);
+    }
+
+    // Fetch and synchronize data in background with Cloudflare D1
+    fetchData(false, profile);
   };
 
   // Logout handler
@@ -1448,12 +1464,8 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
   const confirmLogout = () => {
     try {
-      localStorage.removeItem('backcharge_cache_txs');
-      localStorage.removeItem('backcharge_cache_logs');
-      localStorage.removeItem('backcharge_cache_profs');
-      localStorage.removeItem('backcharge_cache_time_v2');
-      localStorage.removeItem('backcharge_cache_user');
       localStorage.removeItem('backcharge_last_activity');
+      // Dataset cache is intentionally preserved so user login is instant with 0ms lag
     } catch (e) {}
     clearAuthToken();
     setCurrentUser(null);

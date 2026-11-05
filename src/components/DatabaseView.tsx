@@ -2105,10 +2105,17 @@ export default function DatabaseView({
           else if (catLower.includes('unclaim')) category = 'Unclaimable Insurance';
           else if (catLower.includes('dokumen')) category = 'Dokumen Kendaraan';
 
-          // Branch normalization
+          // Branch normalization with case-insensitive & partial fuzzy matching
           let branch = branchRaw;
-          if (!branch || !ALL_SYSTEM_BRANCHES.includes(branch)) {
+          if (!branch) {
             branch = userBranches[0] || 'Bandung';
+          } else {
+            const bMatch = ALL_SYSTEM_BRANCHES.find(b => b.toLowerCase() === branch.toLowerCase() || b.toLowerCase().includes(branch.toLowerCase()) || branch.toLowerCase().includes(b.toLowerCase()));
+            if (bMatch) {
+              branch = bMatch;
+            } else {
+              branch = userBranches[0] || 'Bandung';
+            }
           }
 
           const parsedVal = Number(String(valueRaw).replace(/[^0-9.-]+/g, '')) || 0;

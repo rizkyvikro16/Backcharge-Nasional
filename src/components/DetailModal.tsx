@@ -1538,6 +1538,18 @@ export default function DetailModal({
                 </div>
               )}
 
+              {(transaction.alasan || (transaction as any).dok_pendukung_alasan) && (
+                <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl space-y-1">
+                  <span className="block text-[9px] font-extrabold text-amber-800 uppercase tracking-wider flex items-center gap-1">
+                    <span>💡</span>
+                    <span>Catatan / Alasan Pengajuan</span>
+                  </span>
+                  <p className="text-xs font-semibold text-slate-800 leading-relaxed whitespace-pre-wrap">
+                    {transaction.alasan || (transaction as any).dok_pendukung_alasan}
+                  </p>
+                </div>
+              )}
+
 
               <div className="pt-3 border-t border-slate-200/60 space-y-2.5">
                 <span className="block text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Lampiran Dokumen</span>
@@ -2233,7 +2245,9 @@ export default function DetailModal({
                     ) : (
                       <div className="flex items-center justify-between pt-1">
                         <div className="text-[10px] text-slate-500">
-                          {transaction.approved_by ? (
+                          {transaction.category === 'Own Risk' && (!transaction.status_sap || transaction.status_sap === 'N/A' || transaction.status_sap === '') ? (
+                            <span className="text-amber-700 font-bold">⚠️ Wajib pilih Status SAP (Bill / Not Bill) terlebih dahulu sebelum dapat melakukan approval Own Risk.</span>
+                          ) : transaction.approved_by ? (
                             <span>Disetujui oleh: <strong className="text-slate-700">{transaction.approved_by}</strong></span>
                           ) : (
                             <span>Membutuhkan persetujuan pejabat berwenang sebelum penerbitan invoice.</span>
@@ -2242,12 +2256,22 @@ export default function DetailModal({
                         {(isAuthorizedApprover || hasRole(currentUser.role, 'Administrator')) && (
                           <button 
                             onClick={() => {
+                              if (transaction.category === 'Own Risk' && (!transaction.status_sap || transaction.status_sap === 'N/A' || transaction.status_sap === '')) {
+                                if (addToast) addToast("Harap pilih dan simpan status SAP (Bill / Not Bill) terlebih dahulu di langkah 1 sebelum melakukan Approval Own Risk.", "error");
+                                else alert("Harap pilih dan simpan status SAP (Bill / Not Bill) terlebih dahulu di langkah 1 sebelum melakukan Approval Own Risk.");
+                                return;
+                              }
                               setModalApprovalStatus(transaction.status_approval === 'Disetujui' ? 'Disetujui' : 'Disetujui');
                               setModalApprovalNotes(transaction.approval_note || '');
                               setShowActionForm('approval');
                             }}
-                            className={`px-3 py-1.5 text-white text-xs font-extrabold rounded-lg shadow transition-all cursor-pointer shrink-0 ${
-                              transaction.status_approval === 'Disetujui' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700 animate-pulse'
+                            disabled={transaction.category === 'Own Risk' && (!transaction.status_sap || transaction.status_sap === 'N/A' || transaction.status_sap === '')}
+                            className={`px-3 py-1.5 text-white text-xs font-extrabold rounded-lg shadow transition-all shrink-0 ${
+                              transaction.category === 'Own Risk' && (!transaction.status_sap || transaction.status_sap === 'N/A' || transaction.status_sap === '')
+                                ? 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-60'
+                                : transaction.status_approval === 'Disetujui' 
+                                ? 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer' 
+                                : 'bg-amber-600 hover:bg-amber-700 animate-pulse cursor-pointer'
                             }`}
                           >
                             {transaction.status_approval === 'Disetujui' ? 'Ubah Approval' : 'Proses Approval'}
