@@ -58,24 +58,38 @@ function SafeLightboxContent({
     setIsImageReady(false);
     setHasError(false);
 
-    if (!url) {
-      setHasError(true);
-      setIsLoading(false);
+    const cleanUrl = (url || '').trim();
+    if (!cleanUrl || cleanUrl === 'dummy_pdf_file' || cleanUrl === '-' || cleanUrl === 'null' || cleanUrl === 'undefined' || cleanUrl.startsWith('dummy_')) {
+      if (isMounted) {
+        setHasError(true);
+        setIsLoading(false);
+      }
       return;
     }
 
     // 1. Data URLs or existing Blob URLs can be used immediately
-    if (url.startsWith('data:') || url.startsWith('blob:')) {
-      setDataUrl(url);
-      setIsPdf(url.startsWith('data:application/pdf') || url.toLowerCase().includes('.pdf'));
+    if (cleanUrl.startsWith('data:') || cleanUrl.startsWith('blob:')) {
+      setDataUrl(cleanUrl);
+      setIsPdf(cleanUrl.startsWith('data:application/pdf') || cleanUrl.toLowerCase().includes('.pdf'));
       setIsLoading(false);
       setHasError(false);
       return;
     }
 
     // 2. Extract Google Drive file ID if present and convert to backend secure proxy URL
-    const targetUrl = toSecureProxyUrl(url);
-    const driveId = extractDriveId(url);
+    const targetUrl = toSecureProxyUrl(cleanUrl);
+    const driveId = extractDriveId(cleanUrl);
+
+    const isLocalApiOrDisk = targetUrl.startsWith('/api/') || targetUrl.startsWith('/uploads/');
+    const isExternalHttp = targetUrl.startsWith('http://') || targetUrl.startsWith('https://');
+
+    if (!isLocalApiOrDisk && !isExternalHttp && !driveId) {
+      if (isMounted) {
+        setHasError(true);
+        setIsLoading(false);
+      }
+      return;
+    }
 
     // 3. Prepare Authentication Headers with backcharge_auth_token
     const token = localStorage.getItem('backcharge_auth_token') || localStorage.getItem('bc_auth_token') || '';
@@ -116,10 +130,10 @@ function SafeLightboxContent({
               errDetail = `HTTP ${response.status} ${response.statusText}`;
             }
           }
-          console.error(`[SafeLightboxContent] Gagal memuat berkas dari ${fetchUrl} (Status ${response.status}):`, errDetail);
+          console.warn(`[SafeLightboxContent] Berkas tidak ditemukan di ${fetchUrl} (Status ${response.status})`);
 
           // Coba fallback ke /api/file-data jika ini file Google Drive
-          if (driveId && driveId !== url) {
+          if (driveId && driveId !== cleanUrl) {
             try {
               const fallbackRes = await fetch(getApiUrl(`/api/file-data?driveId=${encodeURIComponent(driveId)}`), {
                 headers,
@@ -134,11 +148,9 @@ function SafeLightboxContent({
                   setHasError(false);
                   return;
                 }
-              } else {
-                console.error(`[SafeLightboxContent] Fallback /api/file-data juga gagal (Status ${fallbackRes.status})`);
               }
             } catch (fallbackErr) {
-              console.error("[SafeLightboxContent] Fallback error:", fallbackErr);
+              console.warn("[SafeLightboxContent] Fallback error:", fallbackErr);
             }
           }
 
@@ -152,8 +164,6 @@ function SafeLightboxContent({
         // 2. Pastikan Content-Type bukan JSON error atau HTML
         const contentType = (response.headers.get("content-type") || "").toLowerCase();
         if (contentType.includes("application/json")) {
-          const json = await response.json();
-          console.error(`[SafeLightboxContent] Menerima payload JSON dari ${fetchUrl}:`, json);
           if (isMounted) {
             setHasError(true);
             setIsLoading(false);
@@ -162,7 +172,7 @@ function SafeLightboxContent({
         }
 
         if (contentType.includes("text/html")) {
-          console.error(`[SafeLightboxContent] Menerima dokumen HTML dari ${fetchUrl}. Rute mungkin tidak ditemukan.`);
+          console.info(`[SafeLightboxContent] URL mengembalikan dokumen HTML. Mengaktifkan tampilan aman.`);
           if (isMounted) {
             setHasError(true);
             setIsLoading(false);

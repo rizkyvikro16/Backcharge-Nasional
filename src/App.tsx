@@ -974,6 +974,10 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
           return [];
         }
         const errStr = (d.error || "").toLowerCase();
+        const isQuotaExceeded = errStr.includes("7500") || errStr.includes("free tier") || errStr.includes("row read limit") || errStr.includes("exceeded d1");
+        if (isQuotaExceeded) {
+          return [];
+        }
         if ((errStr.includes("rate limit") || errStr.includes("rate exceeded")) && attempt <= 6) {
           const delayMs = Math.min(6000, attempt * 800 + Math.floor(Math.random() * 400));
           await new Promise(r => setTimeout(r, delayMs));
@@ -981,7 +985,6 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         }
         if (isReadQuery) {
           console.warn("D1 query returned unsuccessful, falling back gracefully:", d.error);
-          console.error("DEBUG: D1 error details:", d.error);
           return [];
         }
         throw new Error(d.error || "Gagal kueri D1");

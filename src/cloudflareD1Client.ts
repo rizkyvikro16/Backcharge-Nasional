@@ -122,22 +122,18 @@ export async function ensureD1TablesExist(): Promise<void> {
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE INDEX IF NOT EXISTS idx_backcharges_updated_at ON backcharges(updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_backcharges_created_at ON backcharges(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_branch_updated ON backcharges(branch, updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_backcharges_branch_created ON backcharges(branch, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_backcharges_category ON backcharges(category);
-        CREATE INDEX IF NOT EXISTS idx_backcharges_branch ON backcharges(branch);
-        CREATE INDEX IF NOT EXISTS idx_backcharges_status_payment ON backcharges(status_payment);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_category_created ON backcharges(category, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_backcharges_approval_handover ON backcharges(status_approval, status_handover, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_backcharges_status_sap ON backcharges(status_sap);
-        CREATE INDEX IF NOT EXISTS idx_backcharges_status_handover ON backcharges(status_handover);
-        CREATE INDEX IF NOT EXISTS idx_backcharges_status_approval ON backcharges(status_approval);
-        CREATE INDEX IF NOT EXISTS idx_backcharges_reg_approval ON backcharges(regional_approval_status);
-        CREATE INDEX IF NOT EXISTS idx_backcharges_div_approval ON backcharges(division_approval_status);
-        CREATE INDEX IF NOT EXISTS idx_backcharges_category ON backcharges(category);
-        CREATE INDEX IF NOT EXISTS idx_backcharges_branch ON backcharges(branch);
         CREATE INDEX IF NOT EXISTS idx_backcharges_status_payment ON backcharges(status_payment);
-        CREATE INDEX IF NOT EXISTS idx_backcharges_status_handover ON backcharges(status_handover);
         CREATE INDEX IF NOT EXISTS idx_backcharges_license_plate ON backcharges(license_plate);
         CREATE INDEX IF NOT EXISTS idx_backcharges_customer_name ON backcharges(customer_name);
+        CREATE INDEX IF NOT EXISTS idx_logs_tx_id ON activity_logs(transaction_id, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_logs_id ON activity_logs(id DESC);
         CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles(email);
         CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
       `;
@@ -160,7 +156,10 @@ export async function ensureD1TablesExist(): Promise<void> {
             );
         `);
       } catch (err: any) {
-        console.warn("Notice updating status_sap N/A to Bill:", err?.message);
+        const msg = String(err?.message || err || "");
+        if (!msg.includes("7500") && !msg.includes("free tier") && !msg.includes("row read limit")) {
+          console.warn("Notice updating status_sap N/A to Bill:", err?.message);
+        }
       }
 
       // Pastikan kolom force_password_reset tersedia di profiles
@@ -171,7 +170,10 @@ export async function ensureD1TablesExist(): Promise<void> {
           await queryD1("ALTER TABLE profiles ADD COLUMN force_password_reset BOOLEAN DEFAULT 0");
         }
       } catch (err: any) {
-        console.warn("⚠️ Failed to check/add force_password_reset column:", err.message);
+        const msg = String(err?.message || err || "");
+        if (!msg.includes("7500") && !msg.includes("free tier") && !msg.includes("row read limit")) {
+          console.warn("⚠️ Failed to check/add force_password_reset column:", err.message);
+        }
       }
 
       // Pastikan kolom no_cmd tersedia di backcharges
@@ -182,7 +184,10 @@ export async function ensureD1TablesExist(): Promise<void> {
           await queryD1("ALTER TABLE backcharges ADD COLUMN no_cmd TEXT DEFAULT '-'");
         }
       } catch (err: any) {
-        console.warn("⚠️ Failed to check/add no_cmd column:", err.message);
+        const msg = String(err?.message || err || "");
+        if (!msg.includes("7500") && !msg.includes("free tier") && !msg.includes("row read limit")) {
+          console.warn("⚠️ Failed to check/add no_cmd column:", err.message);
+        }
       }
 
       try {
@@ -222,7 +227,10 @@ export async function ensureD1TablesExist(): Promise<void> {
             }
           }
         } catch (checkErr: any) {
-          console.warn("Notice checking D1 row count:", checkErr.message);
+          const msg = String(checkErr?.message || checkErr || "");
+          if (!msg.includes("7500") && !msg.includes("free tier") && !msg.includes("row read limit")) {
+            console.warn("Notice checking D1 row count:", checkErr.message);
+          }
         }
       })().catch(() => {});
 
@@ -630,6 +638,15 @@ async function queryD1WithRetry(sql: string, params: any[] = [], attempt = 1): P
   } catch (err: any) {
     const errText = String(err.message || err).toLowerCase();
     
+    // Immediate fallback on D1 daily quota limit (Code 7500 / free tier row read limit)
+    const isQuotaLimit = errText.includes("7500") || errText.includes("free tier") || errText.includes("row read limit") || errText.includes("exceeded d1");
+    if (isQuotaLimit) {
+      if (isReadQuery) {
+        return getGracefulReadFallback(sql, params);
+      }
+      return [];
+    }
+
     // Auto-retry on Rate exceeded / Rate limits with progressive backoff
     const isRateLimit = errText.includes("rate limit") || errText.includes("rate exceeded") || errText.includes("too many requests") || errText.includes("10022");
     if (isRateLimit) {
