@@ -660,13 +660,11 @@ async function queryD1WithRetry(sql: string, params: any[] = [], attempt = 1): P
 
       if (attempt <= 6) {
         const delayMs = Math.min(8000, Math.pow(1.8, attempt) * 800 + Math.floor(Math.random() * 500));
-        console.warn(`⚠️ Cloudflare D1 Rate Limit detected. Retrying query (attempt ${attempt}/6) in ${Math.round(delayMs)}ms...`);
         await new Promise(resolve => setTimeout(resolve, delayMs));
         return queryD1WithRetry(sql, params, attempt + 1);
       }
 
       if (isReadQuery) {
-        console.warn(`⚠️ Exhausted retries for read query. Returning graceful fallback structure.`);
         return getGracefulReadFallback(sql, params);
       }
     }

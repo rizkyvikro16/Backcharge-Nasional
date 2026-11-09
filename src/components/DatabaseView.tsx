@@ -2668,8 +2668,11 @@ export default function DatabaseView({
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">Data Backcharge</h1>
-            <span className="px-3 py-1 bg-blue-50 text-blue-700 font-extrabold text-xs rounded-full border border-blue-200">
-              {filteredTransactions.length} dari {transactions.length} Total
+            <span 
+              className="px-3 py-1 bg-blue-50 text-blue-700 font-extrabold text-xs rounded-full border border-blue-200"
+              title={isNationalOrAllBranches(currentUser?.branch, currentUser?.role) ? "Akses Otoritas Nasional (100% Data Sistem)" : `Akses Otoritas Terbatas Cabang: ${currentUser?.branch}`}
+            >
+              {filteredTransactions.length} dari {transactions.length} Total {!isNationalOrAllBranches(currentUser?.branch, currentUser?.role) && currentUser?.branch ? `(Otoritas Cabang ${currentUser.branch})` : ''}
             </span>
           </div>
           <p className="text-xs text-slate-500 font-medium mt-1">

@@ -933,7 +933,6 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
       if (isRateExceeded && attempt <= 6) {
         const delayMs = Math.min(6000, attempt * 800 + Math.floor(Math.random() * 400));
-        console.warn("⚠️ D1 Rate Limit (429). Retrying query in " + delayMs + "ms (attempt " + attempt + "/6)...");
         await new Promise(r => setTimeout(r, delayMs));
         return executeD1Query(sqlOrOpId, params, attempt + 1, extraPayload);
       }
@@ -1159,8 +1158,11 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             let finalTxs: Backcharge[] = cachedTxs;
             let performedFullSync = false;
 
+            // Check if logged in as Admin/Nasional but cached dataset has fewer than 500 rows (from a branch account)
+            const isCacheIncompleteForAdmin = isNationalOrAll && cachedTxs.length < 500;
+
             // STRATEGY A: Fast 20ms Delta Sync whenever cached rows exist (> 0)
-            if (cachedTxs.length > 0 && cachedMaxUpdated && !forceFull) {
+            if (cachedTxs.length > 0 && cachedMaxUpdated && !forceFull && !isCacheIncompleteForAdmin) {
               try {
                 const deltaRows = await executeD1Query(
                   "get_backcharges_since",
@@ -1188,9 +1190,9 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
               }
             }
 
-            // STRATEGY B: Smooth Progressive Streaming Fetch (For cold start or force refresh)
-            if (!performedFullSync || finalTxs.length === 0 || forceFull) {
-              const CHUNK_SIZE = 500;
+            // STRATEGY B: Instant Single-Pass Streaming Fetch (For cold start or force refresh)
+            if (!performedFullSync || finalTxs.length === 0 || forceFull || isCacheIncompleteForAdmin) {
+              const CHUNK_SIZE = 2000;
               // Step 1: Fetch Chunk 1 (Instant ~50ms First Screen)
               const chunk1 = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, {
                 branches: allowedBranchesParam,
@@ -1277,11 +1279,12 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
               }
             }
 
-            const [logsData, profilesData, inquiriesData] = await Promise.all([
-              executeD1Query("get_activity_logs"),
-              executeD1Query("get_profiles"),
-              executeD1Query("get_contact_inquiries")
-            ]);
+            // Execute initial table sync sequentially to prevent Cloudflare D1 429 rate limit collisions
+            const logsData = await executeD1Query("get_activity_logs");
+            await new Promise(r => setTimeout(r, 60));
+            const profilesData = await executeD1Query("get_profiles");
+            await new Promise(r => setTimeout(r, 60));
+            const inquiriesData = await executeD1Query("get_contact_inquiries");
 
             isInitialLoadRef.current = false;
             if (finalTxs && Array.isArray(finalTxs)) {
@@ -1472,8 +1475,8 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
       setLoading(false);
     }
 
-    // Fetch and synchronize data in background with Cloudflare D1
-    fetchData(false, profile);
+    // Fetch and synchronize data in background with Cloudflare D1 (force full sync for new login session)
+    fetchData(true, profile);
   };
 
   // Logout handler
