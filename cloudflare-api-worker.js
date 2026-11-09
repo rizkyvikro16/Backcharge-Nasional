@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { FULL_SEED_STATEMENTS } from "./src/lib/fullSeedData.ts";
 
 // Helper function for automatic table creation & migration inside Worker
 async function ensureD1SchemaWorker(db) {
@@ -151,29 +152,17 @@ async function ensureD1SchemaWorker(db) {
     }
   } catch (e) {}
 
-  // Seed default backcharges if empty
+  // Seed default backcharges if count < 1000
   try {
     const countBcs = await db.prepare("SELECT COUNT(*) as count FROM backcharges").first();
-    if (!countBcs || countBcs.count === 0) {
-      await db.batch([
-        db.prepare(`
-          INSERT INTO backcharges (
-            id, category, branch, no_bak, no_spk, no_sap, customer_name, license_plate, value,
-            status_sap, status_confirm, status_handover, no_invoice, status_payment, created_by,
-            created_at, updated_at, tanggal
-          ) VALUES 
-          ('BC-2026-0001', 'Own Risk', 'BSO GSO & AFFCO', 'BAK/2026/06/001', '-', 'SAP-OR-101', 'PT Carrefour Indonesia', 'B 9201 UBA', 4500000, 'Bill', 'Telah Dikonfirmasi', 'Diterima Admin', 'INV/2026/VI/011', 'Lunas', 'aso.jkt@company.id', '2026-06-28T10:00:00.000Z', '2026-06-28T10:00:00.000Z', '2026-06-28'),
-          ('BC-2026-0002', 'Maintenance', 'Surabaya', 'BAK/2026/06/002', 'SPK-MAINT-202', '-', 'PT Unilever Indonesia', 'L 1827 CV', 1200000, 'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin', '-', 'Belum Bayar', 'bro.sby@company.id', '2026-06-30T14:30:00.000Z', '2026-06-30T14:30:00.000Z', '2026-06-30'),
-          ('BC-2026-0003', 'Ekspedisi', 'Bandung', '-', 'SPK-EXP-303', '-', 'PT Indofood CBP', '-', 8500000, 'N/A', 'Belum Konfirmasi', 'Pending', '-', 'Belum Bayar', 'aso.bdg@company.id', '2026-07-01T09:15:00.000Z', '2026-07-01T09:15:00.000Z', '2026-07-01'),
-          ('BC-2026-0004', 'ETLE', 'BSO Pontianak', 'BAK/2026/07/004', '-', '-', 'PT Kalimantan Sawit Sejahtera', 'KB 1423 XX', 2500000, 'N/A', 'Belum Konfirmasi', 'Diserahkan ke Admin', '-', 'Belum Bayar', 'aso.ptk@company.id', '2026-07-02T11:20:00.000Z', '2026-07-02T11:20:00.000Z', '2026-07-02');
-        `),
-        db.prepare(`
-          INSERT INTO activity_logs (timestamp, transaction_id, performed_by, action_description) VALUES
-          ('2026-06-28T10:00:00.000Z', 'BC-2026-0001', 'aso.jkt@company.id', 'Membuat transaksi Backcharge baru kategori Own Risk di cabang BSO GSO & AFFCO'),
-          ('2026-06-29T11:00:00.000Z', 'BC-2026-0001', 'sales.jkt@company.id', 'Status Konfirmasi berubah menjadi Telah Dikonfirmasi'),
-          ('2026-06-30T14:30:00.000Z', 'BC-2026-0002', 'bro.sby@company.id', 'Membuat transaksi Backcharge baru kategori Maintenance di cabang Surabaya');
-        `)
-      ]);
+    if (!countBcs || countBcs.count < 1000) {
+      const BATCH_SIZE = 25;
+      for (let i = 0; i < FULL_SEED_STATEMENTS.length; i += BATCH_SIZE) {
+        const batch = FULL_SEED_STATEMENTS.slice(i, i + BATCH_SIZE);
+        try {
+          await db.batch(batch.map(sql => db.prepare(sql)));
+        } catch {}
+      }
     }
   } catch (e) {}
 }
@@ -984,11 +973,38 @@ export default {
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
+          case "sync_full_database": {
+            const countBcs = await env.DB.prepare("SELECT COUNT(*) as count FROM backcharges").first();
+            const currentCount = (countBcs && countBcs.count) || 0;
+            if (currentCount < 1000) {
+              const BATCH_SIZE = 25;
+              for (let i = 0; i < FULL_SEED_STATEMENTS.length; i += BATCH_SIZE) {
+                const batch = FULL_SEED_STATEMENTS.slice(i, i + BATCH_SIZE);
+                try {
+                  await env.DB.batch(batch.map(sql => env.DB.prepare(sql)));
+                } catch {}
+              }
+            }
+            const results = await executeD1("SELECT * FROM backcharges ORDER BY created_at DESC");
+            return new Response(JSON.stringify({ success: true, results, count: results.length }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+          }
+
           case "get_backcharges_since": {
-            const since = (params && params[0]) || body.since;
-            if (!since) return new Response(JSON.stringify({ success: false, error: "Parameter 'since' diperlukan" }), { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } });
-            
+            const since = (params && params[0]) || body.since || "";
             const branches = body.branches || (Array.isArray(params) && params.length > 1 ? params.slice(1) : null);
+
+            if (!since || typeof since !== "string" || since.trim() === "") {
+              let sql = "SELECT * FROM backcharges";
+              let qParams = [];
+              if (Array.isArray(branches) && branches.length > 0) {
+                const placeholders = branches.map(() => '?').join(', ');
+                sql += ` WHERE branch IN (${placeholders})`;
+                qParams.push(...branches);
+              }
+              sql += " ORDER BY created_at DESC LIMIT 2000";
+              const results = await executeD1(sql, qParams);
+              return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
             
             let sql = "SELECT * FROM backcharges WHERE (updated_at > ? OR created_at > ?)";
             let queryParams = [since, since];
@@ -999,7 +1015,7 @@ export default {
               queryParams.push(...branches);
             }
             
-            sql += " ORDER BY updated_at DESC LIMIT 500";
+            sql += " ORDER BY updated_at DESC LIMIT 1000";
 
             const results = await executeD1(sql, queryParams);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
