@@ -1045,38 +1045,37 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
     // 1. INSTANT LOCAL CACHE HYDRATION (0ms Load Experience)
     let loadedFromCache = false;
+    let initialCachedTxs: Backcharge[] = [];
     if (transactions.length > 0) {
       loadedFromCache = true;
+      initialCachedTxs = transactions;
     } else {
       try {
-        const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
+        // Prioritize IndexedDB complete store first
+        const idbCache = await loadAppCache();
+        if (idbCache.txs && Array.isArray(idbCache.txs) && idbCache.txs.length > 0) {
+          initialCachedTxs = idbCache.txs;
+          setTransactions(normalizeTransactions(idbCache.txs));
+          if (idbCache.logs) setLogs(idbCache.logs);
+          if (idbCache.profiles) setProfiles(idbCache.profiles);
+          if (idbCache.inquiries) setInquiries(idbCache.inquiries);
+          loadedFromCache = true;
+        } else {
+          // Fallback to localStorage if IndexedDB is empty
+          const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
+          if (cachedTxsStr) {
+            const parsedTxs = JSON.parse(cachedTxsStr);
+            if (Array.isArray(parsedTxs) && parsedTxs.length > 0) {
+              initialCachedTxs = parsedTxs;
+              setTransactions(normalizeTransactions(parsedTxs));
+              loadedFromCache = true;
+            }
+          }
+        }
         const cachedLogsStr = localStorage.getItem('backcharge_cache_logs');
         const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
-        
-        if (cachedTxsStr) {
-          const parsedTxs = JSON.parse(cachedTxsStr);
-          if (Array.isArray(parsedTxs) && parsedTxs.length > 0) {
-            setTransactions(normalizeTransactions(parsedTxs));
-            loadedFromCache = true;
-          }
-        }
-        if (cachedLogsStr) {
-          setLogs(JSON.parse(cachedLogsStr));
-        }
-        if (cachedProfsStr) {
-          setProfiles(JSON.parse(cachedProfsStr));
-        }
-
-        if (!loadedFromCache) {
-          const idbCache = await loadAppCache();
-          if (idbCache.txs && Array.isArray(idbCache.txs) && idbCache.txs.length > 0) {
-            setTransactions(normalizeTransactions(idbCache.txs));
-            if (idbCache.logs) setLogs(idbCache.logs);
-            if (idbCache.profiles) setProfiles(idbCache.profiles);
-            if (idbCache.inquiries) setInquiries(idbCache.inquiries);
-            loadedFromCache = true;
-          }
-        }
+        if (cachedLogsStr && logs.length === 0) setLogs(JSON.parse(cachedLogsStr));
+        if (cachedProfsStr && profiles.length === 0) setProfiles(JSON.parse(cachedProfsStr));
       } catch (e) {
         console.warn("Failed to read initial local cache:", e);
       }
@@ -1146,21 +1145,22 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             // =========================================================================
             // ULTRA-FAST 0ms INSTANT SYNC ENGINE & INDEXED DELTA REVALIDATION
             // =========================================================================
-            let cachedTxs: Backcharge[] = [];
-            try {
-              const cachedStr = localStorage.getItem("backcharge_cache_txs");
-              if (cachedStr) {
-                const parsed = JSON.parse(cachedStr);
-                if (Array.isArray(parsed) && parsed.length > 0) cachedTxs = parsed;
-              }
-            } catch {}
+            let cachedTxs: Backcharge[] = initialCachedTxs.length > 0 ? initialCachedTxs : transactions;
+            if (cachedTxs.length === 0) {
+              try {
+                const idbCache = await loadAppCache();
+                if (idbCache.txs && Array.isArray(idbCache.txs) && idbCache.txs.length > 0) {
+                  cachedTxs = idbCache.txs;
+                }
+              } catch {}
+            }
 
             const cachedMaxUpdated = localStorage.getItem("backcharge_cache_max_updated") || "";
             let finalTxs: Backcharge[] = cachedTxs;
             let performedFullSync = false;
 
-            // STRATEGY A: Fast 20ms Delta Sync when full cache (>=500) already exists
-            if (cachedTxs.length >= 500 && cachedMaxUpdated && !forceFull) {
+            // STRATEGY A: Fast 20ms Delta Sync whenever cached rows exist (> 0)
+            if (cachedTxs.length > 0 && cachedMaxUpdated && !forceFull) {
               try {
                 const deltaRows = await executeD1Query(
                   "get_backcharges_since",
@@ -1177,6 +1177,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                     unpackedDeltas.forEach(ut => txMap.set(ut.id, ut));
                     finalTxs = Array.from(txMap.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
                     setTransactions(normalizeTransactions(finalTxs));
+                    saveAppCache({ txs: finalTxs, maxUpdated: finalTxs.reduce((m, t) => (t.updated_at && t.updated_at > m ? t.updated_at : m), "") });
                   } else {
                     finalTxs = cachedTxs;
                   }
@@ -1207,6 +1208,17 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                     combined.push(item);
                   }
                 }
+                
+                // Preserve larger cached set if chunk1 returned fewer fallback items
+                if (cachedTxs.length > combined.length && !forceFull) {
+                  for (const oldItem of cachedTxs) {
+                    if (oldItem && oldItem.id && !seenIds.has(oldItem.id)) {
+                      seenIds.add(oldItem.id);
+                      combined.push(oldItem);
+                    }
+                  }
+                }
+
                 setTransactions(normalizeTransactions(combined));
                 setLoading(false);
 
@@ -1219,7 +1231,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                   let hasMore = true;
                   let streamCount = 0;
 
-                  while (hasMore && streamCount < 30) {
+                  while (hasMore && streamCount < 50) {
                     streamCount++;
                     const nextChunk = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, {
                       branches: allowedBranchesParam,
@@ -1257,6 +1269,9 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                 if (Array.isArray(fullFallback) && fullFallback.length > 0) {
                   finalTxs = fullFallback.map(unpackExtraFields);
                   setTransactions(normalizeTransactions(finalTxs));
+                } else if (cachedTxs.length > 0) {
+                  finalTxs = cachedTxs;
+                  setTransactions(normalizeTransactions(finalTxs));
                 }
                 setLoading(false);
               }
@@ -1273,6 +1288,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
               if (finalTxs.length > 0) {
                 const maxUp = finalTxs.reduce((max, t) => (t.updated_at && t.updated_at > max) ? t.updated_at : max, "");
                 const maxCr = finalTxs.reduce((max, t) => (t.created_at && t.created_at > max) ? t.created_at : max, "");
+                saveAppCache({ txs: finalTxs, maxUpdated: maxUp || maxCr });
                 try {
                   localStorage.setItem("backcharge_cache_max_updated", maxUp || maxCr);
                   localStorage.setItem("backcharge_cache_max_created", maxCr);
