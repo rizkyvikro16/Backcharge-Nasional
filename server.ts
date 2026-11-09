@@ -9,6 +9,7 @@ import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
 import sharp from "sharp";
 import { queryD1, ensureD1TablesExist, importFullMigrationFile, saveBase64ToDisk, cleanExistingD1Base64 } from "./src/cloudflareD1Client.ts";
+import { FULL_SEED_STATEMENTS } from "./src/lib/fullSeedData.ts";
 
 async function optimizePayloadImages(obj: Record<string, any>): Promise<void> {
   if (!obj || typeof obj !== 'object') return;
@@ -1738,6 +1739,26 @@ async function startServer() {
           return res.json({ success: true, results: results || [] });
         }
 
+
+        case "sync_full_database": {
+          const countRes = await queryD1("SELECT COUNT(*) as count FROM backcharges");
+          const currentCount = Number(countRes?.[0]?.count) || 0;
+
+          if (currentCount < 1000) {
+            console.log(`[SYNC FULL] Auto-seeding full database into D1 (${FULL_SEED_STATEMENTS.length} rows)...`);
+            const BATCH_SIZE = 30;
+            for (let i = 0; i < FULL_SEED_STATEMENTS.length; i += BATCH_SIZE) {
+              const batch = FULL_SEED_STATEMENTS.slice(i, i + BATCH_SIZE).join("\n");
+              try {
+                await queryD1(batch);
+              } catch {}
+              await new Promise(r => setTimeout(r, 40));
+            }
+          }
+
+          const finalResults = await queryD1("SELECT * FROM backcharges ORDER BY created_at DESC");
+          return res.json({ success: true, results: finalResults || [], count: finalResults.length });
+        }
 
         case "get_paginated_backcharges": {
           const result = await getPaginatedBackcharges(req.body);

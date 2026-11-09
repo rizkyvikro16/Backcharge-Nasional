@@ -1277,6 +1277,20 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                 }
                 setLoading(false);
               }
+
+              // Auto-heal: If user is Administrator/Nasional but database returned < 500 records, trigger sync_full_database
+              if (isNationalOrAll && finalTxs.length < 500) {
+                try {
+                  console.log("ℹ️ Administrator dataset < 500 records. Invoking sync_full_database to ensure 1,000+ records in Cloudflare D1...");
+                  const syncRes = await executeD1Query("sync_full_database");
+                  if (Array.isArray(syncRes) && syncRes.length > finalTxs.length) {
+                    finalTxs = syncRes.map(unpackExtraFields);
+                    setTransactions(normalizeTransactions(finalTxs));
+                  }
+                } catch (syncErr) {
+                  console.warn("Notice syncing full database:", syncErr);
+                }
+              }
             }
 
             // Execute initial table sync sequentially to prevent Cloudflare D1 429 rate limit collisions

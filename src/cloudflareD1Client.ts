@@ -7,6 +7,7 @@
 import fs from "fs";
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
+import { FULL_SEED_STATEMENTS } from "./lib/fullSeedData.ts";
 
 let localDbInstance: any = null;
 function getLocalDb() {
@@ -207,24 +208,18 @@ export async function ensureD1TablesExist(): Promise<void> {
           const countRes = await queryD1Direct("SELECT COUNT(*) as count FROM backcharges");
           const count = Number(countRes?.[0]?.count) || 0;
           if (count < 1000) {
-            console.log(`ℹ️ Cloudflare D1 database has ${count} records (< 1000). Auto-seeding full migration dataset in background...`);
-            const targetPath = path.join(process.cwd(), "cloudflare_d1_migration.sql");
-            if (fs.existsSync(targetPath)) {
-              const rawSql = fs.readFileSync(targetPath, "utf-8");
-              const lines = rawSql.split("\n").filter(l => !l.trim().startsWith("--"));
-              const statements = lines.join("\n").split(";").map(s => s.trim()).filter(s => s.length > 0).map(s => s + ";");
-              const BATCH_SIZE = 30;
-              for (let i = 0; i < statements.length; i += BATCH_SIZE) {
-                const batch = statements.slice(i, i + BATCH_SIZE).join("\n");
-                try {
-                  await queryD1(batch);
-                } catch (bErr: any) {
-                  // Ignore duplicate keys
-                }
-                await new Promise(r => setTimeout(r, 50));
+            console.log(`ℹ️ Cloudflare D1 database has ${count} records (< 1000). Auto-seeding full migration dataset (${FULL_SEED_STATEMENTS.length} items)...`);
+            const BATCH_SIZE = 30;
+            for (let i = 0; i < FULL_SEED_STATEMENTS.length; i += BATCH_SIZE) {
+              const batch = FULL_SEED_STATEMENTS.slice(i, i + BATCH_SIZE).join("\n");
+              try {
+                await queryD1(batch);
+              } catch (bErr: any) {
+                // Ignore duplicate keys
               }
-              console.log(`🎉 Auto-seeded ${statements.length} migration statements to Cloudflare D1 in background.`);
+              await new Promise(r => setTimeout(r, 40));
             }
+            console.log(`🎉 Auto-seeded ${FULL_SEED_STATEMENTS.length} migration statements to Cloudflare D1 in background.`);
           }
         } catch (checkErr: any) {
           const msg = String(checkErr?.message || checkErr || "");
