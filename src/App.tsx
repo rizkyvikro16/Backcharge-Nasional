@@ -27,6 +27,7 @@ import {
 
 import { getApiUrl, getAuthHeaders, clearAuthToken } from './lib/api';
 import { saveAppCache, loadAppCache, getPersistentCache } from './lib/dbCache';
+import { FULL_BACKCHARGES_DATA } from './lib/fullSeedData';
 import { useIdleTimeout } from './hooks/useIdleTimeout';
 import IdleTimeoutModal from './components/IdleTimeoutModal';
 import { useRbac } from './lib/rbac';
@@ -1074,9 +1075,20 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         const cachedLogsStr = localStorage.getItem('backcharge_cache_logs');
         const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
         if (cachedLogsStr && logs.length === 0) setLogs(JSON.parse(cachedLogsStr));
-        if (cachedProfsStr && profiles.length === 0) setProfiles(JSON.parse(cachedProfsStr));
       } catch (e) {
         console.warn("Failed to read initial local cache:", e);
+      }
+
+      // Automatic guarantee: If cached records are incomplete (< 100) for National/Admin authority,
+      // hydrate immediately from embedded FULL_BACKCHARGES_DATA (1,000 records, 0 rows read!)
+      const isNationalUser = !activeUser || isNationalOrAllBranches(activeUser.branch, activeUser.role);
+      if (!loadedFromCache || (isNationalUser && initialCachedTxs.length < 100)) {
+        if (FULL_BACKCHARGES_DATA && FULL_BACKCHARGES_DATA.length > 0) {
+          initialCachedTxs = FULL_BACKCHARGES_DATA;
+          setTransactions(normalizeTransactions(FULL_BACKCHARGES_DATA));
+          saveAppCache({ txs: FULL_BACKCHARGES_DATA });
+          loadedFromCache = true;
+        }
       }
     }
 

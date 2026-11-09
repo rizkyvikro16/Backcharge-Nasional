@@ -124,15 +124,10 @@ export async function saveAppCache(payload: {
     promises.push(setPersistentCache(CACHE_KEYS.TXS, payload.txs));
     try {
       if (typeof window !== "undefined") {
-        localStorage.setItem(CACHE_KEYS.TXS, JSON.stringify(payload.txs));
+        // Keep localStorage lean (max 30 items for emergency fallback) to never hit 5MB quota
+        localStorage.setItem(CACHE_KEYS.TXS, JSON.stringify(payload.txs.slice(0, 30)));
       }
-    } catch {
-      try {
-        if (typeof window !== "undefined" && payload.txs.length > 500) {
-          localStorage.setItem(CACHE_KEYS.TXS, JSON.stringify(payload.txs.slice(0, 500)));
-        }
-      } catch {}
-    }
+    } catch {}
   }
 
   if (payload.logs) {

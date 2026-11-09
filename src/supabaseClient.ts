@@ -1,4 +1,5 @@
 import { Backcharge, ActivityLog, Profile, ContactInquiry, hasRole } from './types';
+import { FULL_BACKCHARGES_DATA } from './lib/fullSeedData';
 
 // =========================================================================
 // LOCAL STORAGE MOCK ENGINE (OFFLINE FALLBACK & DEFAULT DATA SEEDING)
@@ -23,11 +24,11 @@ const INITIAL_PROFILES: Profile[] = [
 ];
 
 // Initialize local storage mock database if not already present
-if (!localStorage.getItem('bc_profiles')) {
-  localStorage.setItem('bc_profiles', JSON.stringify(INITIAL_PROFILES));
-} else {
-  // Ensure the new roles exist in localStorage if it was already initialized
-  try {
+try {
+  if (!localStorage.getItem('bc_profiles')) {
+    localStorage.setItem('bc_profiles', JSON.stringify(INITIAL_PROFILES));
+  } else {
+    // Ensure the new roles exist in localStorage if it was already initialized
     let currentProfs = JSON.parse(localStorage.getItem('bc_profiles') || '[]');
     let modified = false;
     
@@ -74,97 +75,19 @@ if (!localStorage.getItem('bc_profiles')) {
     if (modified) {
       localStorage.setItem('bc_profiles', JSON.stringify(currentProfs));
     }
-  } catch (e) {
-    console.error("Failed to inject new mock profiles:", e);
   }
+} catch (e) {
+  console.warn("Profiles localStorage initialization skipped or failed:", e);
 }
 
-const INITIAL_BACKCHARGES: Backcharge[] = [
-  {
-    id: 'BC-2026-0001',
-    category: 'Own Risk',
-    branch: 'BSO GSO & AFFCO',
-    no_bak: 'BAK/2026/06/001',
-    no_spk: '-',
-    no_sap: 'SAP-OR-101',
-    customer_name: 'PT Carrefour Indonesia',
-    license_plate: 'B-9201-UBA',
-    value: 4500000,
-    status_sap: 'Bill',
-    status_confirm: 'Telah Dikonfirmasi',
-    status_handover: 'Diterima Admin',
-    no_invoice: 'INV/2026/VI/011',
-    status_payment: 'Lunas',
-    created_by: 'aso.jkt@company.id',
-    created_at: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
-    updated_at: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
-    file_bak_url: 'dummy_pdf_file',
-    file_handover_aso_sales_url: 'dummy_photo_1',
-    file_handover_sales_admin_url: 'dummy_photo_2',
-    tanggal: '2026-06-28'
-  },
-  {
-    id: 'BC-2026-0002',
-    category: 'Maintenance',
-    branch: 'Surabaya',
-    no_bak: 'BAK/2026/06/002',
-    no_spk: 'SPK-MAINT-202',
-    no_sap: '-',
-    customer_name: 'PT Unilever Indonesia',
-    license_plate: 'L-1827-CV',
-    value: 1200000,
-    status_sap: 'N/A',
-    status_confirm: 'Telah Dikonfirmasi',
-    status_handover: 'Diterima Admin',
-    no_invoice: '-',
-    status_payment: 'Belum Bayar',
-    created_by: 'bro.sby@company.id',
-    created_at: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
-    updated_at: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
-    file_bak_url: 'dummy_pdf_file',
-    tanggal: '2026-06-30'
-  },
-  {
-    id: 'BC-2026-0003',
-    category: 'Ekspedisi',
-    branch: 'Bandung',
-    no_bak: '-',
-    no_spk: 'SPK-EXP-303',
-    no_sap: '-',
-    customer_name: 'PT Indofood CBP',
-    license_plate: '-',
-    value: 8500000,
-    status_sap: 'N/A',
-    status_confirm: 'Belum Konfirmasi',
-    status_handover: 'Pending',
-    no_invoice: '-',
-    status_payment: 'Belum Bayar',
-    created_by: 'aso.bdg@company.id',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    tanggal: '2026-07-01'
-  },
-  {
-    id: 'BC-2026-0004',
-    category: 'ETLE',
-    branch: 'BSO Pontianak',
-    no_bak: 'BAK/2026/07/004',
-    no_spk: '-',
-    no_sap: '-',
-    customer_name: 'PT Kalimantan Sawit Sejahtera',
-    license_plate: 'KB-1423-XX',
-    value: 2500000,
-    status_sap: 'N/A',
-    status_confirm: 'Belum Konfirmasi',
-    status_handover: 'Diterima Admin',
-    no_invoice: '-',
-    status_payment: 'Belum Bayar',
-    created_by: 'aso.ptk@company.id',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    tanggal: '2026-07-02'
-  }
-];
+const INITIAL_BACKCHARGES: Backcharge[] = FULL_BACKCHARGES_DATA;
+
+// Clean up oversized 'bc_backcharges' from localStorage to prevent QuotaExceededError (5MB limit)
+try {
+  localStorage.removeItem('bc_backcharges');
+} catch {}
+
+let memBackcharges: Backcharge[] = [...INITIAL_BACKCHARGES];
 
 const INITIAL_LOGS: ActivityLog[] = [
   { id: 1, timestamp: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(), transaction_id: 'BC-2026-0001', performed_by: 'aso.jkt@company.id', action_description: 'Membuat transaksi Backcharge baru kategori Own Risk di cabang Megabranch' },
@@ -172,38 +95,11 @@ const INITIAL_LOGS: ActivityLog[] = [
   { id: 3, timestamp: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(), transaction_id: 'BC-2026-0002', performed_by: 'bro.sby@company.id', action_description: 'Membuat transaksi Backcharge baru kategori Maintenance di cabang Surabaya' }
 ];
 
-if (!localStorage.getItem('bc_backcharges')) {
-  localStorage.setItem('bc_backcharges', JSON.stringify(INITIAL_BACKCHARGES));
-} else {
-  // Migrate existing transactions
-  try {
-    let currentTxs = JSON.parse(localStorage.getItem('bc_backcharges') || '[]');
-    let modified = false;
-    currentTxs.forEach((tx: any) => {
-      if (tx.branch === 'Jakarta' || tx.branch === 'Megabranch') {
-        tx.branch = 'BSO GSO & AFFCO';
-        modified = true;
-      }
-      if (tx.branch === 'Pontianak') {
-        tx.branch = 'BSO Pontianak';
-        modified = true;
-      }
-      if (tx.status_handover === 'Diserahkan ke Admin') {
-        tx.status_handover = 'Diterima Admin';
-        modified = true;
-      }
-    });
-    if (modified) {
-      localStorage.setItem('bc_backcharges', JSON.stringify(currentTxs));
-    }
-  } catch (e) {}
-}
-
-if (!localStorage.getItem('bc_activity_logs')) {
-  localStorage.setItem('bc_activity_logs', JSON.stringify(INITIAL_LOGS));
-} else {
-  // Migrate existing activity logs referencing 'Jakarta' to 'Megabranch'
-  try {
+try {
+  if (!localStorage.getItem('bc_activity_logs')) {
+    localStorage.setItem('bc_activity_logs', JSON.stringify(INITIAL_LOGS));
+  } else {
+    // Migrate existing activity logs referencing 'Jakarta' to 'Megabranch'
     let currentLogs = JSON.parse(localStorage.getItem('bc_activity_logs') || '[]');
     let modified = false;
     currentLogs.forEach((log: any) => {
@@ -215,7 +111,9 @@ if (!localStorage.getItem('bc_activity_logs')) {
     if (modified) {
       localStorage.setItem('bc_activity_logs', JSON.stringify(currentLogs));
     }
-  } catch (e) {}
+  }
+} catch (e) {
+  console.warn("Activity logs storage skipped:", e);
 }
 
 if (!localStorage.getItem('bc_contact_inquiries')) {
@@ -266,41 +164,34 @@ export const mockDb = {
     } else {
       profiles.push(p);
     }
-    localStorage.setItem('bc_profiles', JSON.stringify(profiles));
+    try {
+      localStorage.setItem('bc_profiles', JSON.stringify(profiles));
+    } catch {}
   },
   
   deleteProfile: (idOrEmail: string) => {
     const profiles = mockDb.getProfiles();
     const filtered = profiles.filter(p => p.id !== idOrEmail && p.email.toLowerCase() !== idOrEmail.toLowerCase());
-    localStorage.setItem('bc_profiles', JSON.stringify(filtered));
+    try {
+      localStorage.setItem('bc_profiles', JSON.stringify(filtered));
+    } catch {}
   },
 
   deleteBackcharge: (id: string) => {
-    const bcs = mockDb.getBackcharges();
-    const filtered = bcs.filter(item => item.id !== id);
-    localStorage.setItem('bc_backcharges', JSON.stringify(filtered));
+    memBackcharges = memBackcharges.filter(item => item.id !== id);
   },
 
   getBackcharges: (): Backcharge[] => {
-    try {
-      const data = localStorage.getItem('bc_backcharges');
-      if (!data) return INITIAL_BACKCHARGES;
-      const parsed = JSON.parse(data);
-      return (Array.isArray(parsed) && parsed.length > 0) ? parsed : INITIAL_BACKCHARGES;
-    } catch (e) {
-      console.error("Corrupted Backcharges in LocalStorage:", e);
-      return INITIAL_BACKCHARGES;
-    }
+    return memBackcharges && memBackcharges.length > 0 ? memBackcharges : INITIAL_BACKCHARGES;
   },
 
   saveBackcharge: (b: Backcharge, performedByEmail: string) => {
-    const bcs = mockDb.getBackcharges();
-    const idx = bcs.findIndex(item => item.id === b.id);
+    const idx = memBackcharges.findIndex(item => item.id === b.id);
     let logDesc = '';
 
     if (idx !== -1) {
-      const old = bcs[idx];
-      bcs[idx] = { ...b, updated_at: new Date().toISOString() };
+      const old = memBackcharges[idx];
+      memBackcharges[idx] = { ...b, updated_at: new Date().toISOString() };
       
       // Auto-trigger logging emulator
       if (old.status_confirm !== b.status_confirm) {
@@ -328,11 +219,9 @@ export const mockDb = {
         logDesc += 'Foto serah terima Sales ke Admin diupload. ';
       }
     } else {
-      bcs.push(b);
+      memBackcharges.push(b);
       logDesc = `Membuat transaksi Backcharge baru kategori ${b.category} di cabang ${b.branch}`;
     }
-
-    localStorage.setItem('bc_backcharges', JSON.stringify(bcs));
 
     if (logDesc) {
       mockDb.addLog(b.id, performedByEmail, logDesc);
@@ -340,23 +229,21 @@ export const mockDb = {
   },
 
   saveBackchargesBatch: (batchList: Backcharge[], performedByEmail: string) => {
-    const bcs = mockDb.getBackcharges();
     const bcMap = new Map<string, number>();
-    bcs.forEach((item, index) => {
+    memBackcharges.forEach((item, index) => {
       if (item.id) bcMap.set(item.id, index);
     });
 
     for (const b of batchList) {
       const idx = bcMap.has(b.id) ? bcMap.get(b.id)! : -1;
       if (idx !== -1) {
-        bcs[idx] = { ...b, updated_at: new Date().toISOString() };
+        memBackcharges[idx] = { ...b, updated_at: new Date().toISOString() };
       } else {
-        bcs.push(b);
-        bcMap.set(b.id, bcs.length - 1);
+        memBackcharges.push(b);
+        bcMap.set(b.id, memBackcharges.length - 1);
       }
     }
 
-    localStorage.setItem('bc_backcharges', JSON.stringify(bcs));
     mockDb.addLog('SYSTEM', performedByEmail, `Melakukan import data secara massal sebanyak ${batchList.length} data Backcharge`);
   },
 
@@ -370,7 +257,9 @@ export const mockDb = {
       action_description: description
     };
     logs.unshift(newLog);
-    localStorage.setItem('bc_activity_logs', JSON.stringify(logs));
+    try {
+      localStorage.setItem('bc_activity_logs', JSON.stringify(logs.slice(0, 50)));
+    } catch {}
   },
 
   getContactInquiries: (): ContactInquiry[] => {
@@ -393,12 +282,16 @@ export const mockDb = {
     } else {
       inquiries.unshift(ci);
     }
-    localStorage.setItem('bc_contact_inquiries', JSON.stringify(inquiries));
+    try {
+      localStorage.setItem('bc_contact_inquiries', JSON.stringify(inquiries));
+    } catch {}
   },
 
   deleteContactInquiry: (id: string) => {
     const inquiries = mockDb.getContactInquiries();
     const filtered = inquiries.filter(item => item.id !== id);
-    localStorage.setItem('bc_contact_inquiries', JSON.stringify(filtered));
+    try {
+      localStorage.setItem('bc_contact_inquiries', JSON.stringify(filtered));
+    } catch {}
   }
 };

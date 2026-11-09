@@ -160,7 +160,7 @@ async function ensureD1SchemaWorker(db) {
       for (let i = 0; i < FULL_SEED_STATEMENTS.length; i += BATCH_SIZE) {
         const batch = FULL_SEED_STATEMENTS.slice(i, i + BATCH_SIZE);
         try {
-          await db.batch(batch.map(sql => db.prepare(sql)));
+          await db.batch(batch.map(sql => db.prepare(sql.trim().replace(/;\s*$/, ''))));
         } catch {}
       }
     }
@@ -981,7 +981,7 @@ export default {
               for (let i = 0; i < FULL_SEED_STATEMENTS.length; i += BATCH_SIZE) {
                 const batch = FULL_SEED_STATEMENTS.slice(i, i + BATCH_SIZE);
                 try {
-                  await env.DB.batch(batch.map(sql => env.DB.prepare(sql)));
+                  await env.DB.batch(batch.map(sql => env.DB.prepare(sql.trim().replace(/;\s*$/, ''))));
                 } catch {}
               }
             }
