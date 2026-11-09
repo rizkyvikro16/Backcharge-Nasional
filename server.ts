@@ -1719,10 +1719,21 @@ async function startServer() {
         }
 
         case "get_backcharges_since": {
-          const since = params && params[0];
-          if (!since) return res.status(400).json({ success: false, error: "Parameter 'since' diperlukan" });
-          
+          const since = (params && params[0]) || req.body.since || "";
           const branches = req.body.branches || (Array.isArray(params) && params.length > 1 ? params.slice(1) : null);
+          
+          if (!since || typeof since !== "string" || since.trim() === "") {
+            let sql = "SELECT * FROM backcharges";
+            let queryParams: any[] = [];
+            if (Array.isArray(branches) && branches.length > 0) {
+              const placeholders = branches.map(() => '?').join(', ');
+              sql += ` WHERE branch IN (${placeholders})`;
+              queryParams.push(...branches);
+            }
+            sql += " ORDER BY created_at DESC LIMIT 2000";
+            const results = await queryD1(sql, queryParams);
+            return res.json({ success: true, results: results || [] });
+          }
           
           let sql = "SELECT * FROM backcharges WHERE updated_at > ? OR updated_at IS NULL OR updated_at = ''";
           let queryParams: any[] = [since];

@@ -1161,8 +1161,8 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             // Check if logged in as Admin/Nasional but cached dataset has fewer than 500 rows (from a branch account)
             const isCacheIncompleteForAdmin = isNationalOrAll && cachedTxs.length < 500;
 
-            // STRATEGY A: Fast 20ms Delta Sync whenever cached rows exist (> 0)
-            if (cachedTxs.length > 0 && cachedMaxUpdated && !forceFull && !isCacheIncompleteForAdmin) {
+            // STRATEGY A: Fast 20ms Delta Sync whenever cached rows exist (> 0) and max updated timestamp exists
+            if (cachedTxs.length > 0 && cachedMaxUpdated && cachedMaxUpdated.trim() !== "" && !forceFull && !isCacheIncompleteForAdmin) {
               try {
                 const deltaRows = await executeD1Query(
                   "get_backcharges_since",
