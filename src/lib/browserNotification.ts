@@ -129,7 +129,10 @@ export async function sendBrowserNotification(opts: BrowserNotificationOptions):
   // 1. Try Service Worker showNotification first (vital for Mobile Android & iOS PWA)
   try {
     if ('serviceWorker' in navigator) {
-      const registration = await navigator.serviceWorker.ready;
+      const registration = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 300))
+      ]);
       if (registration && typeof registration.showNotification === 'function') {
         await registration.showNotification(opts.title, notifOptions);
         shownViaSW = true;

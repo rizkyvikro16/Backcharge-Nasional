@@ -1137,8 +1137,43 @@ export default {
           }
 
           case "get_activity_logs": {
-            const limit = Number(body.limit) || 50;
-            const results = await executeD1("SELECT * FROM activity_logs ORDER BY id DESC LIMIT ?", [limit]);
+            const limit = Math.min(Number(body.limit) || 200, 1000);
+            const offset = Number(body.offset) || 0;
+            const search = body.search ? `%${String(body.search).trim()}%` : null;
+            const performedBy = body.performedBy ? `%${String(body.performedBy).trim()}%` : null;
+            const txId = body.transactionId ? `%${String(body.transactionId).trim()}%` : null;
+            const startDate = body.startDate ? String(body.startDate).trim() : null;
+            const endDate = body.endDate ? `${String(body.endDate).trim()} 23:59:59` : null;
+
+            const whereClauses = [];
+            const queryParams = [];
+
+            if (txId) {
+              whereClauses.push("transaction_id LIKE ?");
+              queryParams.push(txId);
+            }
+            if (performedBy) {
+              whereClauses.push("performed_by LIKE ?");
+              queryParams.push(performedBy);
+            }
+            if (startDate) {
+              whereClauses.push("timestamp >= ?");
+              queryParams.push(startDate);
+            }
+            if (endDate) {
+              whereClauses.push("timestamp <= ?");
+              queryParams.push(endDate);
+            }
+            if (search) {
+              whereClauses.push("(action_description LIKE ? OR transaction_id LIKE ? OR performed_by LIKE ?)");
+              queryParams.push(search, search, search);
+            }
+
+            const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+            const sql = `SELECT * FROM activity_logs ${whereSql} ORDER BY id DESC LIMIT ? OFFSET ?`;
+            queryParams.push(limit, offset);
+
+            const results = await executeD1(sql, queryParams);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 

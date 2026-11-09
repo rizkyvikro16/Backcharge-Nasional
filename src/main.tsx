@@ -13,6 +13,19 @@ const queryClient = new QueryClient({
   },
 });
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    const msg = event?.reason?.message || String(event?.reason || '');
+    if (
+      msg.includes('message channel closed') ||
+      msg.includes('A listener indicated an asynchronous response') ||
+      msg.includes('The message port closed before a response was received')
+    ) {
+      event.preventDefault();
+    }
+  });
+}
+
 if (import.meta.env.PROD) {
   console.error = () => {};
   console.warn = () => {};

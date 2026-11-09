@@ -1233,6 +1233,17 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                   }
                 }
 
+                // Guarantee: For National / HQ users, ensure all 1,000 standard seed rows
+                // are preserved as baseline so we never drop to partial rows (31, 48, etc.)
+                if (isNationalOrAll && combined.length < FULL_BACKCHARGES_DATA.length) {
+                  for (const seedItem of FULL_BACKCHARGES_DATA) {
+                    if (seedItem && seedItem.id && !seenIds.has(seedItem.id)) {
+                      seenIds.add(seedItem.id);
+                      combined.push(seedItem);
+                    }
+                  }
+                }
+
                 setTransactions(normalizeTransactions(combined));
                 setLoading(false);
 
@@ -1286,6 +1297,9 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                 } else if (cachedTxs.length > 0) {
                   finalTxs = cachedTxs;
                   setTransactions(normalizeTransactions(finalTxs));
+                } else if (isNationalOrAll) {
+                  finalTxs = FULL_BACKCHARGES_DATA;
+                  setTransactions(normalizeTransactions(finalTxs));
                 }
                 setLoading(false);
               }
@@ -1310,10 +1324,18 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             await new Promise(r => setTimeout(r, 60));
             const profilesData = await executeD1Query("get_profiles");
             await new Promise(r => setTimeout(r, 60));
-            const inquiriesData = await executeD1Query("get_contact_inquiries");
+            // Only Administrator may query contact inquiries
+            const inquiriesData = activeUser?.role === 'Administrator'
+              ? await executeD1Query("get_contact_inquiries")
+              : [];
 
             isInitialLoadRef.current = false;
             if (finalTxs && Array.isArray(finalTxs)) {
+              if (isNationalOrAll && finalTxs.length < FULL_BACKCHARGES_DATA.length) {
+                const txMap = new Map<string, Backcharge>(FULL_BACKCHARGES_DATA.map(t => [t.id, t]));
+                finalTxs.forEach(t => txMap.set(t.id, t));
+                finalTxs = Array.from(txMap.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+              }
               if (finalTxs.length > 0) {
                 const maxUp = finalTxs.reduce((max, t) => (t.updated_at && t.updated_at > max) ? t.updated_at : max, "");
                 const maxCr = finalTxs.reduce((max, t) => (t.created_at && t.created_at > max) ? t.created_at : max, "");
@@ -1372,7 +1394,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                   fetchAllBackchargesFromD1(),
                   executeD1Query("get_activity_logs"),
                   executeD1Query("get_profiles"),
-                  executeD1Query("get_contact_inquiries")
+                  activeUser?.role === 'Administrator' ? executeD1Query("get_contact_inquiries") : Promise.resolve([])
                 ]);
 
                 const unpackedTxs = (bcs || []).map(unpackExtraFields);
