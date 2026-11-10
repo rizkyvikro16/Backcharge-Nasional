@@ -47,8 +47,19 @@ export const EAST_BRANCHES = REGIONAL_EAST_BRANCHES;
 
 export function isNationalOrAllBranches(branch?: string, role?: string): boolean {
   if (role) {
-    const roles = role.split(',').map(s => s.trim());
-    if (roles.includes('Administrator') || roles.includes('Division Head')) return true;
+    const roles = String(role).split(',').map(s => s.trim().toLowerCase());
+    if (
+      roles.some(r => 
+        r === 'administrator' || 
+        r === 'admin' || 
+        r === 'super admin' || 
+        r === 'division head' || 
+        r.includes('division head') || 
+        r.includes('direksi') ||
+        r.includes('management') ||
+        r.includes('hq')
+      )
+    ) return true;
   }
   if (!branch) return true;
   const bLower = branch.trim().toLowerCase();
@@ -73,7 +84,7 @@ export function getUserBranches(branch: string): string[] {
       expanded.add(part);
     }
     const pLower = part.toLowerCase();
-    if (pLower === 'megabranch' || pLower === 'jakarta') {
+    if (pLower === 'megabranch' || pLower === 'jakarta' || pLower === 'jabodetabek') {
       MEGABRANCH_LIST.forEach(b => expanded.add(b));
     }
   });
@@ -86,6 +97,16 @@ export function getRoleAllowedBranches(role?: string, branch?: string): string[]
     return ALL_SYSTEM_BRANCHES;
   }
 
+  // Megabranch and Maintenance Center roles cover all Megabranch / Jabodetabek BSO branches
+  if (role) {
+    const rLower = String(role).toLowerCase();
+    if (rLower.includes('megabranch') || rLower.includes('maintenance center')) {
+      if (!branch || branch.trim().toLowerCase() === 'megabranch' || branch.trim().toLowerCase() === 'jakarta') {
+        return MEGABRANCH_LIST;
+      }
+    }
+  }
+
   // 1. If specific branch(es) are configured on user's profile, that is their definitive authority
   if (branch && branch.trim()) {
     const userBranches = getUserBranches(branch);
@@ -94,7 +115,7 @@ export function getRoleAllowedBranches(role?: string, branch?: string): string[]
 
   // 2. Role-based regional fallback when branch is unspecified in profile
   if (role) {
-    const rLower = role.toLowerCase();
+    const rLower = String(role).toLowerCase();
     if (rLower.includes('west')) {
       return REGIONAL_WEST_BRANCHES;
     }
@@ -103,6 +124,9 @@ export function getRoleAllowedBranches(role?: string, branch?: string): string[]
     }
     if (rLower.includes('east')) {
       return REGIONAL_EAST_BRANCHES;
+    }
+    if (rLower.includes('megabranch')) {
+      return MEGABRANCH_LIST;
     }
   }
 

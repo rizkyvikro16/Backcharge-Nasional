@@ -152,17 +152,14 @@ async function ensureD1SchemaWorker(db) {
     }
   } catch (e) {}
 
-  // Seed default backcharges if count < 1000
+  // Seed default backcharges only if completely empty (count === 0)
   try {
     const countBcs = await db.prepare("SELECT COUNT(*) as count FROM backcharges").first();
-    if (!countBcs || countBcs.count < 1000) {
-      const BATCH_SIZE = 25;
-      for (let i = 0; i < FULL_SEED_STATEMENTS.length; i += BATCH_SIZE) {
-        const batch = FULL_SEED_STATEMENTS.slice(i, i + BATCH_SIZE);
-        try {
-          await db.batch(batch.map(sql => db.prepare(sql.trim().replace(/;\s*$/, ''))));
-        } catch {}
-      }
+    if (!countBcs || countBcs.count === 0) {
+      const batch = FULL_SEED_STATEMENTS.slice(0, 30);
+      try {
+        await db.batch(batch.map(sql => db.prepare(sql.trim().replace(/;\s*$/, ''))));
+      } catch {}
     }
   } catch (e) {}
 }
@@ -976,7 +973,7 @@ export default {
           case "sync_full_database": {
             const countBcs = await env.DB.prepare("SELECT COUNT(*) as count FROM backcharges").first();
             const currentCount = (countBcs && countBcs.count) || 0;
-            if (currentCount < 1000) {
+            if (currentCount === 0) {
               const BATCH_SIZE = 25;
               for (let i = 0; i < FULL_SEED_STATEMENTS.length; i += BATCH_SIZE) {
                 const batch = FULL_SEED_STATEMENTS.slice(i, i + BATCH_SIZE);
@@ -992,6 +989,8 @@ export default {
           case "get_backcharges_since": {
             const since = (params && params[0]) || body.since || "";
             const branches = body.branches || (Array.isArray(params) && params.length > 1 ? params.slice(1) : null);
+            const limit = Number(body.limit) || 0;
+            const offset = Number(body.offset) || 0;
 
             if (!since || typeof since !== "string" || since.trim() === "") {
               let sql = "SELECT * FROM backcharges";
@@ -1001,7 +1000,11 @@ export default {
                 sql += ` WHERE branch IN (${placeholders})`;
                 qParams.push(...branches);
               }
-              sql += " ORDER BY created_at DESC LIMIT 2000";
+              sql += " ORDER BY created_at DESC";
+              if (limit > 0) {
+                sql += " LIMIT ? OFFSET ?";
+                qParams.push(limit, offset);
+              }
               const results = await executeD1(sql, qParams);
               return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
             }
@@ -1015,7 +1018,11 @@ export default {
               queryParams.push(...branches);
             }
             
-            sql += " ORDER BY updated_at DESC LIMIT 1000";
+            sql += " ORDER BY updated_at DESC";
+            if (limit > 0) {
+              sql += " LIMIT ? OFFSET ?";
+              queryParams.push(limit, offset);
+            }
 
             const results = await executeD1(sql, queryParams);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });

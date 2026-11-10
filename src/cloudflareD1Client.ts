@@ -207,8 +207,8 @@ export async function ensureD1TablesExist(): Promise<void> {
         try {
           const countRes = await queryD1Direct("SELECT COUNT(*) as count FROM backcharges");
           const count = Number(countRes?.[0]?.count) || 0;
-          if (count < 1000) {
-            console.log(`ℹ️ Cloudflare D1 database has ${count} records (< 1000). Auto-seeding full migration dataset (${FULL_SEED_STATEMENTS.length} items)...`);
+          if (count === 0) {
+            console.log(`ℹ️ Cloudflare D1 database is empty. Auto-seeding initial migration dataset (${FULL_SEED_STATEMENTS.length} items)...`);
             const BATCH_SIZE = 30;
             for (let i = 0; i < FULL_SEED_STATEMENTS.length; i += BATCH_SIZE) {
               const batch = FULL_SEED_STATEMENTS.slice(i, i + BATCH_SIZE).join("\n");

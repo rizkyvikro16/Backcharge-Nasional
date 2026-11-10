@@ -1721,6 +1721,8 @@ async function startServer() {
         case "get_backcharges_since": {
           const since = (params && params[0]) || req.body.since || "";
           const branches = req.body.branches || (Array.isArray(params) && params.length > 1 ? params.slice(1) : null);
+          const limit = Number(req.body.limit) || 0;
+          const offset = Number(req.body.offset) || 0;
           
           if (!since || typeof since !== "string" || since.trim() === "") {
             let sql = "SELECT * FROM backcharges";
@@ -1730,7 +1732,11 @@ async function startServer() {
               sql += ` WHERE branch IN (${placeholders})`;
               queryParams.push(...branches);
             }
-            sql += " ORDER BY created_at DESC LIMIT 2000";
+            sql += " ORDER BY created_at DESC";
+            if (limit > 0) {
+              sql += " LIMIT ? OFFSET ?";
+              queryParams.push(limit, offset);
+            }
             const results = await queryD1(sql, queryParams);
             return res.json({ success: true, results: results || [] });
           }
@@ -1745,6 +1751,10 @@ async function startServer() {
           }
           
           sql += " ORDER BY updated_at DESC";
+          if (limit > 0) {
+            sql += " LIMIT ? OFFSET ?";
+            queryParams.push(limit, offset);
+          }
 
           const results = await queryD1(sql, queryParams);
           return res.json({ success: true, results: results || [] });
@@ -1755,8 +1765,8 @@ async function startServer() {
           const countRes = await queryD1("SELECT COUNT(*) as count FROM backcharges");
           const currentCount = Number(countRes?.[0]?.count) || 0;
 
-          if (currentCount < 1000) {
-            console.log(`[SYNC FULL] Auto-seeding full database into D1 (${FULL_SEED_STATEMENTS.length} rows)...`);
+          if (currentCount === 0) {
+            console.log(`[SYNC FULL] Auto-seeding initial database into D1 (${FULL_SEED_STATEMENTS.length} rows)...`);
             const BATCH_SIZE = 30;
             for (let i = 0; i < FULL_SEED_STATEMENTS.length; i += BATCH_SIZE) {
               const batch = FULL_SEED_STATEMENTS.slice(i, i + BATCH_SIZE).join("\n");

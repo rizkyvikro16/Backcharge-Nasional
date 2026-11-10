@@ -125,7 +125,7 @@ INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-TOT730S', 'oh.makassar@assarent.co.id', 'Surya Prawita Laksana Saputra',
-  'ASO', 'Makassar', '2026-08-28T12:34:25.913+00:00'
+  'ASO', 'Surabaya', '2026-08-28T12:34:25.913+00:00'
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-5HCJSQZ', 'claim.palembang@assarent.co.id', 'M. Novariandi',
@@ -145,7 +145,7 @@ INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-7ONHJPY', 'muhammad.kusuma@assarent.co.id', 'MUHAMMMAD DUTA KUSUMA',
-  'ASO', 'Makassar', '2026-08-28T07:19:54.593+00:00'
+  'ASO', 'Surabaya', '2026-08-28T07:19:54.593+00:00'
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-F15XBW7', 'waras.susilo@assarent.co.id', 'Waras mulyo susilo',
@@ -229,7 +229,7 @@ INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-420ABWZ', 'satrucking.makassar@assarent.co.id', 'Zaka Prasetyawan',
-  'ASO', 'Makassar', '2026-08-31T02:55:48.69+00:00'
+  'ASO', 'Surabaya', '2026-08-31T02:55:48.69+00:00'
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-NWOTRBB', 'toni.noviansah@assarent.co.id', 'Toni Noviansah',
@@ -237,7 +237,7 @@ INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-LXSEBEB', 'stockpool.makassar@assarent.co.id', 'Wahyudhi',
-  'ASO', 'Makassar', '2026-08-31T03:24:48.898+00:00'
+  'ASO', 'Surabaya', '2026-08-31T03:24:48.898+00:00'
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-FNCZI0F', 'elin.karlinah@assarent.co.id', 'Elin Karlinah',
@@ -321,7 +321,7 @@ INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-V22AFRR', 'saclaim.makassar@assarent.co.id', 'iskandar.iskandar',
-  'ASO', 'Makassar', '2026-08-31T08:18:06.864+00:00'
+  'ASO', 'Surabaya', '2026-08-31T08:18:06.864+00:00'
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-VSYR8Y8', 'muhammad.ikhsan@assarent.co.id', 'Muhammad Ikhsan',
@@ -341,7 +341,7 @@ INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-0N38IB3', 'stockhead.makassar@assarent.co.id', 'LEONARDUS SUGIARTO',
-  'ASO', 'Makassar', '2026-09-01T01:17:32.378+00:00'
+  'ASO', 'Surabaya', '2026-09-01T01:17:32.378+00:00'
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-S7M2PA3', 'adh.palembang@assarent.co.id', 'Irdza Arthin Darma',
@@ -393,7 +393,7 @@ INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-XSK8VNH', 'adh.makassar@assarent.co.id', 'Ilfajri Jamrul',
-  'Admin Head', 'Makassar', '2026-09-02T07:13:46.053+00:00'
+  'Admin Head', 'Surabaya', '2026-09-02T07:13:46.053+00:00'
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-U2SM7CU', 'sablp.insurance@assarent.co.id', 'Hafidz  Alfi Purnomo',
@@ -541,7 +541,7 @@ INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-F7B131H', 'ao.makassar@assarent.co.id', 'Murdiana Murtala',
-  'Admin', 'Makassar', '2026-09-07T03:21:01.473+00:00'
+  'Admin', 'Surabaya', '2026-09-07T03:21:01.473+00:00'
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-XN727ZK', 'ayu.putri@assarent.co.id', 'Ayu Anisa P',
@@ -589,7 +589,7 @@ INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-7535ATV', 'duchan.tetuka@assarent.co.id', 'Duchan Welas Tetuka',
-  'Sales Head', 'Makassar', '2026-09-11T06:06:13.121+00:00'
+  'Sales Head', 'Surabaya', '2026-09-11T06:06:13.121+00:00'
 );
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (
   'USR-MH34SFF', 'fajar.permana@assarent.co.id', 'Fajar Sidik Permana',
@@ -11458,7 +11458,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0606', 'Maintenance', 'Makassar',
+  'BC-2026-0606', 'Maintenance', 'Surabaya',
   '-', '502188967', '-',
   'PT.ADI SARANA ARMADA, TBK (HAM)', 'B-2493-URD', 950000,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -11476,7 +11476,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0607', 'Maintenance', 'Makassar',
+  'BC-2026-0607', 'Maintenance', 'Surabaya',
   '-', '502187964', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9417-UCV', 2640000,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -11494,7 +11494,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0608', 'Maintenance', 'Makassar',
+  'BC-2026-0608', 'Maintenance', 'Surabaya',
   '-', '502186629', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9417-UCV', 5700000,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -11512,7 +11512,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0609', 'Maintenance', 'Makassar',
+  'BC-2026-0609', 'Maintenance', 'Surabaya',
   '-', '502183112', '-',
   'SEKRETARIAT DAERAH KABUPATEN TAKALAR', 'DD-1589-CH', 671678,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11530,7 +11530,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0610', 'Maintenance', 'Makassar',
+  'BC-2026-0610', 'Maintenance', 'Surabaya',
   '-', '200683132', '-',
   'SEKRETARIAT DAERAH KABUPATEN PARIGI MOUTONG', 'DN-1799-KK', 240000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11548,7 +11548,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0611', 'Maintenance', 'Makassar',
+  'BC-2026-0611', 'Maintenance', 'Surabaya',
   '-', '200684306', '-',
   'PT BANK CENTRAL ASIA, TBK', 'DD-1323-NQ', 1311416,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11566,7 +11566,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0612', 'Dokumen Kendaraan', 'Makassar',
+  'BC-2026-0612', 'Dokumen Kendaraan', 'Surabaya',
   '-', '200682082', '-',
   'PT NUSANTARA EKSPRES KILAT', 'DD-8469-LU', 650000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11584,7 +11584,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0613', 'Dokumen Kendaraan', 'Makassar',
+  'BC-2026-0613', 'Dokumen Kendaraan', 'Surabaya',
   '-', '200682084', '-',
   'PT HANJAYA MANDALA SAMPOERNA, TBK', 'DD-8095-YV', 650000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11602,7 +11602,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0614', 'ETLE', 'Makassar',
+  'BC-2026-0614', 'ETLE', 'Surabaya',
   '-', '200681761', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9774-UCY', 2601020,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11620,7 +11620,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0615', 'Maintenance', 'Makassar',
+  'BC-2026-0615', 'Maintenance', 'Surabaya',
   '-', '200680038', '-',
   'BADAN PENGELOLAAN KEUANGAN DAN ASET DAERAH KABUPATEN BUOL', 'DN-1671-FB', 240000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11638,7 +11638,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0616', 'Maintenance', 'Makassar',
+  'BC-2026-0616', 'Maintenance', 'Surabaya',
   '-', '502176798', '-',
   'PT PERUSAHAAN LISTRIK NEGARA (PERSERO)', 'B-2288-URG', 1180000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11656,7 +11656,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0617', 'Maintenance', 'Makassar',
+  'BC-2026-0617', 'Maintenance', 'Surabaya',
   '-', '502176073', '-',
   'PT. GANDUM JAYA', 'B-2783-UIC', 578900,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11674,7 +11674,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0619', 'Maintenance', 'Makassar',
+  'BC-2026-0619', 'Maintenance', 'Surabaya',
   '-', '502175899', '-',
   'PT.ADI SARANA ARMADA, TBK (HAM)', 'B-2493-URD', 950000,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -11692,7 +11692,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0620', 'ETLE', 'Makassar',
+  'BC-2026-0620', 'ETLE', 'Surabaya',
   '-', '200678829', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9532-UXG', 601020,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11710,7 +11710,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0621', 'ETLE', 'Makassar',
+  'BC-2026-0621', 'ETLE', 'Surabaya',
   '-', '200678832', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9624-UXG', 601020,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11728,7 +11728,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0622', 'Maintenance', 'Makassar',
+  'BC-2026-0622', 'Maintenance', 'Surabaya',
   '-', '200678860', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9243-UXB', 60584000,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -11746,7 +11746,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0623', 'Maintenance', 'Makassar',
+  'BC-2026-0623', 'Maintenance', 'Surabaya',
   '-', '200677338', '-',
   'PT BANK CENTRAL ASIA, TBK', 'DD-1323-NQ', 1311416,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11764,7 +11764,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0624', 'ETLE', 'Makassar',
+  'BC-2026-0624', 'ETLE', 'Surabaya',
   '-', '200676561', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9936-UXA', 601020,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11782,7 +11782,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0625', 'Dokumen Kendaraan', 'Makassar',
+  'BC-2026-0625', 'Dokumen Kendaraan', 'Surabaya',
   '-', '200676562', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9936-UXA', 901020,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11800,7 +11800,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0626', 'Dokumen Kendaraan', 'Makassar',
+  'BC-2026-0626', 'Dokumen Kendaraan', 'Surabaya',
   '-', '200676563', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9580-UXC', 901020,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11818,7 +11818,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0627', 'Maintenance', 'Makassar',
+  'BC-2026-0627', 'Maintenance', 'Surabaya',
   '-', '200675029', '-',
   'PT SUMBER ALFARIA TRIJAYA, TBK', 'DD-3715-YU', 1635132,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11836,7 +11836,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0628', 'Maintenance', 'Makassar',
+  'BC-2026-0628', 'Maintenance', 'Surabaya',
   '-', '200675047', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9923-UCY', 14459000,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -11872,7 +11872,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0631', 'Maintenance', 'Makassar',
+  'BC-2026-0631', 'Maintenance', 'Surabaya',
   '-', '200672772', '-',
   'PT TELEKOMUNIKASI INDONESIA INTERNATIO', 'DB-1689-TC', 935135,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -11890,7 +11890,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0632', 'Maintenance', 'Makassar',
+  'BC-2026-0632', 'Maintenance', 'Surabaya',
   '-', '200671614', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9800-UCZ', 7610000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11908,7 +11908,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0633', 'Maintenance', 'Makassar',
+  'BC-2026-0633', 'Maintenance', 'Surabaya',
   '-', '502150054', '-',
   'SEKRETARIAT DEWAN PERWAKILAN RAKYAT DAERAH KABUPATEN BANGGAI', 'DN-1845-CF', 990000,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -11926,7 +11926,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0634', 'Maintenance', 'Makassar',
+  'BC-2026-0634', 'Maintenance', 'Surabaya',
   '-', '502150059', '-',
   'BADAN PERENCANAAN PEMBANGUNAN, PENELITIAN DAN PENGEMBANGAN', 'DN-1910-CE', 1980000,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -11944,7 +11944,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0635', 'ETLE', 'Makassar',
+  'BC-2026-0635', 'ETLE', 'Surabaya',
   '-', '502149241', '-',
   'PT MIDI UTAMA INDONESIA, TBK', 'DN-1739-MI', 400000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -11962,7 +11962,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0636', 'Maintenance', 'Makassar',
+  'BC-2026-0636', 'Maintenance', 'Surabaya',
   '-', '200665700', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9508-UCV', 3076923,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -11980,7 +11980,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0637', 'Maintenance', 'Makassar',
+  'BC-2026-0637', 'Maintenance', 'Surabaya',
   '-', '200665702', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9508-UCV', 3076923,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -11998,7 +11998,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0638', 'Maintenance', 'Makassar',
+  'BC-2026-0638', 'Maintenance', 'Surabaya',
   '-', '200665573', '-',
   'PT CITRA WARNA ABADI', 'DB-8839-LH', 19637528,
   'Bill', 'Telah Dikonfirmasi', 'Diterima Admin',
@@ -12016,7 +12016,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0639', 'Maintenance', 'Makassar',
+  'BC-2026-0639', 'Maintenance', 'Surabaya',
   '-', '502132018', '-',
   'PT.ADI SARANA ARMADA, TBK (MA)', 'B-1950-UAI', 4240000,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -12034,7 +12034,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0640', 'Maintenance', 'Makassar',
+  'BC-2026-0640', 'Maintenance', 'Surabaya',
   '-', '502125048', '-',
   'PT ADIRA DINAMIKA MULTIFINANCE, TBK', 'B-2154-URC', 700000,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -12052,7 +12052,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0641', 'Dokumen Kendaraan', 'Makassar',
+  'BC-2026-0641', 'Dokumen Kendaraan', 'Surabaya',
   '-', '502123863', '-',
   'PT YPTT SOLUTIONS INDONESIA', 'B-2775-UIC', 901020,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12070,7 +12070,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0642', 'ETLE', 'Makassar',
+  'BC-2026-0642', 'ETLE', 'Surabaya',
   '-', '502118814', '-',
   'SEKRETARIAT DAERAH KABUPATEN TOJO U UNA', 'DN-1242-LC', 400000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12088,7 +12088,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0643', 'Unclaimable Insurance', 'Makassar',
+  'BC-2026-0643', 'Unclaimable Insurance', 'Surabaya',
   '-', '200659377', '-',
   'PT.ADI SARANA ARMADA, TBK (MA)', 'B-2937-UIL', 7100000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12106,7 +12106,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0644', 'Maintenance', 'Makassar',
+  'BC-2026-0644', 'Maintenance', 'Surabaya',
   '-', '502103777', '-',
   'PT MIDI UTAMA INDONESIA, TBK', 'DN-1386-IK', 1400000,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -12124,7 +12124,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0645', 'Maintenance', 'Makassar',
+  'BC-2026-0645', 'Maintenance', 'Semarang',
   '-', '200655367', '-',
   'PT ADI SARANA ARMADA TBK (NEK)', 'DD-8104-YC', 7249000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12142,7 +12142,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0646', 'Dokumen Kendaraan', 'Makassar',
+  'BC-2026-0646', 'Dokumen Kendaraan', 'Semarang',
   '-', '502092864', '-',
   'BAPAS KELAS II TERNATE DIREKTO JENDERAL PEMASYARAKATAN KEMENT', 'DB-1556-RN', 1000000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12160,7 +12160,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0647', 'Maintenance', 'Makassar',
+  'BC-2026-0647', 'Maintenance', 'Semarang',
   '-', '200651712', '-',
   'PT ADI SARANA ARMADA TBK (NEK)', 'PB-8485-SA', 1100000,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -12178,7 +12178,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0648', 'Dokumen Kendaraan', 'Makassar',
+  'BC-2026-0648', 'Dokumen Kendaraan', 'Semarang',
   '-', '502089515', '-',
   'CV ASIA TOP', 'DD-1910-NP', 650000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12196,7 +12196,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0649', 'Maintenance', 'Makassar',
+  'BC-2026-0649', 'Maintenance', 'Semarang',
   '-', '200649656', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9097-UCZ', 7245000,
   'N/A', 'Telah Dikonfirmasi', 'Pending',
@@ -12214,7 +12214,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0650', 'Maintenance', 'Makassar',
+  'BC-2026-0650', 'Maintenance', 'Semarang',
   '-', '200648615', '-',
   'PT BANK NEGARA INDONESIA (PERSERO), TB', 'PA-1769-JF', 1526000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12232,7 +12232,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0651', 'Own Risk', 'Makassar',
+  'BC-2026-0651', 'Own Risk', 'Semarang',
   '1100180733', '-', '-',
   'PT TIGARAKSA SATRIA, TBK', 'DD-1714-LM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12250,7 +12250,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0652', 'Own Risk', 'Makassar',
+  'BC-2026-0652', 'Own Risk', 'Semarang',
   '1100180747', '-', '-',
   'PT MALINDO FEEDMILL TBK', 'DT-1287-ET', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12268,7 +12268,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0653', 'Own Risk', 'Makassar',
+  'BC-2026-0653', 'Own Risk', 'Semarang',
   '1100180683', '-', '-',
   'PT MIDI UTAMA INDONESIA, TBK', 'DB-1572-RE', 300000,
   'Bill', 'Telah Dikonfirmasi', 'Diterima Admin',
@@ -12286,7 +12286,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0654', 'Own Risk', 'Makassar',
+  'BC-2026-0654', 'Own Risk', 'Semarang',
   '1100180684', '-', '-',
   'PT BANK PEMBANGUNAN DAERAH SULAWESI UT GORONTALO', 'DB-1719-RE', 300000,
   'Bill', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12304,7 +12304,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0655', 'Own Risk', 'Makassar',
+  'BC-2026-0655', 'Own Risk', 'Semarang',
   '1100180524', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'DD-1913-LM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12322,7 +12322,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0656', 'Own Risk', 'Makassar',
+  'BC-2026-0656', 'Own Risk', 'Semarang',
   '1100180451', '-', '-',
   'PT SUMBER ALFARIA TRIJAYA, TBK', 'DD-1705-LZ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12340,7 +12340,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0657', 'Own Risk', 'Makassar',
+  'BC-2026-0657', 'Own Risk', 'Semarang',
   '1100180312', '-', '-',
   'PT MACROSENTRA  NIAGABOGA', 'DD-1898-LM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12358,7 +12358,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0658', 'Own Risk', 'Makassar',
+  'BC-2026-0658', 'Own Risk', 'Semarang',
   '1100180340', '-', '-',
   'PT ICHI TAN INDONESIA', 'DD-1481-BN', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12376,7 +12376,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0659', 'Own Risk', 'Makassar',
+  'BC-2026-0659', 'Own Risk', 'Semarang',
   '1100180209', '-', '-',
   'PT SINARMAS DISTRIBUSI NUSANTARA', 'DD-8376-YZ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12394,7 +12394,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0660', 'Own Risk', 'Makassar',
+  'BC-2026-0660', 'Own Risk', 'Semarang',
   '1100180638', '-', '-',
   'PT MARGA NUSANTARA JAYA', 'DB-8681-LR', 300000,
   'Bill', 'Telah Dikonfirmasi', 'Diterima Admin',
@@ -12412,7 +12412,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0661', 'Own Risk', 'Makassar',
+  'BC-2026-0661', 'Own Risk', 'Semarang',
   '1100180102', '-', '-',
   'PT SERENA INDOPANGAN INDUSTRI', 'DN-1974-ID', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12430,7 +12430,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0662', 'Own Risk', 'Makassar',
+  'BC-2026-0662', 'Own Risk', 'Semarang',
   '1100180103', '-', '-',
   'PT MIDI UTAMA INDONESIA, TBK', 'DD-1592-LQ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12448,7 +12448,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0663', 'Own Risk', 'Makassar',
+  'BC-2026-0663', 'Own Risk', 'Semarang',
   '1100180136', '-', '-',
   'PT MANDIRI UTAMA FINANCE', 'B-2766-UIA', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12466,7 +12466,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0664', 'Own Risk', 'Makassar',
+  'BC-2026-0664', 'Own Risk', 'Semarang',
   '1100179858', '-', '-',
   'PT MARS SYMBIOSCIENCE INDONESIA', 'DD-8341-LU', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12484,7 +12484,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0665', 'Own Risk', 'Makassar',
+  'BC-2026-0665', 'Own Risk', 'Semarang',
   '1100179587', '-', '-',
   'PT MIDI UTAMA INDONESIA, TBK', 'DD-1537-NP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12502,7 +12502,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0666', 'Own Risk', 'Makassar',
+  'BC-2026-0666', 'Own Risk', 'Semarang',
   '1100179590', '-', '-',
   'UPT RSUD SAYANG RAKYAT PROVINSI SULAWESI SELATAN', 'DD-1715-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12520,7 +12520,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0667', 'Own Risk', 'Makassar',
+  'BC-2026-0667', 'Own Risk', 'Semarang',
   '1100179479', '-', '-',
   'PT SHARP ELECTRONICS INDONESIA', 'DB-1659-LZ', 300000,
   'Bill', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12538,7 +12538,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0668', 'Own Risk', 'Makassar',
+  'BC-2026-0668', 'Own Risk', 'Semarang',
   '1100179508', '-', '-',
   'PT SHARP ELECTRONICS INDONESIA', 'DB-1706-LZ', 300000,
   'Bill', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12556,7 +12556,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0669', 'Own Risk', 'Makassar',
+  'BC-2026-0669', 'Own Risk', 'Semarang',
   '1100179655', '-', '-',
   'PLN (PERSERO) UNIT PELAKSANA PELAYANAN PELANGGAN TERNATE', 'DG-1528-KK', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12574,7 +12574,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0670', 'Own Risk', 'Makassar',
+  'BC-2026-0670', 'Own Risk', 'Semarang',
   '1100179410', '-', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9845-UCX', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12592,7 +12592,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0671', 'Own Risk', 'Makassar',
+  'BC-2026-0671', 'Own Risk', 'Semarang',
   '1100179411', '-', '-',
   'JASA BERDIKARI LOGISTICS TBK', 'B-9845-UCX', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12610,7 +12610,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0672', 'Own Risk', 'Makassar',
+  'BC-2026-0672', 'Own Risk', 'Semarang',
   '1100179327', '-', '-',
   'PT MARGA NUSANTARA JAYA', 'DT-8792-HE', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12628,7 +12628,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0673', 'Own Risk', 'Makassar',
+  'BC-2026-0673', 'Own Risk', 'Semarang',
   '1100179193', '-', '-',
   'PT MIDI UTAMA INDONESIA, TBK', 'DN-1725-NP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12646,7 +12646,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0674', 'Own Risk', 'Makassar',
+  'BC-2026-0674', 'Own Risk', 'Semarang',
   '1100179049', '-', '-',
   'DINAS PENDIDIKAN, PEMUDA DAN OLAH R KABUPATEN TOJO UNA UNA', 'DN-1239-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12664,7 +12664,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0675', 'Own Risk', 'Makassar',
+  'BC-2026-0675', 'Own Risk', 'Semarang',
   '1100179050', '-', '-',
   'DINAS PENDIDIKAN, PEMUDA DAN OLAH R KABUPATEN TOJO UNA UNA', 'DN-1239-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12682,7 +12682,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0676', 'Own Risk', 'Makassar',
+  'BC-2026-0676', 'Own Risk', 'Semarang',
   '1100179051', '-', '-',
   'DINAS PENDIDIKAN, PEMUDA DAN OLAH R KABUPATEN TOJO UNA UNA', 'DN-1239-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12700,7 +12700,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0677', 'Own Risk', 'Makassar',
+  'BC-2026-0677', 'Own Risk', 'Semarang',
   '1100178941', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1563-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12718,7 +12718,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0678', 'Own Risk', 'Makassar',
+  'BC-2026-0678', 'Own Risk', 'Semarang',
   '1100178948', '-', '-',
   'PT SEKRETARIAT DAERAH KAB. TOJO U', 'DN-8342-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12736,7 +12736,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0679', 'Own Risk', 'Makassar',
+  'BC-2026-0679', 'Own Risk', 'Semarang',
   '1100178951', '-', '-',
   'BADAN PERENCANAAN PEMBANGUNAN,PENEL DAN PENGEMBANGAN', 'DN-1251-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12754,7 +12754,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0680', 'Own Risk', 'Makassar',
+  'BC-2026-0680', 'Own Risk', 'Medan',
   '1100178967', '-', '-',
   'BADAN PERENCANAAN PEMBANGUNAN,PENEL DAN PENGEMBANGAN', 'DN-1251-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12772,7 +12772,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0681', 'Own Risk', 'Makassar',
+  'BC-2026-0681', 'Own Risk', 'Medan',
   '1100178969', '-', '-',
   'PT KHONG GUAN BISCUIT FACTORY INDONESI', 'DE-1983-AS', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12790,7 +12790,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0682', 'Own Risk', 'Makassar',
+  'BC-2026-0682', 'Own Risk', 'Medan',
   '1100177269', '-', '-',
   'PT ERA BANGUN TOWERINDO', 'BG-8835-IJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12808,7 +12808,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0683', 'Own Risk', 'Makassar',
+  'BC-2026-0683', 'Own Risk', 'Medan',
   '1100178523', '-', '-',
   'PT HANJAYA MANDALA SAMPOERNA, TBK', 'DN-8298-NE', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12826,7 +12826,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0684', 'Own Risk', 'Makassar',
+  'BC-2026-0684', 'Own Risk', 'Medan',
   '1100178528', '-', '-',
   'PT BENTOEL DISTRIBUSI UTAMA', 'BG-8835-IJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12844,7 +12844,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0685', 'Own Risk', 'Makassar',
+  'BC-2026-0685', 'Own Risk', 'Medan',
   '1100178529', '-', '-',
   'PT BENTOEL DISTRIBUSI UTAMA', 'BG-8835-IJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12862,7 +12862,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0686', 'Own Risk', 'Makassar',
+  'BC-2026-0686', 'Own Risk', 'Medan',
   '1100178550', '-', '-',
   'PT ERA BANGUN TOWERINDO', 'DD-8034-NT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12880,7 +12880,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0687', 'Own Risk', 'Makassar',
+  'BC-2026-0687', 'Own Risk', 'Medan',
   '1100178602', '-', '-',
   'PT KARYADIBYA MAHARDHIKA', 'DD-8769-YD', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12898,7 +12898,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0688', 'Own Risk', 'Makassar',
+  'BC-2026-0688', 'Own Risk', 'Medan',
   '1100178701', '-', '-',
   'PT TIGARAKSA SATRIA, TBK', 'DD-8956-YC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12916,7 +12916,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0689', 'Own Risk', 'Makassar',
+  'BC-2026-0689', 'Own Risk', 'Medan',
   '1100178702', '-', '-',
   'PT TIGARAKSA SATRIA, TBK', 'DD-8956-YC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12934,7 +12934,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0690', 'Own Risk', 'Makassar',
+  'BC-2026-0690', 'Own Risk', 'Medan',
   '1100178703', '-', '-',
   'PT TRI ADI BERSAMA', 'PY-8196-AB', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12952,7 +12952,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0691', 'Own Risk', 'Makassar',
+  'BC-2026-0691', 'Own Risk', 'Medan',
   '1100178704', '-', '-',
   'PT TRI ADI BERSAMA', 'PY-8196-AB', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12970,7 +12970,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0692', 'Own Risk', 'Makassar',
+  'BC-2026-0692', 'Own Risk', 'Medan',
   '1100178705', '-', '-',
   'PT TRI ADI BERSAMA', 'PY-8196-AB', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -12988,7 +12988,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0693', 'Own Risk', 'Makassar',
+  'BC-2026-0693', 'Own Risk', 'Medan',
   '1100178706', '-', '-',
   'PT ERA BANGUN TOWERINDO', 'PY-8196-AB', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13006,7 +13006,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0694', 'Own Risk', 'Makassar',
+  'BC-2026-0694', 'Own Risk', 'Medan',
   '1100178709', '-', '-',
   'PT KARYADIBYA MAHARDHIKA', 'DB-8279-LH', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13024,7 +13024,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0695', 'Own Risk', 'Makassar',
+  'BC-2026-0695', 'Own Risk', 'Medan',
   '1100178710', '-', '-',
   'PT KARYADIBYA MAHARDHIKA', 'DB-8279-LH', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13042,7 +13042,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0696', 'Own Risk', 'Makassar',
+  'BC-2026-0696', 'Own Risk', 'Medan',
   '1100178712', '-', '-',
   'PT BENTOEL DISTRIBUSI UTAMA', 'L-9761-AB', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13060,7 +13060,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0697', 'Own Risk', 'Makassar',
+  'BC-2026-0697', 'Own Risk', 'Medan',
   '1100178713', '-', '-',
   'PT BENTOEL DISTRIBUSI UTAMA', 'L-9761-AB', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13078,7 +13078,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0698', 'Own Risk', 'Makassar',
+  'BC-2026-0698', 'Own Risk', 'Medan',
   '1100178716', '-', '-',
   'PT KARYADIBYA MAHARDHIKA', 'DM-8342-AH', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13096,7 +13096,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0699', 'Own Risk', 'Makassar',
+  'BC-2026-0699', 'Own Risk', 'Medan',
   '1100178717', '-', '-',
   'PT KARYADIBYA MAHARDHIKA', 'DM-8342-AH', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13114,7 +13114,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0700', 'Own Risk', 'Makassar',
+  'BC-2026-0700', 'Own Risk', 'Medan',
   '1100178719', '-', '-',
   'PT TIGARAKSA SATRIA, TBK', 'DD-8954-YC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13132,7 +13132,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0701', 'Own Risk', 'Makassar',
+  'BC-2026-0701', 'Own Risk', 'Medan',
   '1100178720', '-', '-',
   'PT TIGARAKSA SATRIA, TBK', 'DD-8954-YC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13150,7 +13150,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0702', 'Own Risk', 'Makassar',
+  'BC-2026-0702', 'Own Risk', 'Medan',
   '1100178741', '-', '-',
   'PT KARYADIBYA MAHARDHIKA', 'DD-8770-YD', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13168,7 +13168,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0703', 'Own Risk', 'Makassar',
+  'BC-2026-0703', 'Own Risk', 'Medan',
   '1100178742', '-', '-',
   'PT KARYADIBYA MAHARDHIKA', 'DD-8770-YD', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13186,7 +13186,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0704', 'Own Risk', 'Makassar',
+  'BC-2026-0704', 'Own Risk', 'Medan',
   '1100178743', '-', '-',
   'PT KARYADIBYA MAHARDHIKA', 'DD-8770-YD', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13204,7 +13204,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0705', 'Own Risk', 'Makassar',
+  'BC-2026-0705', 'Own Risk', 'Medan',
   '1100178768', '-', '-',
   'IAIN BONE DITJEN PENDIDIKAN ISLAM KEMENTERIAN AGAMA', 'DB-1291-RN', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13222,7 +13222,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0706', 'Own Risk', 'Makassar',
+  'BC-2026-0706', 'Own Risk', 'Medan',
   '1100178771', '-', '-',
   'IAIN BONE DITJEN PENDIDIKAN ISLAM KEMENTERIAN AGAMA', 'DB-1289-RN', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13240,7 +13240,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0707', 'Own Risk', 'Makassar',
+  'BC-2026-0707', 'Own Risk', 'Medan',
   '1100178774', '-', '-',
   'IAIN BONE DITJEN PENDIDIKAN ISLAM KEMENTERIAN AGAMA', 'DB-1260-RN', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13258,7 +13258,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0708', 'Own Risk', 'Makassar',
+  'BC-2026-0708', 'Own Risk', 'Medan',
   '1100178781', '-', '-',
   'IAIN BONE DITJEN PENDIDIKAN ISLAM KEMENTERIAN AGAMA', 'DB-1214-RN', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13276,7 +13276,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0709', 'Own Risk', 'Makassar',
+  'BC-2026-0709', 'Own Risk', 'Medan',
   '1100178786', '-', '-',
   'IAIN BONE DITJEN PENDIDIKAN ISLAM KEMENTERIAN AGAMA', 'DB-1208-RN', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13294,7 +13294,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0710', 'Own Risk', 'Makassar',
+  'BC-2026-0710', 'Own Risk', 'Medan',
   '1100178788', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1574-NO', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13312,7 +13312,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0711', 'Own Risk', 'Makassar',
+  'BC-2026-0711', 'Own Risk', 'Medan',
   '1100178789', '-', '-',
   'SEKRETARIAT DAERAH KABUPATEN TOJO U UNA', 'DN-1218-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13330,7 +13330,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0712', 'Own Risk', 'Makassar',
+  'BC-2026-0712', 'Own Risk', 'Medan',
   '1100178790', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1581-NO', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13348,7 +13348,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0713', 'Own Risk', 'Makassar',
+  'BC-2026-0713', 'Own Risk', 'Medan',
   '1100178791', '-', '-',
   'PUPUK KALIMANTAN TIMUR', 'B-2085-UZG', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13366,7 +13366,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0714', 'Own Risk', 'Makassar',
+  'BC-2026-0714', 'Own Risk', 'Medan',
   '1100178943', '-', '-',
   'BADAN PERENCANAAN PEMBANGUNAN,PENEL DAN PENGEMBANGAN', 'DN-1228-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13384,7 +13384,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0715', 'Own Risk', 'Makassar',
+  'BC-2026-0715', 'Own Risk', 'Palembang',
   '1100178947', '-', '-',
   'PT SEKRETARIAT DAERAH KAB. TOJO U', 'DN-8342-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13402,7 +13402,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0716', 'Own Risk', 'Makassar',
+  'BC-2026-0716', 'Own Risk', 'Palembang',
   '1100178842', '-', '-',
   'SEKRETARIAT DAERAH KOTA KOTAMOBAGU', 'DB-1745-KJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13420,7 +13420,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0717', 'Own Risk', 'Makassar',
+  'BC-2026-0717', 'Own Risk', 'Palembang',
   '1100178699', '-', '-',
   'PT ERA BANGUN TOWERINDO', 'L-9376-CO', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13438,7 +13438,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0718', 'Own Risk', 'Makassar',
+  'BC-2026-0718', 'Own Risk', 'Palembang',
   '1100178546', '-', '-',
   'PT TIGARAKSA SATRIA, TBK', 'DB-1754-RL', 300000,
   'Bill', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13456,7 +13456,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0719', 'Own Risk', 'Makassar',
+  'BC-2026-0719', 'Own Risk', 'Palembang',
   '1100178554', '-', '-',
   'PT CIPTAJAYA SEJAHTERA ABADI', 'B-9851-UXB', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13474,7 +13474,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0720', 'Own Risk', 'Makassar',
+  'BC-2026-0720', 'Own Risk', 'Palembang',
   '1100178428', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1571-NO', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13492,7 +13492,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0721', 'Own Risk', 'Makassar',
+  'BC-2026-0721', 'Own Risk', 'Palembang',
   '1100178248', '-', '-',
   'PT USAHA GEDUNG MANDIRI', 'PA-8325-AQ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13510,7 +13510,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0722', 'Own Risk', 'Makassar',
+  'BC-2026-0722', 'Own Risk', 'Palembang',
   '1100178250', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DD-8781-YW', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13528,7 +13528,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0723', 'Own Risk', 'Makassar',
+  'BC-2026-0723', 'Own Risk', 'Palembang',
   '1100178264', '-', '-',
   'CV ASIA TOP', 'B-2967-UZF', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13546,7 +13546,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0724', 'Own Risk', 'Makassar',
+  'BC-2026-0724', 'Own Risk', 'Palembang',
   '1100178312', '-', '-',
   'PT MARS SYMBIOSCIENCE INDONESIA', 'DD-1295-NO', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13564,7 +13564,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0725', 'Own Risk', 'Makassar',
+  'BC-2026-0725', 'Own Risk', 'Palembang',
   '1100178352', '-', '-',
   'PT MARS SYMBIOSCIENCE INDONESIA', 'DB-1268-RN', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13582,7 +13582,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0726', 'Own Risk', 'Makassar',
+  'BC-2026-0726', 'Own Risk', 'Palembang',
   '1100178234', '-', '-',
   'BINTANG SEJAHTERA BERSAMA', 'DD-1352-BW', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13600,7 +13600,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0727', 'Own Risk', 'Makassar',
+  'BC-2026-0727', 'Own Risk', 'Palembang',
   '1100178029', '-', '-',
   'PT KHONG GUAN BISCUIT FACTORY INDONESI', 'DE-1983-AS', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13618,7 +13618,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0728', 'Own Risk', 'Makassar',
+  'BC-2026-0728', 'Own Risk', 'Palembang',
   '1100178030', '-', '-',
   'SEKRETARIAT DAERAH KABUPATEN PARIGI MOUTONG', 'B-2789-UID', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13636,7 +13636,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0729', 'Own Risk', 'Makassar',
+  'BC-2026-0729', 'Own Risk', 'Palembang',
   '1100178031', '-', '-',
   'SEKRETARIAT DAERAH KABUPATEN PARIGI MOUTONG', 'B-2789-UID', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13654,7 +13654,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0730', 'Own Risk', 'Makassar',
+  'BC-2026-0730', 'Own Risk', 'Palembang',
   '1100178038', '-', '-',
   'SEKRETARIAT DAERAH KABUPATEN TOJO U UNA', 'DN-1227-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13672,7 +13672,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0731', 'Own Risk', 'Makassar',
+  'BC-2026-0731', 'Own Risk', 'Palembang',
   '1100178009', '-', '-',
   'PT MARS SYMBIOSCIENCE INDONESIA', 'DD-1744-NS', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13690,7 +13690,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0732', 'Own Risk', 'Makassar',
+  'BC-2026-0732', 'Own Risk', 'Palembang',
   '1100177966', '-', '-',
   'PT SUMBER ALFARIA TRIJAYA, TBK', 'BP-1652-OE', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13708,7 +13708,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0733', 'Own Risk', 'Makassar',
+  'BC-2026-0733', 'Own Risk', 'Palembang',
   '1100177955', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1169-FP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13726,7 +13726,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0734', 'Own Risk', 'Makassar',
+  'BC-2026-0734', 'Own Risk', 'Palembang',
   '1100177956', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1624-FP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13744,7 +13744,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0735', 'Maintenance', 'Makassar',
+  'BC-2026-0735', 'Maintenance', 'Palembang',
   '1100177957', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1620-FP', 293700,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13762,7 +13762,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0736', 'Own Risk', 'Makassar',
+  'BC-2026-0736', 'Own Risk', 'Palembang',
   '1100177958', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1620-FP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13780,7 +13780,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0737', 'Maintenance', 'Makassar',
+  'BC-2026-0737', 'Maintenance', 'Palembang',
   '1100177959', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1625-FP', 566100,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13798,7 +13798,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0738', 'Own Risk', 'Makassar',
+  'BC-2026-0738', 'Own Risk', 'Palembang',
   '1100177960', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1625-FP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13816,7 +13816,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0739', 'Own Risk', 'Makassar',
+  'BC-2026-0739', 'Own Risk', 'Palembang',
   '1100177876', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1622-FP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13834,7 +13834,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0740', 'Maintenance', 'Makassar',
+  'BC-2026-0740', 'Maintenance', 'Palembang',
   '1100177877', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1622-FP', 514200,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13852,7 +13852,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0741', 'Own Risk', 'Makassar',
+  'BC-2026-0741', 'Own Risk', 'Palembang',
   '1100177878', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1163-FP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13870,7 +13870,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0742', 'Own Risk', 'Makassar',
+  'BC-2026-0742', 'Own Risk', 'Palembang',
   '1100177880', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1684-FP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13888,7 +13888,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0743', 'Own Risk', 'Makassar',
+  'BC-2026-0743', 'Own Risk', 'Palembang',
   '1100177885', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1168-FP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13906,7 +13906,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0744', 'Own Risk', 'Makassar',
+  'BC-2026-0744', 'Own Risk', 'Palembang',
   '1100177886', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1569-FP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13924,7 +13924,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0745', 'Maintenance', 'Makassar',
+  'BC-2026-0745', 'Maintenance', 'BSO Bekasi',
   '1100177888', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1569-FP', 514200,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13942,7 +13942,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0746', 'Own Risk', 'Makassar',
+  'BC-2026-0746', 'Own Risk', 'BSO Bekasi',
   '1100177891', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1568-FP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13960,7 +13960,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0747', 'Own Risk', 'Makassar',
+  'BC-2026-0747', 'Own Risk', 'BSO Bekasi',
   '1100177892', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1623-FP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13978,7 +13978,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0748', 'Maintenance', 'Makassar',
+  'BC-2026-0748', 'Maintenance', 'BSO Bekasi',
   '1100177894', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1096-WB', 322128,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -13996,7 +13996,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0749', 'Own Risk', 'Makassar',
+  'BC-2026-0749', 'Own Risk', 'BSO Bekasi',
   '1100177895', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1096-WB', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14014,7 +14014,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0750', 'Maintenance', 'Makassar',
+  'BC-2026-0750', 'Maintenance', 'BSO Bekasi',
   '1100177896', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1096-WB', 514200,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14032,7 +14032,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0751', 'Own Risk', 'Makassar',
+  'BC-2026-0751', 'Own Risk', 'BSO Bekasi',
   '1100177900', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1165-FP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14050,7 +14050,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0752', 'Own Risk', 'Makassar',
+  'BC-2026-0752', 'Own Risk', 'BSO Bekasi',
   '1100177902', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1306-WD', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14068,7 +14068,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0753', 'Maintenance', 'Makassar',
+  'BC-2026-0753', 'Maintenance', 'BSO Bekasi',
   '1100177903', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1306-WD', 474300,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14086,7 +14086,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0754', 'Own Risk', 'Makassar',
+  'BC-2026-0754', 'Own Risk', 'BSO Bekasi',
   '1100177904', '-', '-',
   'BADAN KEUANGAN KABUPATEN MINAHASA UTARA', 'DB-1169-FP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14104,7 +14104,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0755', 'Ekspedisi', 'Makassar',
+  'BC-2026-0755', 'Ekspedisi', 'BSO Bekasi',
   '1100177736', '-', '-',
   'PT RAJA CEPAT NUSANTARA', 'L-9271-AB', 3984482,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14122,7 +14122,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0756', 'Own Risk', 'Makassar',
+  'BC-2026-0756', 'Own Risk', 'BSO Bekasi',
   '1100177792', '-', '-',
   'PT SINAR NIAGA SEJAHTERA', 'B-2492-UZV', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14140,7 +14140,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0757', 'Own Risk', 'Makassar',
+  'BC-2026-0757', 'Own Risk', 'BSO Bekasi',
   '1100177654', '-', '-',
   'IAIN BONE DITJEN PENDIDIKAN ISLAM KEMENTERIAN AGAMA', 'DD-1268-NU', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14158,7 +14158,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0758', 'Own Risk', 'Makassar',
+  'BC-2026-0758', 'Own Risk', 'BSO Bekasi',
   '1100177656', '-', '-',
   'IAIN BONE DITJEN PENDIDIKAN ISLAM KEMENTERIAN AGAMA', 'DD-1269-NV', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14176,7 +14176,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0759', 'Own Risk', 'Makassar',
+  'BC-2026-0759', 'Own Risk', 'BSO Bekasi',
   '1100177663', '-', '-',
   'IAIN BONE DITJEN PENDIDIKAN ISLAM KEMENTERIAN AGAMA', 'DD-1269-NR', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14194,7 +14194,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0760', 'Own Risk', 'Makassar',
+  'BC-2026-0760', 'Own Risk', 'BSO Bekasi',
   '1100177578', '-', '-',
   'PT ADIRA DINAMIKA MULTIFINANCE, TBK', 'DD-1482-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14212,7 +14212,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0761', 'Own Risk', 'Makassar',
+  'BC-2026-0761', 'Own Risk', 'BSO Bekasi',
   '1100177580', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'DD-1193-NT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14230,7 +14230,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0762', 'Own Risk', 'Makassar',
+  'BC-2026-0762', 'Own Risk', 'BSO Bekasi',
   '1100177561', '-', '-',
   'PT SUKSES MAKMUR JAYA', 'DM-8148-AM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14248,7 +14248,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0763', 'Own Risk', 'Makassar',
+  'BC-2026-0763', 'Own Risk', 'BSO Bekasi',
   '1100177412', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1321-NP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14266,7 +14266,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0764', 'Own Risk', 'Makassar',
+  'BC-2026-0764', 'Own Risk', 'BSO Bekasi',
   '1100177523', '-', '-',
   'PT RAJA CEPAT NUSANTARA', 'L-9271-AB', 300000,
   'Bill', 'Telah Dikonfirmasi', 'Pending',
@@ -14284,7 +14284,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0765', 'Own Risk', 'Makassar',
+  'BC-2026-0765', 'Own Risk', 'BSO Bekasi',
   '1100177313', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'DD-1893-LM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14302,7 +14302,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0766', 'Own Risk', 'Makassar',
+  'BC-2026-0766', 'Own Risk', 'BSO Bekasi',
   '1100177110', '-', '-',
   'PT SURI TANI PEMUKA', 'DC-1387-AC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14320,7 +14320,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0767', 'Own Risk', 'Makassar',
+  'BC-2026-0767', 'Own Risk', 'BSO Bekasi',
   '1100177138', '-', '-',
   'IAIN BONE DITJEN PENDIDIKAN ISLAM KEMENTERIAN AGAMA', 'DC-1104-GX', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14338,7 +14338,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0768', 'Own Risk', 'Makassar',
+  'BC-2026-0768', 'Own Risk', 'BSO Bekasi',
   '1100177026', '-', '-',
   'PT GIVAUDAN INDONESIA', 'DD-8019-LU', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14356,7 +14356,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0769', 'Own Risk', 'Makassar',
+  'BC-2026-0769', 'Own Risk', 'BSO Bekasi',
   '1100177028', '-', '-',
   'IAIN BONE DITJEN PENDIDIKAN ISLAM KEMENTERIAN AGAMA', 'DD-1832-NP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14374,7 +14374,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0770', 'Own Risk', 'Makassar',
+  'BC-2026-0770', 'Own Risk', 'BSO Bekasi',
   '1100177029', '-', '-',
   'IAIN BONE DITJEN PENDIDIKAN ISLAM KEMENTERIAN AGAMA', 'DD-1853-NP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14392,7 +14392,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0771', 'Own Risk', 'Makassar',
+  'BC-2026-0771', 'Own Risk', 'BSO Bekasi',
   '1100177032', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'DD-1893-LM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14410,7 +14410,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0772', 'Own Risk', 'Makassar',
+  'BC-2026-0772', 'Own Risk', 'BSO Bekasi',
   '1100177034', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1692-NS', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14428,7 +14428,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0773', 'Own Risk', 'Makassar',
+  'BC-2026-0773', 'Own Risk', 'BSO Bekasi',
   '1100177035', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1678-NS', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14446,7 +14446,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0774', 'Own Risk', 'Makassar',
+  'BC-2026-0774', 'Own Risk', 'BSO Bekasi',
   '1100177036', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1564-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14464,7 +14464,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0775', 'Own Risk', 'Makassar',
+  'BC-2026-0775', 'Own Risk', 'BSO Banten',
   '1100176915', '-', '-',
   'DINAS PENANAMAN MODAL DAN PELAYANAN PADU SATU PINTU KABUPATEN MOROWALI', 'DN-1467-II', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14482,7 +14482,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0776', 'Own Risk', 'Makassar',
+  'BC-2026-0776', 'Own Risk', 'BSO Banten',
   '1100176916', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'DD-1894-LM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14500,7 +14500,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0777', 'Own Risk', 'Makassar',
+  'BC-2026-0777', 'Own Risk', 'BSO Banten',
   '1100176917', '-', '-',
   'PT PINUS MERAH ABADI', 'DD-8487-YQ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14518,7 +14518,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0778', 'Own Risk', 'Makassar',
+  'BC-2026-0778', 'Own Risk', 'BSO Banten',
   '1100176918', '-', '-',
   'PT PINUS MERAH ABADI', 'DB-1038-RM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14536,7 +14536,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0779', 'Own Risk', 'Makassar',
+  'BC-2026-0779', 'Own Risk', 'BSO Banten',
   '1100176940', '-', '-',
   'PT UNITED EQUIPMENT INDONESIA', 'DT-1045-PF', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14554,7 +14554,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0780', 'Own Risk', 'Makassar',
+  'BC-2026-0780', 'Own Risk', 'BSO Banten',
   '1100177054', '-', '-',
   'BIRO UMUM SEKRETARIAT DAERAH PROVINSI GORONTALO', 'DM-1719-J', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14572,7 +14572,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0781', 'Own Risk', 'Makassar',
+  'BC-2026-0781', 'Own Risk', 'BSO Banten',
   '1100176881', '-', '-',
   'SEKRETARIAT BAWASLU KABUPATEN TANA A SEKRETARIAT JENDERAL BADAN PENGAW', 'DD-1178-BY', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14590,7 +14590,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0782', 'Own Risk', 'Makassar',
+  'BC-2026-0782', 'Own Risk', 'BSO Banten',
   '1100176722', '-', '-',
   'ONE TIME CUSTOMER', 'DT-1285-ET', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14608,7 +14608,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0783', 'Own Risk', 'Makassar',
+  'BC-2026-0783', 'Own Risk', 'BSO Banten',
   '1100176743', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1569-NO', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14626,7 +14626,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0784', 'Own Risk', 'Makassar',
+  'BC-2026-0784', 'Own Risk', 'BSO Banten',
   '1100176574', '-', '-',
   'PT MARS SYMBIOSCIENCE INDONESIA', 'DD-1742-NS', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14644,7 +14644,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0785', 'Maintenance', 'Makassar',
+  'BC-2026-0785', 'Maintenance', 'BSO Banten',
   '1100176593', '-', '-',
   'PT BANK PEMBANGUNAN DAERAH SULAWESI UT GORONTALO', 'DB-1707-RB', 490000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14662,7 +14662,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0786', 'Own Risk', 'Makassar',
+  'BC-2026-0786', 'Own Risk', 'BSO Banten',
   '1100176797', '-', '-',
   'PT DUTA MITRA SOLUSINDO', 'B-7162-UDB', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14680,7 +14680,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0787', 'Own Risk', 'Makassar',
+  'BC-2026-0787', 'Own Risk', 'BSO Banten',
   '1100176517', '-', '-',
   'PT MIDI UTAMA INDONESIA, TBK', 'DN-1726-NP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14698,7 +14698,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0788', 'Own Risk', 'Makassar',
+  'BC-2026-0788', 'Own Risk', 'BSO Banten',
   '1100176518', '-', '-',
   'PT MIDI UTAMA INDONESIA, TBK', 'DN-1726-NP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14716,7 +14716,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0789', 'Own Risk', 'Makassar',
+  'BC-2026-0789', 'Own Risk', 'BSO Banten',
   '1100176341', '-', '-',
   'PT ICHI TAN INDONESIA', 'DC-1108-GX', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14734,7 +14734,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0790', 'Own Risk', 'Makassar',
+  'BC-2026-0790', 'Own Risk', 'BSO Banten',
   '1100176342', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'DD-1465-NS', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14752,7 +14752,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0791', 'Own Risk', 'Makassar',
+  'BC-2026-0791', 'Own Risk', 'BSO Banten',
   '1100176343', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'B-2789-UIC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14770,7 +14770,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0792', 'Own Risk', 'Makassar',
+  'BC-2026-0792', 'Own Risk', 'BSO Banten',
   '1100176344', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'DB-1531-RO', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14788,7 +14788,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0793', 'Own Risk', 'Makassar',
+  'BC-2026-0793', 'Own Risk', 'BSO Banten',
   '1100176346', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'DD-1905-LM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14806,7 +14806,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0794', 'Own Risk', 'Makassar',
+  'BC-2026-0794', 'Own Risk', 'BSO Banten',
   '1100176794', '-', '-',
   'PT SINAR NIAGA SEJAHTERA', 'DB-1209-RP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14824,7 +14824,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0795', 'Own Risk', 'Makassar',
+  'BC-2026-0795', 'Own Risk', 'BSO Banten',
   '1100176224', '-', '-',
   'PT ICHI TAN INDONESIA', 'DC-1126-GX', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14842,7 +14842,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0796', 'Own Risk', 'Makassar',
+  'BC-2026-0796', 'Own Risk', 'BSO Banten',
   '1100176084', '-', '-',
   'HUAXING CONNECTION INDONESIA', 'DB-1741-NC', 300000,
   'Bill', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14860,7 +14860,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0797', 'Own Risk', 'Makassar',
+  'BC-2026-0797', 'Own Risk', 'BSO Banten',
   '1100175983', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DB-8629-LN', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14878,7 +14878,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0798', 'Own Risk', 'Makassar',
+  'BC-2026-0798', 'Own Risk', 'BSO Banten',
   '1100176007', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DB-8630-LN', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14896,7 +14896,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0799', 'Own Risk', 'Makassar',
+  'BC-2026-0799', 'Own Risk', 'BSO Banten',
   '1100175909', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'DD-1861-LM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14914,7 +14914,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0800', 'Own Risk', 'Makassar',
+  'BC-2026-0800', 'Own Risk', 'BSO Daan Mogot',
   '1100175840', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'DB-1035-RM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14932,7 +14932,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0801', 'Own Risk', 'Makassar',
+  'BC-2026-0801', 'Own Risk', 'BSO Daan Mogot',
   '1100175844', '-', '-',
   'SATUAN POLISI PAMONG PRAJA KABUPATEN TOJO UNA UNA', 'DN-1217-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14950,7 +14950,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0802', 'Own Risk', 'Makassar',
+  'BC-2026-0802', 'Own Risk', 'BSO Daan Mogot',
   '1100175695', '-', '-',
   'PT YPTT SOLUTIONS INDONESIA', 'DD-1466-NS', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14968,7 +14968,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0803', 'Own Risk', 'Makassar',
+  'BC-2026-0803', 'Own Risk', 'BSO Daan Mogot',
   '1100175703', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1572-BA', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -14986,7 +14986,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0804', 'Own Risk', 'Makassar',
+  'BC-2026-0804', 'Own Risk', 'BSO Daan Mogot',
   '1100175705', '-', '-',
   'PT ADIRA DINAMIKA MULTIFINANCE, TBK', 'DD-1735-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15004,7 +15004,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0805', 'Own Risk', 'Makassar',
+  'BC-2026-0805', 'Own Risk', 'BSO Daan Mogot',
   '1100175717', '-', '-',
   'SEKRETARIAT DAERAH KOTA KOTAMOBAGU', 'DB-1328-KL', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15022,7 +15022,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0806', 'Own Risk', 'Makassar',
+  'BC-2026-0806', 'Own Risk', 'BSO Daan Mogot',
   '1100175718', '-', '-',
   'SEKRETARIAT DAERAH KOTA KOTAMOBAGU', 'DB-1329-KL', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15040,7 +15040,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0807', 'Own Risk', 'Makassar',
+  'BC-2026-0807', 'Own Risk', 'BSO Daan Mogot',
   '1100175751', '-', '-',
   'PT SUMBER CIPTA MULTINIAGA', 'DB-1554-RN', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15058,7 +15058,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0808', 'Own Risk', 'Makassar',
+  'BC-2026-0808', 'Own Risk', 'BSO Daan Mogot',
   '1100175643', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DB-8628-LN', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15076,7 +15076,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0809', 'Own Risk', 'Makassar',
+  'BC-2026-0809', 'Own Risk', 'BSO Daan Mogot',
   '1100175506', '-', '-',
   'PT PENTA VALENT TBK', 'DD-1716-LV', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15094,7 +15094,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0810', 'Own Risk', 'Makassar',
+  'BC-2026-0810', 'Own Risk', 'BSO Daan Mogot',
   '1100175507', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-1566-NW', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15112,7 +15112,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0811', 'Own Risk', 'Makassar',
+  'BC-2026-0811', 'Own Risk', 'BSO Daan Mogot',
   '1100175509', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-1566-NW', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15130,7 +15130,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0812', 'Own Risk', 'Makassar',
+  'BC-2026-0812', 'Own Risk', 'BSO Daan Mogot',
   '1100175510', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-1566-NW', 300000,
   'Bill', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15148,7 +15148,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0813', 'Own Risk', 'Makassar',
+  'BC-2026-0813', 'Own Risk', 'BSO Daan Mogot',
   '1100175511', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-8253-NF', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15166,7 +15166,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0814', 'Own Risk', 'Makassar',
+  'BC-2026-0814', 'Own Risk', 'BSO Daan Mogot',
   '1100175512', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-8253-NF', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15184,7 +15184,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0815', 'Own Risk', 'Makassar',
+  'BC-2026-0815', 'Own Risk', 'BSO Daan Mogot',
   '1100175513', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-1664-NQ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15202,7 +15202,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0816', 'Own Risk', 'Makassar',
+  'BC-2026-0816', 'Own Risk', 'BSO Daan Mogot',
   '1100175514', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-1664-NQ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15220,7 +15220,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0817', 'Own Risk', 'Makassar',
+  'BC-2026-0817', 'Own Risk', 'BSO Daan Mogot',
   '1100175515', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-8253-NF', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15238,7 +15238,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0818', 'Own Risk', 'Makassar',
+  'BC-2026-0818', 'Own Risk', 'BSO Daan Mogot',
   '1100175516', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-8253-NF', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15256,7 +15256,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0819', 'Own Risk', 'Makassar',
+  'BC-2026-0819', 'Own Risk', 'BSO Daan Mogot',
   '1100175588', '-', '-',
   'SEKRETARIAT DAERAH KOTA KOTAMOBAGU', 'DB-1327-KL', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15274,7 +15274,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0820', 'Own Risk', 'Makassar',
+  'BC-2026-0820', 'Own Risk', 'BSO Daan Mogot',
   '1100175347', '-', '-',
   'PT SURI TANI PEMUKA', 'DD-1657-LS', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15292,7 +15292,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0821', 'Own Risk', 'Makassar',
+  'BC-2026-0821', 'Own Risk', 'BSO Daan Mogot',
   '1100175349', '-', '-',
   'CV ASIA TOP', 'B-2967-UZF', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15310,7 +15310,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0822', 'Own Risk', 'Makassar',
+  'BC-2026-0822', 'Own Risk', 'BSO Daan Mogot',
   '1100175350', '-', '-',
   'PT PENJAMINAN JAMKRINDO SYARIAH', 'DC-1384-GW', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15328,7 +15328,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0823', 'Own Risk', 'Makassar',
+  'BC-2026-0823', 'Own Risk', 'BSO Daan Mogot',
   '1100175351', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1570-NO', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15346,7 +15346,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0824', 'Own Risk', 'Makassar',
+  'BC-2026-0824', 'Own Risk', 'BSO Daan Mogot',
   '1100175358', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1938-LL', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15364,7 +15364,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0825', 'Own Risk', 'Makassar',
+  'BC-2026-0825', 'Own Risk', 'BSO Pontianak',
   '1100175443', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-8287-NF', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15382,7 +15382,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0826', 'Own Risk', 'Makassar',
+  'BC-2026-0826', 'Own Risk', 'BSO Pontianak',
   '1100175444', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-8287-NF', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15400,7 +15400,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0827', 'Own Risk', 'Makassar',
+  'BC-2026-0827', 'Own Risk', 'BSO Pontianak',
   '1100175445', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-8287-NF', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15418,7 +15418,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0828', 'Own Risk', 'Makassar',
+  'BC-2026-0828', 'Own Risk', 'BSO Pontianak',
   '1100175446', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-8286-NF', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15436,7 +15436,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0829', 'Own Risk', 'Makassar',
+  'BC-2026-0829', 'Own Risk', 'BSO Pontianak',
   '1100175448', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-8286-NF', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15454,7 +15454,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0830', 'Own Risk', 'Makassar',
+  'BC-2026-0830', 'Own Risk', 'BSO Pontianak',
   '1100175449', '-', '-',
   'PT PELAYANAN LISTRIK NASIONAL NUSA DAY', 'DN-8286-NF', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15472,7 +15472,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0831', 'Own Risk', 'Makassar',
+  'BC-2026-0831', 'Own Risk', 'BSO Pontianak',
   '1100175451', '-', '-',
   'RAKHA AGRI JAYA', 'DD-1506-NP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15490,7 +15490,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0832', 'Own Risk', 'Makassar',
+  'BC-2026-0832', 'Own Risk', 'BSO Pontianak',
   '1100175453', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'DD-1909-LM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15508,7 +15508,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0833', 'Own Risk', 'Makassar',
+  'BC-2026-0833', 'Own Risk', 'BSO Pontianak',
   '1100175116', '-', '-',
   'PT YPTT SOLUTIONS INDONESIA', 'B-2775-UIC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15526,7 +15526,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0834', 'Own Risk', 'Makassar',
+  'BC-2026-0834', 'Own Risk', 'BSO Pontianak',
   '1100175117', '-', '-',
   'PT YPTT SOLUTIONS INDONESIA', 'B-2775-UIC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15544,7 +15544,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0835', 'Own Risk', 'Makassar',
+  'BC-2026-0835', 'Own Risk', 'BSO Pontianak',
   '1100175118', '-', '-',
   'BADAN PERENCANAAN PEMBANGUNAN DAERA KABUPATEN BONE', 'DD-1810-LH', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15562,7 +15562,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0836', 'Own Risk', 'Makassar',
+  'BC-2026-0836', 'Own Risk', 'BSO Pontianak',
   '1100175119', '-', '-',
   'INSPEKTORAT KABUPATEN BARRU', 'DD-1351-BW', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15580,7 +15580,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0837', 'Own Risk', 'Makassar',
+  'BC-2026-0837', 'Own Risk', 'BSO Pontianak',
   '1100175011', '-', '-',
   'SEKRETARIAT DAERAH KABUPATEN PARIGI MOUTONG', 'DN-1749-KJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15598,7 +15598,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0838', 'Own Risk', 'Makassar',
+  'BC-2026-0838', 'Own Risk', 'BSO Pontianak',
   '1100174852', '-', '-',
   'DINAS PERHUBUNGAN PROVINSI SULAWESI BARAT', 'DC-1478-GW', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15616,7 +15616,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0839', 'Own Risk', 'Makassar',
+  'BC-2026-0839', 'Own Risk', 'BSO Pontianak',
   '1100174853', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1580-NO', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15634,7 +15634,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0840', 'Own Risk', 'Makassar',
+  'BC-2026-0840', 'Own Risk', 'BSO Pontianak',
   '1100174778', '-', '-',
   'KPU PROVINSI SULAWESI UTARA KOMISI PEMILIHAN UMUM', 'DD-1612-GC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15652,7 +15652,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0841', 'Own Risk', 'Makassar',
+  'BC-2026-0841', 'Own Risk', 'BSO Pontianak',
   '1100174716', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1464-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15670,7 +15670,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0842', 'Own Risk', 'Makassar',
+  'BC-2026-0842', 'Own Risk', 'BSO Pontianak',
   '1100174603', '-', '-',
   'DINAS LINGKUNGAN HIDUP DAN KEHUTANA', 'DD-8991-LU', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15688,7 +15688,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0843', 'Own Risk', 'Makassar',
+  'BC-2026-0843', 'Own Risk', 'BSO Pontianak',
   '1100174454', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1216-NV', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15706,7 +15706,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0844', 'Own Risk', 'Makassar',
+  'BC-2026-0844', 'Own Risk', 'BSO Pontianak',
   '1100174456', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1311-NR', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15724,7 +15724,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0845', 'Own Risk', 'Makassar',
+  'BC-2026-0845', 'Own Risk', 'BSO Pontianak',
   '1100174457', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1183-NR', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15742,7 +15742,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0846', 'Own Risk', 'Makassar',
+  'BC-2026-0846', 'Own Risk', 'BSO Pontianak',
   '1100174461', '-', '-',
   'PT GONDOWANGI TRADISIONAL KOSMETIKA', 'DB-1219-RN', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15760,7 +15760,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0847', 'Own Risk', 'Makassar',
+  'BC-2026-0847', 'Own Risk', 'BSO Pontianak',
   '1100174462', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1328-NV', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15778,7 +15778,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0848', 'Own Risk', 'Makassar',
+  'BC-2026-0848', 'Own Risk', 'BSO Pontianak',
   '1100174463', '-', '-',
   'SEKRETARIAT BAWASLU PROVINSI SULAWESI BARAT SEKERTARIAT BAD', 'DB-1037-RN', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15796,7 +15796,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0849', 'Own Risk', 'Makassar',
+  'BC-2026-0849', 'Own Risk', 'BSO Pontianak',
   '1100174465', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1216-NV', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15814,7 +15814,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0850', 'Own Risk', 'Makassar',
+  'BC-2026-0850', 'Own Risk', 'Pekanbaru',
   '1100174480', '-', '-',
   'SEKRETARIAT DAERAH KOTA KOTAMOBAGU', 'DB-1739-KJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15832,7 +15832,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0851', 'Own Risk', 'Makassar',
+  'BC-2026-0851', 'Own Risk', 'Pekanbaru',
   '1100174481', '-', '-',
   'SEKRETARIAT DAERAH KOTA KOTAMOBAGU', 'DB-1736-KJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15850,7 +15850,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0852', 'Own Risk', 'Makassar',
+  'BC-2026-0852', 'Own Risk', 'Pekanbaru',
   '1100174482', '-', '-',
   'SEKRETARIAT DAERAH KOTA KOTAMOBAGU', 'DB-1740-KJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15868,7 +15868,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0853', 'Own Risk', 'Makassar',
+  'BC-2026-0853', 'Own Risk', 'Pekanbaru',
   '1100174483', '-', '-',
   'SEKRETARIAT DAERAH KOTA KOTAMOBAGU', 'DB-1742-KJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15886,7 +15886,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0854', 'Own Risk', 'Makassar',
+  'BC-2026-0854', 'Own Risk', 'Pekanbaru',
   '1100174538', '-', '-',
   'PT TIGARAKSA SATRIA, TBK', 'DB-1261-RQ', 300000,
   'Bill', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15904,7 +15904,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0855', 'Own Risk', 'Makassar',
+  'BC-2026-0855', 'Own Risk', 'Pekanbaru',
   '1100174539', '-', '-',
   'PLN (PERSERO) UNIT PELAKSANA PELAYANAN PELANGGAN TERNATE', 'DG-1530-KK', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15922,7 +15922,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0856', 'Own Risk', 'Makassar',
+  'BC-2026-0856', 'Own Risk', 'Pekanbaru',
   '1100174428', '-', '-',
   'SEKRETARIAT DAERAH KOTA KOTAMOBAGU', 'DB-1743-KJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15940,7 +15940,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0857', 'Own Risk', 'Makassar',
+  'BC-2026-0857', 'Own Risk', 'Pekanbaru',
   '1100174429', '-', '-',
   'SEKRETARIAT DAERAH KOTA KOTAMOBAGU', 'DB-1737-KJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15958,7 +15958,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0858', 'Own Risk', 'Makassar',
+  'BC-2026-0858', 'Own Risk', 'Pekanbaru',
   '1100174431', '-', '-',
   'SEKRETARIAT DAERAH KOTA KOTAMOBAGU', 'DB-1744-KJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15976,7 +15976,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0859', 'Own Risk', 'Makassar',
+  'BC-2026-0859', 'Own Risk', 'Pekanbaru',
   '1100174439', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'DD-1861-LM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -15994,7 +15994,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0860', 'Own Risk', 'Makassar',
+  'BC-2026-0860', 'Own Risk', 'Pekanbaru',
   '1100174303', '-', '-',
   'PT CIPTAJAYA SEJAHTERA ABADI', 'DC-1125-GX', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16012,7 +16012,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0861', 'Own Risk', 'Makassar',
+  'BC-2026-0861', 'Own Risk', 'Pekanbaru',
   '1100174304', '-', '-',
   'PT MANDIRI UTAMA FINANCE', 'B-2699-UIC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16030,7 +16030,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0862', 'Own Risk', 'Makassar',
+  'BC-2026-0862', 'Own Risk', 'Pekanbaru',
   '1100174305', '-', '-',
   'PT FLORA FOOD INDONESIA', 'DD-1524-NQ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16048,7 +16048,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0863', 'Own Risk', 'Makassar',
+  'BC-2026-0863', 'Own Risk', 'Pekanbaru',
   '1100174317', '-', '-',
   'SEKRETARIAT DAERAH KOTA KOTAMOBAGU', 'DB-1741-KJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16066,7 +16066,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0864', 'Own Risk', 'Makassar',
+  'BC-2026-0864', 'Own Risk', 'Pekanbaru',
   '1100174323', '-', '-',
   'SEKRETARIAT DAERAH KOTA KOTAMOBAGU', 'DB-1738-KJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16084,7 +16084,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0865', 'Own Risk', 'Makassar',
+  'BC-2026-0865', 'Own Risk', 'Pekanbaru',
   '1100174131', '-', '-',
   'PT JAPFA FOOD INDONESIA', 'B-2687-UIC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16102,7 +16102,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0866', 'Own Risk', 'Makassar',
+  'BC-2026-0866', 'Own Risk', 'Pekanbaru',
   '1100174139', '-', '-',
   'PT SULSEL CITRA INDONESIA (PERSERODA)', 'DD-1573-NO', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16120,7 +16120,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0867', 'Own Risk', 'Makassar',
+  'BC-2026-0867', 'Own Risk', 'Pekanbaru',
   '1100174540', '-', '-',
   'BIRO UMUM SEKRETARIAT DAERAH PROVINSI GORONTALO', 'DM-1582-AX', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16138,7 +16138,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0868', 'Own Risk', 'Makassar',
+  'BC-2026-0868', 'Own Risk', 'Pekanbaru',
   '1100174010', '-', '-',
   'PT MARS SYMBIOSCIENCE INDONESIA', 'DD-1194-NQ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16156,7 +16156,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0869', 'Own Risk', 'Makassar',
+  'BC-2026-0869', 'Own Risk', 'Pekanbaru',
   '1100173936', '-', '-',
   'PT MAZZONI JAVA UTAMA', 'DD-1892-LM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16174,7 +16174,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0870', 'Own Risk', 'Makassar',
+  'BC-2026-0870', 'Own Risk', 'Pekanbaru',
   '1100173890', '-', '-',
   'PT YPTT SOLUTIONS INDONESIA', 'DD-7006-YW', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16192,7 +16192,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0871', 'Own Risk', 'Makassar',
+  'BC-2026-0871', 'Own Risk', 'Pekanbaru',
   '1100173801', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1571-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16210,7 +16210,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0872', 'Own Risk', 'Makassar',
+  'BC-2026-0872', 'Own Risk', 'Pekanbaru',
   '1100173802', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1504-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16228,7 +16228,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0873', 'Own Risk', 'Makassar',
+  'BC-2026-0873', 'Own Risk', 'Pekanbaru',
   '1100173803', '-', '-',
   'KPU PROVINSI SULAWESI UTARA KOMISI PEMILIHAN UMUM', 'DD-1511-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16246,7 +16246,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0874', 'Own Risk', 'Makassar',
+  'BC-2026-0874', 'Own Risk', 'Pekanbaru',
   '1100173804', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1582-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16264,7 +16264,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0875', 'Own Risk', 'Makassar',
+  'BC-2026-0875', 'Own Risk', 'Solo',
   '1100173805', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1564-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16282,7 +16282,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0876', 'Own Risk', 'Makassar',
+  'BC-2026-0876', 'Own Risk', 'Solo',
   '1100173806', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1493-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16300,7 +16300,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0877', 'Own Risk', 'Makassar',
+  'BC-2026-0877', 'Own Risk', 'Solo',
   '1100173807', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1471-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16318,7 +16318,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0878', 'Own Risk', 'Makassar',
+  'BC-2026-0878', 'Own Risk', 'Solo',
   '1100173808', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1485-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16336,7 +16336,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0879', 'Own Risk', 'Makassar',
+  'BC-2026-0879', 'Own Risk', 'Solo',
   '1100173809', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1472-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16354,7 +16354,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0880', 'Own Risk', 'Makassar',
+  'BC-2026-0880', 'Own Risk', 'Solo',
   '1100173810', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1570-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16372,7 +16372,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0881', 'Own Risk', 'Makassar',
+  'BC-2026-0881', 'Own Risk', 'Solo',
   '1100173811', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1505-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16390,7 +16390,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0882', 'Own Risk', 'Makassar',
+  'BC-2026-0882', 'Own Risk', 'Solo',
   '1100173812', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1480-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16408,7 +16408,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0883', 'Own Risk', 'Makassar',
+  'BC-2026-0883', 'Own Risk', 'Solo',
   '1100173813', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1464-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16426,7 +16426,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0884', 'Own Risk', 'Makassar',
+  'BC-2026-0884', 'Own Risk', 'Solo',
   '1100173814', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1584-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16444,7 +16444,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0885', 'Own Risk', 'Makassar',
+  'BC-2026-0885', 'Own Risk', 'Solo',
   '1100173815', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1467-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16462,7 +16462,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0886', 'Own Risk', 'Makassar',
+  'BC-2026-0886', 'Own Risk', 'Solo',
   '1100173816', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1503-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16480,7 +16480,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0887', 'Own Risk', 'Makassar',
+  'BC-2026-0887', 'Own Risk', 'Solo',
   '1100173847', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1481-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16498,7 +16498,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0888', 'Own Risk', 'Makassar',
+  'BC-2026-0888', 'Own Risk', 'Solo',
   '1100173758', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1473-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16516,7 +16516,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0889', 'Own Risk', 'Makassar',
+  'BC-2026-0889', 'Own Risk', 'Solo',
   '1100173760', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1497-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16534,7 +16534,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0890', 'Own Risk', 'Makassar',
+  'BC-2026-0890', 'Own Risk', 'Solo',
   '1100173764', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1474-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16552,7 +16552,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0891', 'Own Risk', 'Makassar',
+  'BC-2026-0891', 'Own Risk', 'Solo',
   '1100173767', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1467-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16570,7 +16570,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0892', 'Own Risk', 'Makassar',
+  'BC-2026-0892', 'Own Risk', 'Solo',
   '1100173777', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1494-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16588,7 +16588,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0893', 'Own Risk', 'Makassar',
+  'BC-2026-0893', 'Own Risk', 'Solo',
   '1100173778', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1501-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16606,7 +16606,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0894', 'Own Risk', 'Makassar',
+  'BC-2026-0894', 'Own Risk', 'Solo',
   '1100173780', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1466-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16624,7 +16624,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0895', 'Own Risk', 'Makassar',
+  'BC-2026-0895', 'Own Risk', 'Manado',
   '1100173781', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1491-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16642,7 +16642,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0896', 'Own Risk', 'Makassar',
+  'BC-2026-0896', 'Own Risk', 'Manado',
   '1100173782', '-', '-',
   'LAPAS KELAS II A MANADO DIREKT JENDERAL PEMASYARAKATAN KEMENT', 'DD-1182-NU', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16660,7 +16660,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0897', 'Own Risk', 'Makassar',
+  'BC-2026-0897', 'Own Risk', 'Manado',
   '1100173783', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1572-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16678,7 +16678,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0898', 'Own Risk', 'Makassar',
+  'BC-2026-0898', 'Own Risk', 'Manado',
   '1100173784', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1475-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16696,7 +16696,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0899', 'Own Risk', 'Makassar',
+  'BC-2026-0899', 'Own Risk', 'Manado',
   '1100173785', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAN ASET D KABUPATEN TOJO UNA UNA', 'DN-1983-LA', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16714,7 +16714,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0900', 'Own Risk', 'Makassar',
+  'BC-2026-0900', 'Own Risk', 'Manado',
   '1100173786', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1487-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16732,7 +16732,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0901', 'Own Risk', 'Makassar',
+  'BC-2026-0901', 'Own Risk', 'Manado',
   '1100173787', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1470-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16750,7 +16750,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0902', 'Own Risk', 'Makassar',
+  'BC-2026-0902', 'Own Risk', 'Manado',
   '1100173788', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1563-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16768,7 +16768,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0903', 'Own Risk', 'Makassar',
+  'BC-2026-0903', 'Own Risk', 'Manado',
   '1100173789', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1510-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16786,7 +16786,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0904', 'Own Risk', 'Makassar',
+  'BC-2026-0904', 'Own Risk', 'Manado',
   '1100173790', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1510-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16804,7 +16804,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0905', 'Own Risk', 'Makassar',
+  'BC-2026-0905', 'Own Risk', 'Manado',
   '1100173695', '-', '-',
   'PT ADIRA DINAMIKA MULTIFINANCE, TBK', 'B-2489-UZB', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16822,7 +16822,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0906', 'Own Risk', 'Makassar',
+  'BC-2026-0906', 'Own Risk', 'Manado',
   '1100173599', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1483-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16840,7 +16840,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0907', 'Own Risk', 'Makassar',
+  'BC-2026-0907', 'Own Risk', 'Manado',
   '1100173600', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1495-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16858,7 +16858,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0908', 'Own Risk', 'Makassar',
+  'BC-2026-0908', 'Own Risk', 'Manado',
   '1100173602', '-', '-',
   'SEKRETARIAT DEWAN PERWAKILAN RAKYAT DAERAH KABUPATEN TOJO UNA UNA', 'DN-1266-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16876,7 +16876,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0909', 'Own Risk', 'Makassar',
+  'BC-2026-0909', 'Own Risk', 'Manado',
   '1100173603', '-', '-',
   'SEKRETARIAT DEWAN PERWAKILAN RAKYAT DAERAH KABUPATEN TOJO UNA UNA', 'DN-1266-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16894,7 +16894,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0910', 'Own Risk', 'Makassar',
+  'BC-2026-0910', 'Own Risk', 'Manado',
   '1100173605', '-', '-',
   'KANWIL DITJEN PEMASYARAKATAN M UTARA DIREKTORAT JENDERAL PEMA', 'DN-1267-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16912,7 +16912,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0911', 'Own Risk', 'Makassar',
+  'BC-2026-0911', 'Own Risk', 'Manado',
   '1100173607', '-', '-',
   'KANWIL DITJEN PEMASYARAKATAN M UTARA DIREKTORAT JENDERAL PEMA', 'DN-1267-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16930,7 +16930,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0912', 'Own Risk', 'Makassar',
+  'BC-2026-0912', 'Own Risk', 'Manado',
   '1100173611', '-', '-',
   'SEKRETARIAT DEWAN PERWAKILAN RAKYAT DAERAH KABUPATEN TOJO UNA UNA', 'DN-1265-LC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16948,7 +16948,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0913', 'Own Risk', 'Makassar',
+  'BC-2026-0913', 'Own Risk', 'Manado',
   '1100173615', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1465-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16966,7 +16966,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0914', 'Own Risk', 'Makassar',
+  'BC-2026-0914', 'Own Risk', 'Manado',
   '1100173620', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1502-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -16984,7 +16984,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0915', 'Own Risk', 'Makassar',
+  'BC-2026-0915', 'Own Risk', 'Padang',
   '1100173622', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1586-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17002,7 +17002,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0916', 'Own Risk', 'Makassar',
+  'BC-2026-0916', 'Own Risk', 'Padang',
   '1100173579', '-', '-',
   'PT HANJAYA MANDALA SAMPOERNA, TBK', 'DD-8768-YD', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17020,7 +17020,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0917', 'Own Risk', 'Makassar',
+  'BC-2026-0917', 'Own Risk', 'Padang',
   '1100173581', '-', '-',
   'PT HANJAYA MANDALA SAMPOERNA, TBK', 'DD-8143-LU', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17038,7 +17038,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0918', 'Own Risk', 'Makassar',
+  'BC-2026-0918', 'Own Risk', 'Padang',
   '1100173582', '-', '-',
   'PT HANJAYA MANDALA SAMPOERNA, TBK', 'DB-8280-LH', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17056,7 +17056,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0919', 'Own Risk', 'Makassar',
+  'BC-2026-0919', 'Own Risk', 'Padang',
   '1100173545', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1486-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17074,7 +17074,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0920', 'Own Risk', 'Makassar',
+  'BC-2026-0920', 'Own Risk', 'Padang',
   '1100173550', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1490-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17092,7 +17092,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0921', 'Own Risk', 'Makassar',
+  'BC-2026-0921', 'Own Risk', 'Padang',
   '1100173552', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1482-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17110,7 +17110,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0922', 'Own Risk', 'Makassar',
+  'BC-2026-0922', 'Own Risk', 'Padang',
   '1100173554', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1484-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17128,7 +17128,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0923', 'Own Risk', 'Makassar',
+  'BC-2026-0923', 'Own Risk', 'Padang',
   '1100173556', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1492-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17146,7 +17146,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0924', 'Own Risk', 'Makassar',
+  'BC-2026-0924', 'Own Risk', 'Padang',
   '1100173604', '-', '-',
   'PT MIDI UTAMA INDONESIA, TBK', 'DD-1546-LV', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17164,7 +17164,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0925', 'Own Risk', 'Makassar',
+  'BC-2026-0925', 'Own Risk', 'Padang',
   '1100173294', '-', '-',
   'PT MIDI UTAMA INDONESIA, TBK', 'DN-1453-NP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17182,7 +17182,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0926', 'Own Risk', 'Makassar',
+  'BC-2026-0926', 'Own Risk', 'Padang',
   '1100173342', '-', '-',
   'SEKRETARIAT BAWASLU PROVINSI SULAWE SELATAN SEKRETARIAT', 'DD-1173-BY', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17200,7 +17200,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0927', 'Own Risk', 'Makassar',
+  'BC-2026-0927', 'Own Risk', 'Padang',
   '1100173343', '-', '-',
   'BADAN PENGELOLA KEUANGAN DAERAH KABUPATEN BANTAENG', 'DD-1506-FJ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17218,7 +17218,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0928', 'Own Risk', 'Makassar',
+  'BC-2026-0928', 'Own Risk', 'Padang',
   '1100173192', '-', '-',
   'SEKRETARIAT BAWASLU PROVINSI SULAWE SELATAN SEKRETARIAT', 'DD-1911-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17236,7 +17236,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0929', 'Own Risk', 'Makassar',
+  'BC-2026-0929', 'Own Risk', 'Padang',
   '1100173196', '-', '-',
   'SEKRETARIAT BAWASLU PROVINSI SULAWE SELATAN SEKRETARIAT', 'DD-1179-BW', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17254,7 +17254,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0930', 'Own Risk', 'Makassar',
+  'BC-2026-0930', 'Own Risk', 'Padang',
   '1100173198', '-', '-',
   'SEKRETARIAT BAWASLU KABUPATEN TAKAL', 'DD-1735-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17272,7 +17272,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0931', 'Own Risk', 'Makassar',
+  'BC-2026-0931', 'Own Risk', 'Padang',
   '1100173199', '-', '-',
   'SEKRETARIAT BAWASLU PROVINSI SULAWE SELATAN SEKRETARIAT', 'DD-1916-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17290,7 +17290,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0932', 'Own Risk', 'Makassar',
+  'BC-2026-0932', 'Own Risk', 'Padang',
   '1100173200', '-', '-',
   'SEKRETARIAT BAWASLU KABUPATEN TAKAL', 'DD-1473-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17308,7 +17308,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0933', 'Own Risk', 'Makassar',
+  'BC-2026-0933', 'Own Risk', 'Padang',
   '1100173204', '-', '-',
   'SEKRETARIAT BAWASLU KABUPATEN KEPUL', 'DD-1691-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17326,7 +17326,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0934', 'Own Risk', 'Makassar',
+  'BC-2026-0934', 'Own Risk', 'Padang',
   '1100173207', '-', '-',
   'SEKRETARIAT BAWASLU PROVINSI SULAWE SELATAN SEKRETARIAT', 'DD-1481-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17344,7 +17344,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0935', 'Own Risk', 'Makassar',
+  'BC-2026-0935', 'Own Risk', 'Malang',
   '1100173211', '-', '-',
   'SEKRETARIAT BAWASLU PROVINSI SULAWE SELATAN SEKRETARIAT', 'DD-1232-BY', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17362,7 +17362,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0936', 'Own Risk', 'Makassar',
+  'BC-2026-0936', 'Own Risk', 'Malang',
   '1100173214', '-', '-',
   'BADAN PENGAWAS PEMILIHAN UMUM KABUP', 'DD-1723-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17380,7 +17380,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0937', 'Own Risk', 'Makassar',
+  'BC-2026-0937', 'Own Risk', 'Malang',
   '1100173216', '-', '-',
   'SEKRETARIAT BAWASLU PROVINSI SULAWE SELATAN SEKRETARIAT', 'DD-1482-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17398,7 +17398,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0938', 'Own Risk', 'Makassar',
+  'BC-2026-0938', 'Own Risk', 'Malang',
   '1100173218', '-', '-',
   'SEKRETARIAT BAWASLU PROVINSI SULAWE SELATAN SEKRETARIAT', 'DD-1042-NQ', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17416,7 +17416,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0939', 'Own Risk', 'Makassar',
+  'BC-2026-0939', 'Own Risk', 'Malang',
   '1100173221', '-', '-',
   'PT MARS SYMBIOSCIENCE INDONESIA', 'DD-1722-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17434,7 +17434,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0940', 'Own Risk', 'Makassar',
+  'BC-2026-0940', 'Own Risk', 'Malang',
   '1100173223', '-', '-',
   'SEKRETARIAT BAWASLU PROVINSI SULAWE SELATAN SEKRETARIAT', 'DD-1721-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17452,7 +17452,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0941', 'Own Risk', 'Makassar',
+  'BC-2026-0941', 'Own Risk', 'Malang',
   '1100173251', '-', '-',
   'SEKRETARIAT BAWASLU PROVINSI SULAWE SELATAN SEKRETARIAT', 'DD-1915-BV', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17470,7 +17470,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0942', 'Own Risk', 'Makassar',
+  'BC-2026-0942', 'Own Risk', 'Malang',
   '1100173254', '-', '-',
   'BADAN PENGAWAS PEMILIHAN UMUM KABUP', 'DD-1692-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17488,7 +17488,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0943', 'Own Risk', 'Makassar',
+  'BC-2026-0943', 'Own Risk', 'Malang',
   '1100173255', '-', '-',
   'SEKRETARIAT BAWASLU PROVINSI SULAWE SELATAN SEKRETARIAT', 'DD-1911-BV', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17506,7 +17506,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0944', 'Own Risk', 'Makassar',
+  'BC-2026-0944', 'Own Risk', 'Malang',
   '1100173260', '-', '-',
   'SEKRETARIAT BAWASLU KABUPATEN KEPUL', 'DD-1171-BW', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17524,7 +17524,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0945', 'Own Risk', 'Makassar',
+  'BC-2026-0945', 'Own Risk', 'Malang',
   '1100173266', '-', '-',
   'SEKRETARIAT BAWASLU KABUPATEN KEPUL', 'DD-1751-BT', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17542,7 +17542,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0946', 'Own Risk', 'Makassar',
+  'BC-2026-0946', 'Own Risk', 'Malang',
   '1100173072', '-', '-',
   'PT CHINA COMSERVICE INDONESIA', 'DD-1906-LM', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17560,7 +17560,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0947', 'Own Risk', 'Makassar',
+  'BC-2026-0947', 'Own Risk', 'Malang',
   '1100173151', '-', '-',
   'PT SUMBER ALFARIA TRIJAYA, TBK', 'DB-1254-RC', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17578,7 +17578,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0948', 'Own Risk', 'Makassar',
+  'BC-2026-0948', 'Own Risk', 'Malang',
   '1100172966', '-', '-',
   'IAIN BONE DITJEN PENDIDIKAN ISLAM KEMENTERIAN AGAMA', 'DD-1853-NP', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',
@@ -17596,7 +17596,7 @@ INSERT INTO backcharges (
   file_bak_url, file_handover_aso_sales_url, file_handover_sales_admin_url,
   approval_note, approval_attachment_1_url, approval_attachment_2_url, approval_attachment_3_url
 ) VALUES (
-  'BC-2026-0949', 'Own Risk', 'Makassar',
+  'BC-2026-0949', 'Own Risk', 'Malang',
   '1100172923', '-', '-',
   'BADAN KEUANGAN DAN ASET KABUPATEN MAROS', 'DD-1652-LS', 300000,
   'N/A', 'Telah Dikonfirmasi', 'Diserahkan ke Admin',

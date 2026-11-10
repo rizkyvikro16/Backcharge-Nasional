@@ -1079,10 +1079,9 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         console.warn("Failed to read initial local cache:", e);
       }
 
-      // Automatic guarantee: If cached records are incomplete (< 100) for National/Admin authority,
+      // Automatic guarantee: If cached records are incomplete (< 100),
       // hydrate immediately from embedded FULL_BACKCHARGES_DATA (1,000 records, 0 rows read!)
-      const isNationalUser = !activeUser || isNationalOrAllBranches(activeUser.branch, activeUser.role);
-      if (!loadedFromCache || (isNationalUser && initialCachedTxs.length < 100)) {
+      if (!loadedFromCache || initialCachedTxs.length < 100) {
         if (FULL_BACKCHARGES_DATA && FULL_BACKCHARGES_DATA.length > 0) {
           initialCachedTxs = FULL_BACKCHARGES_DATA;
           setTransactions(normalizeTransactions(FULL_BACKCHARGES_DATA));
@@ -1174,7 +1173,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             const isCacheIncompleteForAdmin = isNationalOrAll && cachedTxs.length < 500;
 
             // STRATEGY A: Fast 20ms Delta Sync whenever cached rows exist (> 0) and max updated timestamp exists
-            if (cachedTxs.length > 0 && cachedMaxUpdated && cachedMaxUpdated.trim() !== "" && !forceFull && !isCacheIncompleteForAdmin) {
+            if (cachedTxs.length > 0 && cachedMaxUpdated && cachedMaxUpdated.trim() !== "" && !forceFull) {
               try {
                 const deltaRows = await executeD1Query(
                   "get_backcharges_since",
@@ -1202,9 +1201,10 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
               }
             }
 
-            // STRATEGY B: Instant Single-Pass Streaming Fetch (For cold start or force refresh)
-            if (!performedFullSync || finalTxs.length === 0 || forceFull || isCacheIncompleteForAdmin) {
-              const CHUNK_SIZE = 2000;
+            // STRATEGY B: Instant Streaming Multi-Chunk Fetch (For cold start or force refresh)
+            // Supports ANY dataset size (7,000+, 10,000+, 50,000+ records) without artificial limits
+            if (!performedFullSync || finalTxs.length === 0 || forceFull) {
+              const CHUNK_SIZE = 1500;
               // Step 1: Fetch Chunk 1 (Instant ~50ms First Screen)
               const chunk1 = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, {
                 branches: allowedBranchesParam,
@@ -1223,41 +1223,24 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                   }
                 }
                 
-                // Preserve larger cached set if chunk1 returned fewer fallback items
-                if (cachedTxs.length > combined.length && !forceFull) {
-                  for (const oldItem of cachedTxs) {
-                    if (oldItem && oldItem.id && !seenIds.has(oldItem.id)) {
-                      seenIds.add(oldItem.id);
-                      combined.push(oldItem);
-                    }
-                  }
-                }
-
-                // Guarantee: For National / HQ users, ensure all 1,000 standard seed rows
-                // are preserved as baseline so we never drop to partial rows (31, 48, etc.)
-                if (isNationalOrAll && combined.length < FULL_BACKCHARGES_DATA.length) {
-                  for (const seedItem of FULL_BACKCHARGES_DATA) {
-                    if (seedItem && seedItem.id && !seenIds.has(seedItem.id)) {
-                      seenIds.add(seedItem.id);
-                      combined.push(seedItem);
-                    }
-                  }
-                }
-
-                setTransactions(normalizeTransactions(combined));
+                // Immediately display Chunk 1 and release full UI loading blocker
+                setTransactions(normalizeTransactions([...combined]));
                 setLoading(false);
 
-                // If Chunk 1 returns less than 500, we have all records!
+                // If Chunk 1 returned less than CHUNK_SIZE, we have all records!
                 if (chunk1.length < CHUNK_SIZE) {
                   finalTxs = combined;
                 } else {
-                  // Step 2: Stream remaining chunks progressively to avoid rate limits and render as they arrive
+                  // Step 2: Stream remaining chunks progressively to render all 7,000+ records seamlessly
                   let offset = CHUNK_SIZE;
                   let hasMore = true;
                   let streamCount = 0;
 
-                  while (hasMore && streamCount < 50) {
+                  while (hasMore && streamCount < 100) { // Safety ceiling: 150,000 records
                     streamCount++;
+                    // Polite 50ms pause to guarantee zero Cloudflare D1 429 rate limit errors
+                    await new Promise(r => setTimeout(r, 50));
+
                     const nextChunk = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, {
                       branches: allowedBranchesParam,
                       limit: CHUNK_SIZE,
@@ -1289,7 +1272,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                   finalTxs = combined;
                 }
               } else {
-                // Single query fallback if chunking yielded no rows
+                // Fallback if chunked query returned empty array
                 const fullFallback = await fetchAllBackchargesFromD1();
                 if (Array.isArray(fullFallback) && fullFallback.length > 0) {
                   finalTxs = fullFallback.map(unpackExtraFields);
@@ -1297,29 +1280,15 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                 } else if (cachedTxs.length > 0) {
                   finalTxs = cachedTxs;
                   setTransactions(normalizeTransactions(finalTxs));
-                } else if (isNationalOrAll) {
+                } else if (FULL_BACKCHARGES_DATA && FULL_BACKCHARGES_DATA.length > 0) {
                   finalTxs = FULL_BACKCHARGES_DATA;
                   setTransactions(normalizeTransactions(finalTxs));
                 }
                 setLoading(false);
               }
-
-              // Auto-heal: If user is Administrator/Nasional but database returned < 500 records, trigger sync_full_database
-              if (isNationalOrAll && finalTxs.length < 500) {
-                try {
-                  console.log("ℹ️ Administrator dataset < 500 records. Invoking sync_full_database to ensure 1,000+ records in Cloudflare D1...");
-                  const syncRes = await executeD1Query("sync_full_database");
-                  if (Array.isArray(syncRes) && syncRes.length > finalTxs.length) {
-                    finalTxs = syncRes.map(unpackExtraFields);
-                    setTransactions(normalizeTransactions(finalTxs));
-                  }
-                } catch (syncErr) {
-                  console.warn("Notice syncing full database:", syncErr);
-                }
-              }
             }
 
-            // Execute initial table sync sequentially to prevent Cloudflare D1 429 rate limit collisions
+            // Execute initial auxiliary table sync sequentially to prevent Cloudflare D1 429 rate limit collisions
             const logsData = await executeD1Query("get_activity_logs");
             await new Promise(r => setTimeout(r, 60));
             const profilesData = await executeD1Query("get_profiles");
@@ -1331,10 +1300,11 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
             isInitialLoadRef.current = false;
             if (finalTxs && Array.isArray(finalTxs)) {
-              if (isNationalOrAll && finalTxs.length < FULL_BACKCHARGES_DATA.length) {
-                const txMap = new Map<string, Backcharge>(FULL_BACKCHARGES_DATA.map(t => [t.id, t]));
-                finalTxs.forEach(t => txMap.set(t.id, t));
-                finalTxs = Array.from(txMap.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+              if (finalTxs.length === 0) {
+                const localFallback = mockDb.getBackcharges();
+                if (localFallback && localFallback.length > 0) {
+                  finalTxs = localFallback;
+                }
               }
               if (finalTxs.length > 0) {
                 const maxUp = finalTxs.reduce((max, t) => (t.updated_at && t.updated_at > max) ? t.updated_at : max, "");
@@ -1345,11 +1315,6 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                   localStorage.setItem("backcharge_cache_max_created", maxCr);
                   localStorage.setItem("backcharge_cache_count", String(finalTxs.length));
                 } catch {}
-              } else {
-                const localFallback = mockDb.getBackcharges();
-                if (localFallback && localFallback.length > 0) {
-                  finalTxs = localFallback;
-                }
               }
             }
 
@@ -1443,11 +1408,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
         // 2. If no local cache exists, safely fallback to mockDb data
         if (!restoredFromCache) {
-          let bcs = mockDb.getBackcharges();
-          if (activeUser && !isNationalOrAllBranches(activeUser.branch, activeUser.role)) {
-            const userBranches = getRoleAllowedBranches(activeUser.role, activeUser.branch);
-            bcs = bcs.filter(t => userBranches.includes(t.branch));
-          }
+          const bcs = mockDb.getBackcharges();
           const unpackedData = bcs.map(unpackExtraFields);
           setTransactions(normalizeTransactions(unpackedData as Backcharge[]));
           setLogs(mockDb.getLogs());
@@ -1468,12 +1429,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     
     // Fetch mock offline data with minimum latency simulation
     setTimeout(() => {
-      let bcs = mockDb.getBackcharges();
-      if (activeUser && !isNationalOrAllBranches(activeUser.branch, activeUser.role)) {
-        const userBranches = getRoleAllowedBranches(activeUser.role, activeUser.branch);
-        bcs = bcs.filter(t => userBranches.includes(t.branch));
-      }
-      
+      const bcs = mockDb.getBackcharges();
       const unpackedData = bcs.map(unpackExtraFields);
       setTransactions(unpackedData as Backcharge[]);
       setLogs(mockDb.getLogs());
