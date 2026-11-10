@@ -87,9 +87,26 @@ async function ensureD1SchemaWorker(db) {
       );
     `),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_created_at ON backcharges (created_at DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_updated_at ON backcharges (updated_at DESC);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_branch ON backcharges (branch);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_category ON backcharges (category);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_status_payment ON backcharges (status_payment);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_status_sap ON backcharges (status_sap);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_status_approval ON backcharges (status_approval);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_status_handover ON backcharges (status_handover);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_branch_created ON backcharges (branch, created_at DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_branch_updated ON backcharges (branch, updated_at DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_license_plate ON backcharges (license_plate);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_customer_name ON backcharges (customer_name);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_id ON activity_logs (id DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_timestamp ON activity_logs (timestamp DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_tx ON activity_logs (transaction_id, id DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_performed_by ON activity_logs (performed_by);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles (email);`),
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_timestamp ON activity_logs (timestamp DESC);`)
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_profiles_branch ON profiles (branch);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles (role);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_contact_inquiries_created ON contact_inquiries (created_at DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_contact_inquiries_status ON contact_inquiries (status);`)
   ]);
 
   // Migration: Ensure no_cmd column exists in backcharges

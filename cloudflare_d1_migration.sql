@@ -88,15 +88,24 @@ CREATE TABLE IF NOT EXISTS contact_inquiries (
 CREATE INDEX IF NOT EXISTS idx_backcharges_created_at ON backcharges (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_backcharges_updated_at ON backcharges (updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_backcharges_branch ON backcharges (branch);
+CREATE INDEX IF NOT EXISTS idx_backcharges_category ON backcharges (category);
+CREATE INDEX IF NOT EXISTS idx_backcharges_status_payment ON backcharges (status_payment);
+CREATE INDEX IF NOT EXISTS idx_backcharges_status_sap ON backcharges (status_sap);
+CREATE INDEX IF NOT EXISTS idx_backcharges_status_approval ON backcharges (status_approval);
+CREATE INDEX IF NOT EXISTS idx_backcharges_status_handover ON backcharges (status_handover);
 CREATE INDEX IF NOT EXISTS idx_backcharges_branch_created ON backcharges (branch, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_backcharges_branch_updated ON backcharges (branch, updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_backcharges_status_payment ON backcharges (status_payment);
-CREATE INDEX IF NOT EXISTS idx_backcharges_status_approval ON backcharges (status_approval);
-CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles (email);
-CREATE INDEX IF NOT EXISTS idx_activity_logs_timestamp ON activity_logs (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_backcharges_license_plate ON backcharges (license_plate);
+CREATE INDEX IF NOT EXISTS idx_backcharges_customer_name ON backcharges (customer_name);
 CREATE INDEX IF NOT EXISTS idx_activity_logs_id ON activity_logs (id DESC);
-CREATE INDEX IF NOT EXISTS idx_activity_logs_tx ON activity_logs (transaction_id);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_timestamp ON activity_logs (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_tx ON activity_logs (transaction_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_performed_by ON activity_logs (performed_by);
+CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles (email);
+CREATE INDEX IF NOT EXISTS idx_profiles_branch ON profiles (branch);
+CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles (role);
 CREATE INDEX IF NOT EXISTS idx_contact_inquiries_created ON contact_inquiries (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_contact_inquiries_status ON contact_inquiries (status);
 
 -- DATA: profiles (124 baris)
 INSERT INTO profiles (id, email, full_name, role, branch, created_at) VALUES (

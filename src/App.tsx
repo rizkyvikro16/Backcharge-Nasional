@@ -666,24 +666,49 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
       }
     };
 
-    // Polling interval: 45 seconds (drastically conserves D1 rows read quota)
-    pollTimerRef.current = setInterval(pollRealtimeUpdates, 45000);
+    // Configurable dynamic polling interval (60–120 seconds, default 60s = 60,000ms)
+    const POLL_INTERVAL_MS = 60000;
 
-    // Instant sync when user switches back to this browser tab
-    const handleVisibilityOrFocus = () => {
-      if (typeof document !== 'undefined' && !document.hidden) {
-        pollRealtimeUpdates();
+    const stopPolling = () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
       }
     };
+
+    const startPolling = () => {
+      stopPolling();
+      if (typeof document !== 'undefined' && !document.hidden && document.visibilityState !== 'hidden') {
+        pollTimerRef.current = setInterval(pollRealtimeUpdates, POLL_INTERVAL_MS);
+      }
+    };
+
+    // Visibility API listener: Stop interval when tab is hidden, resume interval & poll immediately when visible
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined') {
+        if (document.hidden || document.visibilityState === 'hidden') {
+          stopPolling();
+        } else {
+          pollRealtimeUpdates();
+          startPolling();
+        }
+      }
+    };
+
+    // Start polling timer if page is visible
+    startPolling();
+
     if (typeof window !== 'undefined') {
       window.addEventListener('focus', handleVisibilityOrFocus);
+      window.addEventListener('blur', stopPolling);
       document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     }
 
     return () => {
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      stopPolling();
       if (typeof window !== 'undefined') {
         window.removeEventListener('focus', handleVisibilityOrFocus);
+        window.removeEventListener('blur', stopPolling);
         document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       }
     };
