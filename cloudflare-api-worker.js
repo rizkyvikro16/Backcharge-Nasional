@@ -181,6 +181,33 @@ async function ensureD1SchemaWorker(db) {
   } catch (e) {}
 }
 
+// Worker Isolate Edge Memory Cache for Ultra-Low D1 Rows Read Consumption
+const workerEdgeCacheMap = new Map();
+
+function getEdgeCache(key, maxAgeMs = 45000) {
+  const entry = workerEdgeCacheMap.get(key);
+  if (entry && (Date.now() - entry.timestamp < maxAgeMs)) {
+    return entry.data;
+  }
+  return null;
+}
+
+function setEdgeCache(key, data) {
+  workerEdgeCacheMap.set(key, { timestamp: Date.now(), data });
+}
+
+function clearEdgeCache(prefix = "") {
+  if (!prefix) {
+    workerEdgeCacheMap.clear();
+    return;
+  }
+  for (const k of workerEdgeCacheMap.keys()) {
+    if (k.startsWith(prefix)) {
+      workerEdgeCacheMap.delete(k);
+    }
+  }
+}
+
 const JWT_DEFAULT_SECRET = "b9fee9224e290f7c8989888ea76e67ca7015134aeeb20e2a8337e3f31bb900fc";
 
 async function signJwtWorker(payload, secretStr = JWT_DEFAULT_SECRET, expiresInSeconds = 7 * 24 * 3600) {
@@ -870,11 +897,18 @@ export default {
           }
 
           case "get_profiles": {
+            const cacheKey = "profiles:all";
+            const cached = getEdgeCache(cacheKey, 120000);
+            if (cached) {
+              return new Response(JSON.stringify({ success: true, results: cached }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
             const results = await executeD1("SELECT id, email, full_name, role, branch, created_at FROM profiles ORDER BY full_name ASC");
+            setEdgeCache(cacheKey, results);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
           case "insert_profile": {
+            clearEdgeCache();
             let p = params || [];
             if (p.length === 0 && body.data) {
               const d = body.data;
@@ -894,6 +928,7 @@ export default {
           }
 
           case "update_profile_admin_role": {
+            clearEdgeCache();
             const emailVal = (params && params[0]) || body.email;
             const results = await executeD1(
               "UPDATE profiles SET role = 'Administrator', branch = 'Nasional', full_name = 'ASSA' WHERE LOWER(email) = LOWER(?)",
@@ -903,6 +938,7 @@ export default {
           }
 
           case "update_profile": {
+            clearEdgeCache();
             const targetId = body.id || (params && params[params.length - 1]);
             const data = { ...(body.data || {}) };
             if (data.password && !String(data.password).startsWith('$2')) {
@@ -919,6 +955,7 @@ export default {
           }
 
           case "update_profile_password": {
+            clearEdgeCache();
             const rawPwd = (params && params[0]) || body.password;
             const targetId = (params && params[1]) || body.id;
             const hashed = String(rawPwd).startsWith('$2') ? rawPwd : await bcrypt.hash(String(rawPwd), 10);
@@ -927,6 +964,7 @@ export default {
           }
 
           case "delete_profile": {
+            clearEdgeCache();
             const targetId = (params && params[0]) || body.id;
             const results = await executeD1("DELETE FROM profiles WHERE id = ?", [targetId]);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
@@ -936,6 +974,12 @@ export default {
             const branches = body.branches || (Array.isArray(params) && params.length > 0 ? params : null);
             const limit = body.limit ? parseInt(body.limit, 10) : (body.pageSize ? parseInt(body.pageSize, 10) : 0);
             const offset = body.offset ? parseInt(body.offset, 10) : 0;
+            const cacheKey = `bcs:${JSON.stringify(branches || [])}:${limit}:${offset}`;
+
+            const cached = getEdgeCache(cacheKey, 60000);
+            if (cached) {
+              return new Response(JSON.stringify({ success: true, results: cached }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
 
             let sql = "SELECT * FROM backcharges";
             let qParams = [];
@@ -954,6 +998,7 @@ export default {
             }
 
             const results = await executeD1(sql, qParams);
+            setEdgeCache(cacheKey, results);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
@@ -1008,6 +1053,12 @@ export default {
             const branches = body.branches || (Array.isArray(params) && params.length > 1 ? params.slice(1) : null);
             const limit = Number(body.limit) || 0;
             const offset = Number(body.offset) || 0;
+            const cacheKey = `since:${since}:${JSON.stringify(branches || [])}:${limit}:${offset}`;
+
+            const cached = getEdgeCache(cacheKey, 30000);
+            if (cached) {
+              return new Response(JSON.stringify({ success: true, results: cached }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
 
             if (!since || typeof since !== "string" || since.trim() === "") {
               let sql = "SELECT * FROM backcharges";
@@ -1023,6 +1074,7 @@ export default {
                 qParams.push(limit, offset);
               }
               const results = await executeD1(sql, qParams);
+              setEdgeCache(cacheKey, results);
               return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
             }
             
@@ -1042,12 +1094,19 @@ export default {
             }
 
             const results = await executeD1(sql, queryParams);
+            setEdgeCache(cacheKey, results);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
           case "get_dashboard_stats": {
             const { whereSql: sWhereSql, params: sParams } = body;
             const safeWhere = (sWhereSql && typeof sWhereSql === 'string' && !sWhereSql.includes(';') && !sWhereSql.includes('--')) ? sWhereSql : '1=1';
+            const cacheKey = `stats:${safeWhere}:${JSON.stringify(sParams || [])}`;
+            const cached = getEdgeCache(cacheKey, 30000);
+            if (cached) {
+              return new Response(JSON.stringify({ success: true, results: cached }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
+
             const summaryResult = await executeD1(`
               SELECT 
                 COUNT(*) as total_count,
@@ -1085,17 +1144,21 @@ export default {
               GROUP BY category
             `, sParams || []);
 
+            const statsRes = {
+              summary: summaryResult?.[0] || {},
+              branchStats: branchAggResult || [],
+              categoryStats: catAggResult || []
+            };
+            setEdgeCache(cacheKey, statsRes);
+
             return new Response(JSON.stringify({ 
               success: true, 
-              results: {
-                summary: summaryResult?.[0] || {},
-                branchStats: branchAggResult || [],
-                categoryStats: catAggResult || []
-              }
+              results: statsRes
             }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
           case "insert_backcharge": {
+            clearEdgeCache();
             const data = body.data;
             if (!data || typeof data !== 'object' || !data.id) {
               return new Response(JSON.stringify({ success: false, error: "Data transaksi tidak valid" }), { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } });
@@ -1108,6 +1171,7 @@ export default {
           }
 
           case "update_backcharge": {
+            clearEdgeCache();
             const targetId = body.id || (params && params[params.length - 1]);
             const data = body.data || {};
             const validCols = Object.keys(data).filter(col => col !== 'id' && ALLOWED_BACKCHARGE_COLS.has(col));
@@ -1121,6 +1185,7 @@ export default {
           }
 
           case "bulk_update_backcharges": {
+            clearEdgeCache();
             const items = body.items || [];
             for (const item of items) {
               const { id, updates } = item;
@@ -1136,12 +1201,14 @@ export default {
           }
 
           case "delete_backcharge": {
+            clearEdgeCache();
             const id = (params && params[0]) || body.id;
             const results = await executeD1("DELETE FROM backcharges WHERE id = ?", [id]);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
           case "bulk_upsert_backcharges": {
+            clearEdgeCache();
             const items = body.items || [];
             for (const tx of items) {
               if (!tx || typeof tx !== 'object' || !tx.id) continue;
@@ -1161,6 +1228,12 @@ export default {
           }
 
           case "get_activity_logs": {
+            const cacheKey = `logs:${JSON.stringify(body)}`;
+            const cached = getEdgeCache(cacheKey, 30000);
+            if (cached) {
+              return new Response(JSON.stringify({ success: true, results: cached }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
+
             const limit = Math.min(Number(body.limit) || 200, 1000);
             const offset = Number(body.offset) || 0;
             const search = body.search ? `%${String(body.search).trim()}%` : null;
@@ -1198,24 +1271,38 @@ export default {
             queryParams.push(limit, offset);
 
             const results = await executeD1(sql, queryParams);
+            setEdgeCache(cacheKey, results);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
           case "get_max_activity_log_id": {
+            const cacheKey = "logs:max_id";
+            const cached = getEdgeCache(cacheKey, 15000);
+            if (cached) {
+              return new Response(JSON.stringify({ success: true, results: cached }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
             const results = await executeD1("SELECT MAX(id) as max_id FROM activity_logs");
+            setEdgeCache(cacheKey, results);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
           case "get_recent_activity_logs_since": {
             const sinceId = Number((params && params[0]) || body.sinceId || 0);
+            const cacheKey = `logs:since:${sinceId}`;
+            const cached = getEdgeCache(cacheKey, 20000);
+            if (cached) {
+              return new Response(JSON.stringify({ success: true, results: cached }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
             const results = await executeD1(
               "SELECT id, timestamp, transaction_id, performed_by, action_description FROM activity_logs WHERE id > ? ORDER BY id ASC LIMIT 20",
               [sinceId]
             );
+            setEdgeCache(cacheKey, results);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
           case "insert_activity_log": {
+            clearEdgeCache();
             const txId = (params && params[0]) ?? body.transaction_id ?? '-';
             const user = (params && params[1]) ?? body.performed_by ?? '-';
             const desc = (params && params[2]) ?? body.action_description ?? '';

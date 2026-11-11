@@ -1140,15 +1140,24 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             }
           }
 
-          // Fetch all backcharges dynamically with chunked pagination for thousands of D1 records
+          // Fetch all backcharges dynamically with ultra-fast single pass query (falls back to chunking if needed)
           const fetchAllBackchargesFromD1 = async (): Promise<any[]> => {
-            const CHUNK_SIZE = 500;
+            try {
+              const singlePass = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, { branches: allowedBranchesParam });
+              if (Array.isArray(singlePass) && singlePass.length > 0) {
+                return singlePass;
+              }
+            } catch (spErr) {
+              console.warn("Notice: Single pass fetch fallback to chunking:", spErr);
+            }
+
+            const CHUNK_SIZE = 1500;
             let allRows: any[] = [];
             let offset = 0;
             let hasMore = true;
             let loopCount = 0;
 
-            while (hasMore && loopCount < 50) { // Safety max 25,000 rows
+            while (hasMore && loopCount < 50) {
               loopCount++;
               const chunk = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, {
                 branches: allowedBranchesParam,
@@ -1168,12 +1177,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
               }
             }
 
-            if (allRows.length > 0) {
-              return allRows;
-            }
-
-            // Fallback: single query without limit if chunking returned no rows
-            return await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, { branches: allowedBranchesParam });
+            return allRows;
           };
 
           try {
@@ -1504,8 +1508,8 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
       setLoading(false);
     }
 
-    // Fetch and synchronize data in background with Cloudflare D1 (force full sync for new login session)
-    fetchData(true, profile);
+    // Synchronize data with Cloudflare D1 (uses Delta Sync if cache exists for 0-rows-read speed)
+    fetchData(false, profile);
   };
 
   // Logout handler
