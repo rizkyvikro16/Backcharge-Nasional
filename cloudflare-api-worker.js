@@ -1210,21 +1210,29 @@ export default {
           case "bulk_upsert_backcharges": {
             clearEdgeCache();
             const items = body.items || [];
+            if (!Array.isArray(items) || items.length === 0) {
+              return new Response(JSON.stringify({ success: true, count: 0 }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
+            const statements = [];
             for (const tx of items) {
               if (!tx || typeof tx !== 'object' || !tx.id) continue;
               const validCols = Object.keys(tx).filter(col => ALLOWED_BACKCHARGE_COLS.has(col));
               if (validCols.length === 0) continue;
               const placeholders = validCols.map(() => '?').join(', ');
               const updateAssigns = validCols.filter(col => col !== 'id').map(col => `${col} = excluded.${col}`).join(', ');
-              const vals = validCols.map(col => tx[col] !== undefined ? tx[col] : null);
+              const vals = validCols.map(col => tx[col] !== undefined && tx[col] !== null ? tx[col] : null);
               const upsertSql = `
                 INSERT INTO backcharges (${validCols.join(', ')}) 
                 VALUES (${placeholders})
                 ON CONFLICT(id) DO UPDATE SET ${updateAssigns || 'updated_at = CURRENT_TIMESTAMP'}
               `;
-              await executeD1(upsertSql, vals);
+              statements.push(env.DB.prepare(upsertSql).bind(...vals));
             }
-            return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+
+            if (statements.length > 0) {
+              await env.DB.batch(statements);
+            }
+            return new Response(JSON.stringify({ success: true, count: statements.length }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
           case "get_activity_logs": {

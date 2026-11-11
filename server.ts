@@ -1958,8 +1958,7 @@ async function startServer() {
         }
 
         case "bulk_upsert_backcharges": {
-          // Otorisasi: Hanya Administrator atau ASO yang dapat melakukan impor/upsert massal
-          const userRole = req.user.role || '';
+          const userRole = req.user?.role || '';
           if (userRole !== 'Administrator' && !userRole.includes('ASO') && userRole !== 'Division Head') {
             return res.status(403).json({ success: false, error: "Akses ditolak: Anda tidak memiliki hak akses untuk upsert massal." });
           }
@@ -1973,13 +1972,19 @@ async function startServer() {
           }
           for (const tx of items) {
             if (!tx || typeof tx !== 'object' || !tx.id) continue;
-            const validCols = Object.keys(tx).filter(col => col !== 'id' && ALLOWED_BACKCHARGE_COLUMNS.has(col));
+            const validCols = Object.keys(tx).filter(col => ALLOWED_BACKCHARGE_COLUMNS.has(col));
             if (validCols.length === 0) continue;
-            const setClause = validCols.map(col => `${col} = ?`).join(', ');
-            const vals = [...validCols.map(col => tx[col] !== undefined ? tx[col] : null), tx.id];
-            await queryD1(`UPDATE backcharges SET ${setClause} WHERE id = ?`, vals);
+            const placeholders = validCols.map(() => '?').join(', ');
+            const updateAssigns = validCols.filter(col => col !== 'id').map(col => `${col} = excluded.${col}`).join(', ');
+            const vals = validCols.map(col => tx[col] !== undefined && tx[col] !== null ? tx[col] : null);
+            const upsertSql = `
+              INSERT INTO backcharges (${validCols.join(', ')}) 
+              VALUES (${placeholders})
+              ON CONFLICT(id) DO UPDATE SET ${updateAssigns || 'updated_at = CURRENT_TIMESTAMP'}
+            `;
+            await queryD1(upsertSql, vals);
           }
-          return res.json({ success: true });
+          return res.json({ success: true, count: items.length });
         }
 
         // --- ACTIVITY LOGS ---

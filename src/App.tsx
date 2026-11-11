@@ -1839,6 +1839,13 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
           if (onProgress) onProgress(currentCount, totalCount);
         }
 
+        // Instantly update local React state and IndexedDB persistent cache so the imported rows render on screen immediately
+        updateTransactionsStateAndCache(prev => {
+          const map = new Map<string, Backcharge>(prev.map(t => [t.id, t]));
+          preparedTxs.forEach(pt => map.set(pt.id, pt));
+          return Array.from(map.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        });
+
         // Write activity log to D1
         await executeD1Query(
           "insert_activity_log",
