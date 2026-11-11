@@ -1780,7 +1780,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         ...newTx,
         id: targetId,
         no_cmd: (newTx.no_cmd || existingBase.no_cmd || '-').trim(),
-        created_by: existingBase.created_by || creatorEmail,
+        created_by: creatorEmail || currentUser?.email || existingBase.created_by || 'system',
         created_at: existingBase.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),
         nama_bro: newTx.nama_bro || newTx.bro_name || existingBase.nama_bro || '-',

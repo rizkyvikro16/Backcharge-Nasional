@@ -1823,12 +1823,20 @@ async function startServer() {
             SELECT 
               COUNT(*) as total_count,
               SUM(value) as total_value,
+              AVG(value) as avg_value,
               SUM(CASE WHEN status_payment = 'Lunas' THEN value ELSE 0 END) as total_paid_value,
               SUM(CASE WHEN status_payment = 'Lunas' THEN 1 ELSE 0 END) as total_paid_count,
               SUM(CASE WHEN status_payment = 'Belum Bayar' AND status_sap != 'Not Bill' THEN value ELSE 0 END) as total_os_value,
               SUM(CASE WHEN status_payment = 'Belum Bayar' AND status_sap != 'Not Bill' THEN 1 ELSE 0 END) as total_os_count,
               SUM(CASE WHEN status_sap = 'Not Bill' THEN value ELSE 0 END) as total_not_bill_value,
-              SUM(CASE WHEN status_sap = 'Not Bill' THEN 1 ELSE 0 END) as total_not_bill_count
+              SUM(CASE WHEN status_sap = 'Not Bill' THEN 1 ELSE 0 END) as total_not_bill_count,
+              SUM(CASE WHEN status_handover = 'Pending' AND (status_approval IS NULL OR status_approval = 'Belum Approval') THEN 1 ELSE 0 END) as stage_1_count,
+              SUM(CASE WHEN status_handover = 'Selesai' AND (status_approval IS NULL OR status_approval = 'Belum Approval') THEN 1 ELSE 0 END) as stage_2_count,
+              SUM(CASE WHEN status_approval = 'Disetujui' AND (status_sap IS NULL OR status_sap = 'N/A' OR status_sap = '') THEN 1 ELSE 0 END) as stage_3_count,
+              SUM(CASE WHEN status_sap = 'Bill' AND (no_invoice IS NULL OR no_invoice = '-' OR TRIM(no_invoice) = '') THEN 1 ELSE 0 END) as stage_4_count,
+              SUM(CASE WHEN (no_invoice IS NOT NULL AND no_invoice != '-' AND TRIM(no_invoice) != '') AND status_payment = 'Belum Bayar' THEN 1 ELSE 0 END) as stage_5_count,
+              SUM(CASE WHEN status_payment = 'Lunas' THEN 1 ELSE 0 END) as stage_6_count,
+              SUM(CASE WHEN status_sap = 'Not Bill' THEN 1 ELSE 0 END) as stage_7_count
             FROM backcharges 
             WHERE ${safeWhere}
           `, sParams || []);

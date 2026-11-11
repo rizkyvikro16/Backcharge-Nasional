@@ -98,6 +98,10 @@ async function ensureD1SchemaWorker(db) {
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_branch_updated ON backcharges (branch, updated_at DESC);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_license_plate ON backcharges (license_plate);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_backcharges_customer_name ON backcharges (customer_name);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_bkc_branch_created_status ON backcharges (branch, created_at DESC, status_payment, status_approval);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_bkc_created_branch_val ON backcharges (created_at DESC, branch, value);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_bkc_status_branch_val ON backcharges (status_payment, status_sap, branch, value);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_bkc_cat_branch_created ON backcharges (category, branch, created_at DESC);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_id ON activity_logs (id DESC);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_timestamp ON activity_logs (timestamp DESC);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_tx ON activity_logs (transaction_id, id DESC);`),
@@ -1111,12 +1115,20 @@ export default {
               SELECT 
                 COUNT(*) as total_count,
                 SUM(value) as total_value,
+                AVG(value) as avg_value,
                 SUM(CASE WHEN status_payment = 'Lunas' THEN value ELSE 0 END) as total_paid_value,
                 SUM(CASE WHEN status_payment = 'Lunas' THEN 1 ELSE 0 END) as total_paid_count,
                 SUM(CASE WHEN status_payment = 'Belum Bayar' AND status_sap != 'Not Bill' THEN value ELSE 0 END) as total_os_value,
                 SUM(CASE WHEN status_payment = 'Belum Bayar' AND status_sap != 'Not Bill' THEN 1 ELSE 0 END) as total_os_count,
                 SUM(CASE WHEN status_sap = 'Not Bill' THEN value ELSE 0 END) as total_not_bill_value,
-                SUM(CASE WHEN status_sap = 'Not Bill' THEN 1 ELSE 0 END) as total_not_bill_count
+                SUM(CASE WHEN status_sap = 'Not Bill' THEN 1 ELSE 0 END) as total_not_bill_count,
+                SUM(CASE WHEN status_handover = 'Pending' AND (status_approval IS NULL OR status_approval = 'Belum Approval') THEN 1 ELSE 0 END) as stage_1_count,
+                SUM(CASE WHEN status_handover = 'Selesai' AND (status_approval IS NULL OR status_approval = 'Belum Approval') THEN 1 ELSE 0 END) as stage_2_count,
+                SUM(CASE WHEN status_approval = 'Disetujui' AND (status_sap IS NULL OR status_sap = 'N/A' OR status_sap = '') THEN 1 ELSE 0 END) as stage_3_count,
+                SUM(CASE WHEN status_sap = 'Bill' AND (no_invoice IS NULL OR no_invoice = '-' OR TRIM(no_invoice) = '') THEN 1 ELSE 0 END) as stage_4_count,
+                SUM(CASE WHEN (no_invoice IS NOT NULL AND no_invoice != '-' AND TRIM(no_invoice) != '') AND status_payment = 'Belum Bayar' THEN 1 ELSE 0 END) as stage_5_count,
+                SUM(CASE WHEN status_payment = 'Lunas' THEN 1 ELSE 0 END) as stage_6_count,
+                SUM(CASE WHEN status_sap = 'Not Bill' THEN 1 ELSE 0 END) as stage_7_count
               FROM backcharges 
               WHERE ${safeWhere}
             `, sParams || []);

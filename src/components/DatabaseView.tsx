@@ -333,29 +333,35 @@ const parseExcelDate = (val: any): string => {
   const str = String(val).trim();
   if (!str) return getTodayStr();
 
-  // If DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
-  if (/^\d{1,2}[/-]\d{1,2}[/-]\d{4}$/.test(str)) {
-    const parts = str.split(/[/-]/);
-    const day = parts[0].padStart(2, '0');
-    const month = parts[1].padStart(2, '0');
+  // Handle DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+  if (/^\d{1,2}[/. -]\d{1,2}[/. -]\d{4}$/.test(str)) {
+    const parts = str.split(/[/. -]/);
+    const p1 = parseInt(parts[0], 10);
+    const p2 = parseInt(parts[1], 10);
     const year = parts[2];
+    let day = String(p1).padStart(2, '0');
+    let month = String(p2).padStart(2, '0');
+    if (p1 <= 12 && p2 > 12) {
+      day = String(p2).padStart(2, '0');
+      month = String(p1).padStart(2, '0');
+    }
     return `${year}-${month}-${day}`;
   }
 
-  // If YYYY-MM-DD
-  if (/^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(str)) {
-    const parts = str.split(/[/-]/);
+  // Handle YYYY-MM-DD or YYYY/MM/DD
+  if (/^\d{4}[/. -]\d{1,2}[/. -]\d{1,2}$/.test(str)) {
+    const parts = str.split(/[/. -]/);
     const year = parts[0];
-    const month = parts[1].padStart(2, '0');
-    const day = parts[2].padStart(2, '0');
+    const month = String(parts[1]).padStart(2, '0');
+    const day = String(parts[2]).padStart(2, '0');
     return `${year}-${month}-${day}`;
   }
 
-  // If it's an Excel serial date number (e.g., 46322)
+  // Handle Excel serial date numbers (e.g., 46322)
   if (/^\d+(\.\d+)?$/.test(str)) {
     const num = Number(str);
     const utcDays = num > 60 ? num - 25569 : num - 25568;
-    const dateObj = new Date(utcDays * 86400 * 1000);
+    const dateObj = new Date(Math.round(utcDays * 86400 * 1000));
     if (!isNaN(dateObj.getTime())) {
       const year = dateObj.getUTCFullYear();
       const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');

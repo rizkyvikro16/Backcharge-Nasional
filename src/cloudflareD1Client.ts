@@ -135,6 +135,10 @@ export async function ensureD1TablesExist(): Promise<void> {
         CREATE INDEX IF NOT EXISTS idx_backcharges_branch_created ON backcharges(branch, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_backcharges_license_plate ON backcharges(license_plate);
         CREATE INDEX IF NOT EXISTS idx_backcharges_customer_name ON backcharges(customer_name);
+        CREATE INDEX IF NOT EXISTS idx_bkc_branch_created_status ON backcharges(branch, created_at DESC, status_payment, status_approval);
+        CREATE INDEX IF NOT EXISTS idx_bkc_created_branch_val ON backcharges(created_at DESC, branch, value);
+        CREATE INDEX IF NOT EXISTS idx_bkc_status_branch_val ON backcharges(status_payment, status_sap, branch, value);
+        CREATE INDEX IF NOT EXISTS idx_bkc_cat_branch_created ON backcharges(category, branch, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_logs_tx_id ON activity_logs(transaction_id, id DESC);
         CREATE INDEX IF NOT EXISTS idx_logs_id ON activity_logs(id DESC);
         CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON activity_logs(timestamp DESC);
