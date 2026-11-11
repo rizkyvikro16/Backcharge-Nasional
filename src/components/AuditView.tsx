@@ -174,32 +174,43 @@ export default function AuditView({ logs, profiles = [], currentUser, onRefreshL
     return filteredLogs.slice(start, start + pageSize);
   }, [filteredLogs, currentPage, pageSize]);
 
-  // Deep search directly against Cloudflare D1 (10,000+ entries)
+  // Deep search directly against Cloudflare D1 (10,000+ entries) with auto-retry on network drop/change
   const handleDeepServerSearch = async () => {
     setIsServerSearching(true);
-    try {
-      const response = await fetch(getApiUrl('/api/d1/execute'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
-        },
-        body: JSON.stringify({
-          operationId: 'get_activity_logs',
-          limit: 1000,
-          search: searchTerm || undefined,
-          transactionId: txIdFilter || undefined,
-          performedBy: userFilter || undefined,
-          startDate: startDate || undefined,
-          endDate: endDate || undefined
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP Error ${response.status}`);
+    const fetchWithRetry = async (attempt = 1): Promise<any> => {
+      try {
+        const response = await fetch(getApiUrl('/api/d1/execute'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+          },
+          body: JSON.stringify({
+            operationId: 'get_activity_logs',
+            limit: 1000,
+            search: searchTerm || undefined,
+            transactionId: txIdFilter || undefined,
+            performedBy: userFilter || undefined,
+            startDate: startDate || undefined,
+            endDate: endDate || undefined
+          })
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP Error ${response.status}`);
+        }
+        return await response.json();
+      } catch (err: any) {
+        if (attempt <= 4) {
+          const delayMs = attempt * 400 + Math.floor(Math.random() * 200);
+          await new Promise(r => setTimeout(r, delayMs));
+          return fetchWithRetry(attempt + 1);
+        }
+        throw err;
       }
+    };
 
-      const resData = await response.json();
+    try {
+      const resData = await fetchWithRetry();
       if (resData.success && Array.isArray(resData.results)) {
         setServerLogs(resData.results);
         if (addToast) {

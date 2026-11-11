@@ -456,15 +456,10 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     }
 
     let isMounted = true;
-    fetch(getApiUrl("/api/d1/execute"), {
-      method: "POST",
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ operationId: "get_backcharge_detail", params: [selectedTransactionId] })
-    })
-      .then(res => res.json())
-      .then(d => {
-        if (isMounted && d.success && d.results && d.results.length > 0) {
-          setActiveDetailRecord(unpackExtraFields(d.results[0]));
+    executeD1Query("get_backcharge_detail", [selectedTransactionId])
+      .then(results => {
+        if (isMounted && results && results.length > 0) {
+          setActiveDetailRecord(unpackExtraFields(results[0]));
         }
       })
       .catch(err => {
@@ -939,11 +934,12 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
           })
         });
       } catch (networkErr: any) {
-        if (attempt <= 4) {
-          await new Promise(r => setTimeout(r, attempt * 400));
+        if (attempt <= 5) {
+          const delayMs = Math.min(5000, attempt * 400 + Math.floor(Math.random() * 300));
+          await new Promise(r => setTimeout(r, delayMs));
           return executeD1Query(sqlOrOpId, params, attempt + 1, extraPayload);
         }
-        console.warn("Koneksi D1 gagal:", networkErr?.message || networkErr);
+        console.warn("Koneksi D1 mengalami gangguan jaringan (Network Changed / HTTP2 Error):", networkErr?.message || networkErr);
         if (isReadQuery) {
           return [];
         }
