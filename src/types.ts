@@ -294,15 +294,27 @@ export function packExtraFields(tx: any): string {
   if (tx.tanggal_handover) packed += `||TANGGAL_HANDOVER:${tx.tanggal_handover}`;
   if (tx.nama_bro && tx.nama_bro !== '-') packed += `||NAMA_BRO:${tx.nama_bro}`;
   if (tx.alasan && tx.alasan !== '-') packed += `||ALASAN:${tx.alasan}`;
-  if (tx.upload_dok_pendukung) packed += `||DOK_PENDUKUNG:${tx.upload_dok_pendukung}`;
+  if (tx.upload_dok_pendukung) {
+    const val = tx.upload_dok_pendukung.startsWith('data:') ? `/api/files/secure/att_${tx.id || Date.now()}_dok` : tx.upload_dok_pendukung;
+    packed += `||DOK_PENDUKUNG:${val}`;
+  }
   if (tx.status_approval) packed += `||APPROVAL:${tx.status_approval}`;
   if (tx.approved_by) packed += `||APPROVED_BY:${tx.approved_by}`;
   if (tx.approved_at) packed += `||APPROVED_AT:${tx.approved_at}`;
   if (tx.approval_note) packed += `||APPROVAL_NOTE:${tx.approval_note}`;
   
-  if (tx.approval_attachment_1_url) packed += `||APP_ATT1:${tx.approval_attachment_1_url}`;
-  if (tx.approval_attachment_2_url) packed += `||APP_ATT2:${tx.approval_attachment_2_url}`;
-  if (tx.approval_attachment_3_url) packed += `||APP_ATT3:${tx.approval_attachment_3_url}`;
+  if (tx.approval_attachment_1_url) {
+    const val = tx.approval_attachment_1_url.startsWith('data:') ? `/api/files/secure/att_${tx.id || Date.now()}_att1` : tx.approval_attachment_1_url;
+    packed += `||APP_ATT1:${val}`;
+  }
+  if (tx.approval_attachment_2_url) {
+    const val = tx.approval_attachment_2_url.startsWith('data:') ? `/api/files/secure/att_${tx.id || Date.now()}_att2` : tx.approval_attachment_2_url;
+    packed += `||APP_ATT2:${val}`;
+  }
+  if (tx.approval_attachment_3_url) {
+    const val = tx.approval_attachment_3_url.startsWith('data:') ? `/api/files/secure/att_${tx.id || Date.now()}_att3` : tx.approval_attachment_3_url;
+    packed += `||APP_ATT3:${val}`;
+  }
 
   if (tx.regional_approval_status) packed += `||REG_STATUS:${tx.regional_approval_status}`;
   if (tx.regional_approved_by) packed += `||REG_BY:${tx.regional_approved_by}`;
