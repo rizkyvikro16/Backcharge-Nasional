@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
-  Search, Filter, Plus, Download, Upload, Trash2, Edit3, Eye, 
+  Search, Filter, Plus, Download, Upload, Trash2, Edit3, Edit2, Eye, 
   CheckCircle2, Clock, AlertCircle, X, ChevronLeft, ChevronRight, 
   FileSpreadsheet, ArrowUpDown, RefreshCw, CheckSquare, Square,
   Building, DollarSign, Layers, Tag, HelpCircle, FileText, Check, ShieldAlert,
-  Calendar, Lock
+  Calendar, Lock, UserCheck, User
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -495,6 +495,39 @@ export default function DatabaseView({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Backcharge | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  
+  // Administrator Creator (Penginput) Edit States
+  const isAdmin = hasRole(currentUser?.role, 'Administrator');
+  const [editingCreatorTx, setEditingCreatorTx] = useState<Backcharge | null>(null);
+  const [selectedNewCreatorEmail, setSelectedNewCreatorEmail] = useState<string>('');
+  const [customCreatorEmailInput, setCustomCreatorEmailInput] = useState<string>('');
+  const [isCustomCreatorMode, setIsCustomCreatorMode] = useState<boolean>(false);
+  const [isSavingCreator, setIsSavingCreator] = useState<boolean>(false);
+
+  const handleSaveCreatorEdit = async () => {
+    if (!editingCreatorTx) return;
+    const targetEmail = isCustomCreatorMode ? customCreatorEmailInput.trim() : selectedNewCreatorEmail.trim();
+    if (!targetEmail) {
+      if (addToast) addToast('Silakan pilih atau masukkan email/nama penginput!', 'error');
+      return;
+    }
+    setIsSavingCreator(true);
+    try {
+      const creatorProfile = profiles.find(p => p.email && p.email.toLowerCase() === targetEmail.toLowerCase());
+      const creatorName = creatorProfile?.full_name || targetEmail;
+      await onUpdateTransaction(
+        editingCreatorTx.id,
+        { created_by: targetEmail },
+        `Administrator (${currentUser.full_name || currentUser.email}) memperbarui nama penginput transaksi ${editingCreatorTx.id} dari "${editingCreatorTx.created_by || '-'}" menjadi "${creatorName} (${targetEmail})"`
+      );
+      if (addToast) addToast(`Berhasil memperbarui penginput transaksi ${editingCreatorTx.id} menjadi ${creatorName}!`, 'success');
+      setEditingCreatorTx(null);
+    } catch (err: any) {
+      if (addToast) addToast(`Gagal mengubah nama penginput: ${err.message}`, 'error');
+    } finally {
+      setIsSavingCreator(false);
+    }
+  };
   // Unified Bulk Update Modal States matching image_308f8e6a.png
   const [isBulkUpdateModalOpen, setIsBulkUpdateModalOpen] = useState(false);
   const [bulkHandoverStatus, setBulkHandoverStatus] = useState<string>('-- Tidak Diubah --');
@@ -3260,7 +3293,26 @@ export default function DatabaseView({
                       </td>
 
                       <td className="py-3 px-3 text-slate-700 font-medium whitespace-nowrap text-[11px]">
-                        {getCreatorName(tx.created_by)}
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-slate-800">{getCreatorName(tx.created_by)}</span>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingCreatorTx(tx);
+                                setSelectedNewCreatorEmail(tx.created_by || '');
+                                setCustomCreatorEmailInput(tx.created_by || '');
+                                setIsCustomCreatorMode(false);
+                              }}
+                              className="px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-800 rounded border border-amber-200 text-[10px] font-bold flex items-center gap-1 transition-colors shadow-2xs cursor-pointer"
+                              title="Edit Nama Penginput (Khusus Administrator)"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                              <span>Edit</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-3 px-3 text-slate-700 font-semibold whitespace-nowrap text-[11px]">
@@ -4628,6 +4680,108 @@ export default function DatabaseView({
                     ? 'Menyimpan Pembaruan...' 
                     : `Terapkan Ke ${selectedIds.size} Transaksi`}
                 </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 11. MODAL: EDIT NAMA PENGINPUT (KHUSUS ADMINISTRATOR) */}
+      {editingCreatorTx && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shadow-inner">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">Edit Nama Penginput</h3>
+                  <p className="text-xs text-slate-500 font-medium">Khusus Otoritas Peran Administrator</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingCreatorTx(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 text-xs space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-bold">ID Transaksi:</span>
+                <span className="font-black text-blue-700 font-mono bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-100">{editingCreatorTx.id}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-bold">Customer:</span>
+                <span className="font-bold text-slate-800 truncate max-w-[200px]" title={editingCreatorTx.customer_name}>{editingCreatorTx.customer_name}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-bold">Penginput Saat Ini:</span>
+                <span className="font-extrabold text-slate-900">{getCreatorName(editingCreatorTx.created_by)}</span>
+              </div>
+              <div className="text-[10px] text-slate-400 font-mono text-right truncate">
+                ({editingCreatorTx.created_by || 'Belum ada email penginput'})
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="block text-xs font-black uppercase tracking-wider text-slate-700">
+                Pilih User / Penginput Baru <span className="text-rose-500">*</span>
+              </label>
+              
+              <div className="space-y-2.5">
+                <select
+                  value={isCustomCreatorMode ? 'CUSTOM' : selectedNewCreatorEmail}
+                  onChange={(e) => {
+                    if (e.target.value === 'CUSTOM') {
+                      setIsCustomCreatorMode(true);
+                    } else {
+                      setIsCustomCreatorMode(false);
+                      setSelectedNewCreatorEmail(e.target.value);
+                    }
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none cursor-pointer"
+                >
+                  <option value="">-- Pilih Akun User dari Sistem --</option>
+                  {profiles.map(p => (
+                    <option key={p.id || p.email} value={p.email}>
+                      {p.full_name} ({p.email}) - {p.role} [{p.branch}]
+                    </option>
+                  ))}
+                  <option value="CUSTOM">+ Input Email / Nama Manual...</option>
+                </select>
+
+                {isCustomCreatorMode && (
+                  <input
+                    type="text"
+                    placeholder="Ketik email atau nama penginput (misal: user@assa.id)..."
+                    value={customCreatorEmailInput}
+                    onChange={(e) => setCustomCreatorEmailInput(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none"
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingCreatorTx(null)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCreatorEdit}
+                disabled={isSavingCreator}
+                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer"
+              >
+                {isSavingCreator && <RefreshCw className="w-4 h-4 animate-spin" />}
+                <span>Simpan Perubahan</span>
               </button>
             </div>
           </div>

@@ -996,10 +996,9 @@ export default {
 
             sql += " ORDER BY created_at DESC";
 
-            if (limit > 0) {
-              sql += " LIMIT ? OFFSET ?";
-              qParams.push(limit, offset);
-            }
+            const safeLimit = (limit > 0 && limit <= 500) ? limit : 500;
+            sql += " LIMIT ? OFFSET ?";
+            qParams.push(safeLimit, offset);
 
             const results = await executeD1(sql, qParams);
             setEdgeCache(cacheKey, results);

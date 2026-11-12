@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, Trash2, Upload, Download, FileText, 
   Image, Eye,
-  Cloud, Loader2, ExternalLink, User, AlertCircle
+  Cloud, Loader2, ExternalLink, User, AlertCircle, UserCheck, Edit2, RefreshCw
 } from 'lucide-react';
 import { Backcharge, Profile, isRegionalHeadRole, hasRole, getEffectiveSapStatus } from '../types';
 import { checkGoogleToken, uploadFileToDrive, checkServiceAccountStatus, checkAppsScriptStatus } from '../lib/googleDrive';
@@ -397,6 +397,37 @@ export default function DetailModal({
   const [modalDivisionApprovalStatus, setModalDivisionApprovalStatus] = useState<string>('Disetujui');
   const [modalDivisionApprovalNotes, setModalDivisionApprovalNotes] = useState<string>('');
   const [modalPaymentDate, setModalPaymentDate] = useState<string>('');
+
+  // Administrator Creator (Penginput) Edit States
+  const [showEditCreatorModal, setShowEditCreatorModal] = useState(false);
+  const [selectedCreatorEmail, setSelectedCreatorEmail] = useState(transaction.created_by || '');
+  const [customCreatorInput, setCustomCreatorInput] = useState(transaction.created_by || '');
+  const [isCustomCreator, setIsCustomCreator] = useState(false);
+  const [isSavingCreator, setIsSavingCreator] = useState(false);
+
+  const handleSaveCreatorEditInModal = async () => {
+    const targetEmail = isCustomCreator ? customCreatorInput.trim() : selectedCreatorEmail.trim();
+    if (!targetEmail) {
+      if (addToast) addToast('Silakan pilih atau masukkan email penginput!', 'error');
+      return;
+    }
+    setIsSavingCreator(true);
+    try {
+      const creatorProfile = profiles?.find(p => p.email && p.email.toLowerCase() === targetEmail.toLowerCase());
+      const creatorName = creatorProfile?.full_name || targetEmail;
+      onUpdateStatus(
+        transaction.id,
+        { created_by: targetEmail },
+        `Administrator (${currentUser.full_name || currentUser.email}) memperbarui nama penginput transaksi ${transaction.id} dari "${transaction.created_by || '-'}" menjadi "${creatorName} (${targetEmail})"`
+      );
+      if (addToast) addToast(`Berhasil memperbarui penginput transaksi ${transaction.id} menjadi ${creatorName}!`, 'success');
+      setShowEditCreatorModal(false);
+    } catch (err: any) {
+      if (addToast) addToast(`Gagal mengubah penginput: ${err.message}`, 'error');
+    } finally {
+      setIsSavingCreator(false);
+    }
+  };
 
   // Individual file attachment update states
   const [localFileBak, setLocalFileBak] = useState<string | null>(transaction.file_bak_url || null);
@@ -1483,6 +1514,22 @@ export default function DetailModal({
                     </p>
                     <p className="text-[10px] text-slate-500 font-mono truncate">{transaction.created_by || '-'}</p>
                   </div>
+                  {hasRole(currentUser.role, 'Administrator') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCreatorEmail(transaction.created_by || '');
+                        setCustomCreatorInput(transaction.created_by || '');
+                        setIsCustomCreator(false);
+                        setShowEditCreatorModal(true);
+                      }}
+                      className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-[10px] font-bold border border-amber-200 transition-colors flex items-center gap-1 shrink-0 cursor-pointer shadow-2xs"
+                      title="Edit Nama Penginput (Khusus Administrator)"
+                    >
+                      <Edit2 className="w-3 h-3" />
+                      <span>Edit</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -3171,6 +3218,156 @@ export default function DetailModal({
         </div>
       )}
 
+      {/* ADMINISTRATOR EDIT CREATOR MODAL */}
+      {showEditCreatorModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-900 to-indigo-900 px-6 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-400/30 font-bold">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold tracking-wide text-white">Edit Nama Penginput Transaksi</h3>
+                  <p className="text-[10px] text-amber-300 font-semibold">Khusus Peran Administrator</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowEditCreatorModal(false)}
+                className="text-slate-300 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-bold">ID Transaksi:</span>
+                  <span className="font-black text-blue-700 font-mono bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{transaction.id}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-bold">Customer:</span>
+                  <span className="font-bold text-slate-800 truncate max-w-[200px]" title={transaction.customer_name}>{transaction.customer_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-bold">Penginput Saat Ini:</span>
+                  <span className="font-extrabold text-slate-900">{formatPenginput(transaction.created_by)}</span>
+                </div>
+                <div className="text-[10px] text-slate-400 font-mono text-right">
+                  ({transaction.created_by || 'Belum ada email penginput'})
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-2">
+                  Pilih User / Profil Penginput Baru:
+                </label>
+                
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <input 
+                      type="radio"
+                      id="modal-creator-mode-select"
+                      name="modalCreatorMode"
+                      checked={!isCustomCreator}
+                      onChange={() => setIsCustomCreator(false)}
+                      className="text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <label htmlFor="modal-creator-mode-select" className="text-xs font-medium text-slate-700 cursor-pointer">
+                      Pilih dari Daftar Profil Terdaftar ({profiles.length} Profil)
+                    </label>
+                  </div>
+
+                  {!isCustomCreator && (
+                    <select
+                      value={selectedCreatorEmail}
+                      onChange={(e) => setSelectedCreatorEmail(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-2xs"
+                    >
+                      <option value="">-- Pilih Profil User --</option>
+                      {profiles.map((p, idx) => (
+                        <option key={p.id || p.email || idx} value={p.email}>
+                          {p.full_name ? `${p.full_name} (${p.email}) - ${p.branch || 'Head Office'} [${p.role}]` : p.email}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  <div className="flex items-center space-x-2 pt-1">
+                    <input 
+                      type="radio"
+                      id="modal-creator-mode-custom"
+                      name="modalCreatorMode"
+                      checked={isCustomCreator}
+                      onChange={() => setIsCustomCreator(true)}
+                      className="text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <label htmlFor="modal-creator-mode-custom" className="text-xs font-medium text-slate-700 cursor-pointer">
+                      Input Email / Identitas Penginput Manual
+                    </label>
+                  </div>
+
+                  {isCustomCreator && (
+                    <input
+                      type="text"
+                      value={customCreatorInput}
+                      onChange={(e) => setCustomCreatorInput(e.target.value)}
+                      placeholder="Contoh: user@assa.co.id atau Nama Penginput"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-2xs font-mono"
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800 space-y-1">
+                <p className="font-bold flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                  Perhatian Administrator:
+                </p>
+                <p className="leading-relaxed">
+                  Perubahan nama penginput ini akan dicatat ke dalam log audit dan menyinkronkan seluruh tampilan dashboard serta dokumen resmi backcharge secara permanen.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-50 px-6 py-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+              <button
+                type="button"
+                onClick={() => setShowEditCreatorModal(false)}
+                disabled={isSavingCreator}
+                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-300 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCreatorEditInModal}
+                disabled={isSavingCreator}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-md disabled:opacity-50 flex items-center space-x-1.5"
+              >
+                {isSavingCreator ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menyimpan...</span>
+                  </>
+                ) : (
+                  <>
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Simpan Perubahan</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
+

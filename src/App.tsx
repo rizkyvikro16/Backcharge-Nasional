@@ -1147,13 +1147,13 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
               console.warn("Notice: Single pass fetch fallback to chunking:", spErr);
             }
 
-            const CHUNK_SIZE = 1500;
+            const CHUNK_SIZE = 500;
             let allRows: any[] = [];
             let offset = 0;
             let hasMore = true;
             let loopCount = 0;
 
-            while (hasMore && loopCount < 50) {
+            while (hasMore && loopCount < 100) {
               loopCount++;
               const chunk = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, {
                 branches: allowedBranchesParam,
@@ -1197,7 +1197,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             // Check if logged in as Admin/Nasional or if user switched account but cached dataset has fewer rows
             const cachedUserEmail = localStorage.getItem("backcharge_cache_user_email") || "";
             const isUserChanged = Boolean(cachedUserEmail && activeUser && cachedUserEmail !== activeUser.email);
-            const isCacheIncompleteForAdmin = (isNationalOrAll && cachedTxs.length < 500) || isUserChanged;
+            const isCacheIncompleteForAdmin = (isNationalOrAll && cachedTxs.length < 2000) || isUserChanged;
 
             // STRATEGY A: Fast 20ms Delta Sync whenever cached rows exist (> 0) and max updated timestamp exists
             if (cachedTxs.length > 0 && cachedMaxUpdated && cachedMaxUpdated.trim() !== "" && !forceFull && !isCacheIncompleteForAdmin) {
@@ -1206,7 +1206,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                   "get_backcharges_since",
                   [cachedMaxUpdated],
                   1,
-                  { since: cachedMaxUpdated, branches: allowedBranchesParam }
+                  { since: cachedMaxUpdated, branches: allowedBranchesParam, limit: 500 }
                 );
 
                 if (Array.isArray(deltaRows)) {
@@ -1231,7 +1231,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             // STRATEGY B: Instant Streaming Multi-Chunk Fetch (For cold start or force refresh)
             // Supports ANY dataset size (7,000+, 10,000+, 50,000+ records) without artificial limits
             if (!performedFullSync || finalTxs.length === 0 || forceFull) {
-              const CHUNK_SIZE = 1500;
+              const CHUNK_SIZE = 500;
               // Step 1: Fetch Chunk 1 (Instant ~50ms First Screen)
               const chunk1 = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, {
                 branches: allowedBranchesParam,
@@ -1263,7 +1263,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                   let hasMore = true;
                   let streamCount = 0;
 
-                  while (hasMore && streamCount < 100) { // Safety ceiling: 150,000 records
+                  while (hasMore && streamCount < 150) { // Safety ceiling: 75,000 records
                     streamCount++;
                     // Polite 50ms pause to guarantee zero Cloudflare D1 429 rate limit errors
                     await new Promise(r => setTimeout(r, 50));
