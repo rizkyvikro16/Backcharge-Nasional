@@ -1741,7 +1741,7 @@ async function startServer() {
             return res.json({ success: true, results: results || [] });
           }
           
-          let sql = "SELECT * FROM backcharges WHERE updated_at > ? OR updated_at IS NULL OR updated_at = ''";
+          let sql = "SELECT * FROM backcharges WHERE updated_at > ?";
           let queryParams: any[] = [since];
 
           if (Array.isArray(branches) && branches.length > 0) {

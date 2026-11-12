@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-export const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 Jam tidak ada aktivitas
-export const WARNING_DURATION_MS = 2 * 60 * 1000; // Peringatan 2 menit sebelum logout
-export const WARNING_THRESHOLD_MS = IDLE_TIMEOUT_MS - WARNING_DURATION_MS; // Muncul di menit ke-58
+export const IDLE_TIMEOUT_MS = 3 * 60 * 60 * 1000; // 3 Jam tidak ada aktivitas sama sekali
+export const WARNING_DURATION_MS = 5 * 60 * 1000; // Peringatan 5 menit sebelum logout otomatis
+export const WARNING_THRESHOLD_MS = IDLE_TIMEOUT_MS - WARNING_DURATION_MS; // Muncul di menit ke-175 (2 jam 55 menit)
 const THROTTLE_MS = 10 * 1000; // Simpan aktivitas maksimal setiap 10 detik
 
 interface UseIdleTimeoutOptions {
@@ -12,7 +12,7 @@ interface UseIdleTimeoutOptions {
 
 export function useIdleTimeout({ enabled, onTimeout }: UseIdleTimeoutOptions) {
   const [showWarning, setShowWarning] = useState(false);
-  const [secondsRemaining, setSecondsRemaining] = useState(120);
+  const [secondsRemaining, setSecondsRemaining] = useState(300);
   const lastActivityRef = useRef<number>(Date.now());
   const lastThrottleRef = useRef<number>(0);
   const onTimeoutRef = useRef(onTimeout);
@@ -80,7 +80,7 @@ export function useIdleTimeout({ enabled, onTimeout }: UseIdleTimeoutOptions) {
         const stored = Number(localStorage.getItem('backcharge_last_activity') || lastActivityRef.current);
         const elapsed = Date.now() - stored;
         if (elapsed >= IDLE_TIMEOUT_MS) {
-          onTimeoutRef.current("Sesi Anda telah berakhir otomatis karena tidak ada aktivitas selama 1 jam.");
+          onTimeoutRef.current("Sesi Anda telah berakhir otomatis karena tidak ada aktivitas selama 3 jam.");
         } else {
           recordActivity();
         }
@@ -95,14 +95,14 @@ export function useIdleTimeout({ enabled, onTimeout }: UseIdleTimeoutOptions) {
       const effectiveLastTime = Math.max(lastActivityRef.current, isNaN(stored) ? 0 : stored);
       const elapsed = Date.now() - effectiveLastTime;
 
-      // 1. Cek apakah sudah mencapai batas 1 jam
+      // 1. Cek apakah sudah mencapai batas 3 jam
       if (elapsed >= IDLE_TIMEOUT_MS) {
         clearInterval(interval);
         setShowWarning(false);
         try {
           localStorage.setItem('backcharge_logout_event', String(Date.now()));
         } catch {}
-        onTimeoutRef.current("Sesi Anda telah berakhir otomatis karena tidak ada aktivitas selama 1 jam.");
+        onTimeoutRef.current("Sesi Anda telah berakhir otomatis karena tidak ada aktivitas selama 3 jam.");
         return;
       }
 

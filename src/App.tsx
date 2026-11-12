@@ -27,6 +27,14 @@ import {
 
 import { getApiUrl, getAuthHeaders, clearAuthToken } from './lib/api';
 import { saveAppCache, loadAppCache, getPersistentCache } from './lib/dbCache';
+import { 
+  getSyncQueue, 
+  enqueueSyncItem, 
+  processSyncQueue, 
+  isD1QuotaLimited, 
+  setD1QuotaLimited, 
+  isQuotaLimitError 
+} from './lib/syncQueue';
 import { FULL_BACKCHARGES_DATA } from './lib/fullSeedData';
 import { useIdleTimeout } from './hooks/useIdleTimeout';
 import IdleTimeoutModal from './components/IdleTimeoutModal';
@@ -496,7 +504,13 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
   const [d1Error, setD1Error] = useState<string | null>(null);
   const [showD1Modal, setShowD1Modal] = useState<boolean>(false);
   const [migratingD1, setMigratingD1] = useState<boolean>(false);
-    const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // D1 Quota Resilience & Offline Sync Queue States
+  const [isQuotaLimited, setIsQuotaLimited] = useState<boolean>(() => isD1QuotaLimited());
+  const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
+  const [isSyncingQueue, setIsSyncingQueue] = useState<boolean>(false);
+
   const [showNotifSettings, setShowNotifSettings] = useState(false);
   const [browserNotifPermission, setBrowserNotifPermission] = useState<NotificationPermissionStatus>(() => {
     return getNotificationPermission();
@@ -914,6 +928,26 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     }
 
     const isReadQuery = operationId.startsWith("get_");
+    const isWriteMutation = [
+      'insert_backcharge', 
+      'update_backcharge', 
+      'delete_backcharge', 
+      'bulk_upsert_backcharges', 
+      'bulk_update_backcharges'
+    ].includes(operationId);
+
+    // If D1 is currently flagged as Quota Limited and this is a write operation,
+    // immediately enqueue to local persistent outbox queue and return optimistic success
+    if (isWriteMutation && isD1QuotaLimited()) {
+      enqueueSyncItem({
+        operation: operationId as any,
+        params,
+        extraPayload,
+        description: `${operationId}: ${params?.[0] || extraPayload?.id || extraPayload?.data?.id || (extraPayload?.items ? extraPayload.items.length + ' data' : 'Transaksi')}`
+      }).catch(console.error);
+      return [{ success: true, offlineQueued: true }];
+    }
+
     const dedupeKey = `${operationId}:::${JSON.stringify(params || [])}:::${JSON.stringify(extraPayload || {})}`;
     const databaseSecretKey = localStorage.getItem('DATABASE_SECRET_KEY') || '';
 
@@ -940,6 +974,16 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
           return executeD1Query(sqlOrOpId, params, attempt + 1, extraPayload);
         }
         console.warn("Koneksi D1 mengalami gangguan jaringan (Network Changed / HTTP2 Error):", networkErr?.message || networkErr);
+        if (isWriteMutation) {
+          await enqueueSyncItem({
+            operation: operationId as any,
+            params,
+            extraPayload,
+            description: `${operationId}: ${params?.[0] || extraPayload?.id || extraPayload?.data?.id || (extraPayload?.items ? extraPayload.items.length + ' data' : 'Transaksi')}`
+          });
+          setD1QuotaLimited(true, "Koneksi database terputus. Data disimpan di antrean lokal.");
+          return [{ success: true, offlineQueued: true }];
+        }
         if (isReadQuery) {
           return [];
         }
@@ -952,6 +996,17 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         text.includes("rate limit") || 
         text.includes("too many requests") ||
         text.includes("10022");
+
+      if (isWriteMutation && (isRateExceeded || res.status === 429)) {
+        await enqueueSyncItem({
+          operation: operationId as any,
+          params,
+          extraPayload,
+          description: `${operationId}: ${params?.[0] || extraPayload?.id || extraPayload?.data?.id || (extraPayload?.items ? extraPayload.items.length + ' data' : 'Transaksi')}`
+        });
+        setD1QuotaLimited(true, "Batas kuota database D1 tercapai (HTTP 429 / Rate Limit)");
+        return [{ success: true, offlineQueued: true }];
+      }
 
       if (isRateExceeded && attempt <= 6) {
         const delayMs = Math.min(6000, attempt * 800 + Math.floor(Math.random() * 400));
@@ -994,12 +1049,21 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
           console.warn("Cloudflare D1 binding DB not yet attached in Pages settings. Falling back to local cache.");
           return [];
         }
-        const errStr = (d.error || "").toLowerCase();
-        const isQuotaExceeded = errStr.includes("7500") || errStr.includes("free tier") || errStr.includes("row read limit") || errStr.includes("exceeded d1");
+        const isQuotaExceeded = isQuotaLimitError(d.error);
         if (isQuotaExceeded) {
+          setD1QuotaLimited(true, d.error || "Batas kuota harian database Cloudflare D1 tercapai");
+          if (isWriteMutation) {
+            await enqueueSyncItem({
+              operation: operationId as any,
+              params,
+              extraPayload,
+              description: `${operationId}: ${params?.[0] || extraPayload?.id || extraPayload?.data?.id || (extraPayload?.items ? extraPayload.items.length + ' data' : 'Transaksi')}`
+            });
+            return [{ success: true, offlineQueued: true }];
+          }
           return [];
         }
-        if ((errStr.includes("rate limit") || errStr.includes("rate exceeded")) && attempt <= 6) {
+        if ((String(d.error || "").toLowerCase().includes("rate limit") || String(d.error || "").toLowerCase().includes("rate exceeded")) && attempt <= 6) {
           const delayMs = Math.min(6000, attempt * 800 + Math.floor(Math.random() * 400));
           await new Promise(r => setTimeout(r, delayMs));
           return executeD1Query(sqlOrOpId, params, attempt + 1, extraPayload);
@@ -1025,6 +1089,76 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
     return promise;
   }, []);
+
+  // Trigger queue replay / synchronization to Cloudflare D1
+  const triggerQueueSync = useCallback(async (isManual = false) => {
+    if (isSyncingQueue) return;
+    const queue = await getSyncQueue();
+    if (queue.length === 0) {
+      if (isManual) addToast("Semua data lokal telah tersinkronisasi dengan database Cloudflare D1.", "success");
+      return;
+    }
+
+    setIsSyncingQueue(true);
+    if (isManual) addToast(`Menyinkronkan ${queue.length} perubahan data lokal ke Cloudflare D1...`, "info");
+
+    try {
+      const res = await processSyncQueue(executeD1Query);
+      if (res.success && res.syncedCount > 0) {
+        addToast(`Sinkronisasi Berhasil! ${res.syncedCount} perubahan data lokal telah tersimpan permanen di Cloudflare D1.`, "success");
+        setIsQuotaLimited(false);
+        setPendingSyncCount(0);
+        fetchData(false);
+      } else if (!res.success && isManual) {
+        addToast(res.error || "Kuota D1 masih mencapai batas harian. Data Anda tetap tersimpan aman di perangkat ini.", "info");
+      }
+    } catch (err: any) {
+      if (isManual) {
+        addToast("Gagal menyinkronkan data: " + (err.message || String(err)), "error");
+      }
+    } finally {
+      setIsSyncingQueue(false);
+    }
+  }, [isSyncingQueue, executeD1Query]);
+
+  // Sync queue status listener & periodic auto-sync worker
+  useEffect(() => {
+    const updateQueueStatus = async () => {
+      try {
+        const q = await getSyncQueue();
+        setPendingSyncCount(q.length);
+        setIsQuotaLimited(isD1QuotaLimited());
+      } catch {}
+    };
+    updateQueueStatus();
+
+    const handleQueueUpdated = (e: any) => {
+      setPendingSyncCount(e.detail?.count ?? 0);
+    };
+    const handleQuotaChanged = (e: any) => {
+      setIsQuotaLimited(Boolean(e.detail?.limited));
+    };
+
+    window.addEventListener('backcharge-sync-queue-updated', handleQueueUpdated);
+    window.addEventListener('backcharge-d1-quota-status-changed', handleQuotaChanged);
+
+    // Auto-probe & replay pending outbox items every 3 minutes
+    const autoSyncInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        getSyncQueue().then(items => {
+          if (items.length > 0) {
+            triggerQueueSync(false);
+          }
+        }).catch(() => {});
+      }
+    }, 180000);
+
+    return () => {
+      window.removeEventListener('backcharge-sync-queue-updated', handleQueueUpdated);
+      window.removeEventListener('backcharge-d1-quota-status-changed', handleQuotaChanged);
+      clearInterval(autoSyncInterval);
+    };
+  }, [triggerQueueSync]);
 
   // Helper for 0ms Optimistic UI Updates & Instant Storage Cache Sync
   const updateTransactionsStateAndCache = useCallback((updater: (prev: Backcharge[]) => Backcharge[]) => {
@@ -1194,13 +1328,12 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             let finalTxs: Backcharge[] = cachedTxs;
             let performedFullSync = false;
 
-            // Check if logged in as Admin/Nasional or if user switched account but cached dataset has fewer rows
+            // Check if logged in user changed (different role/branches)
             const cachedUserEmail = localStorage.getItem("backcharge_cache_user_email") || "";
             const isUserChanged = Boolean(cachedUserEmail && activeUser && cachedUserEmail !== activeUser.email);
-            const isCacheIncompleteForAdmin = (isNationalOrAll && cachedTxs.length < 7000) || isUserChanged;
 
             // STRATEGY A: Fast 20ms Delta Sync whenever cached rows exist (> 0) and max updated timestamp exists
-            if (cachedTxs.length > 0 && cachedMaxUpdated && cachedMaxUpdated.trim() !== "" && !forceFull && !isCacheIncompleteForAdmin) {
+            if (cachedTxs.length > 0 && cachedMaxUpdated && cachedMaxUpdated.trim() !== "" && !forceFull && !isUserChanged) {
               try {
                 const deltaRows = await executeD1Query(
                   "get_backcharges_since",
@@ -1692,11 +1825,6 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             }
           }
         });
-
-        const allD1Ids = await executeD1Query("get_backcharge_ids");
-        if (allD1Ids && Array.isArray(allD1Ids)) {
-          allD1Ids.forEach((row: any) => { if (row.id) usedIds.add(row.id); });
-        }
       } catch (e) {
         console.warn("Gagal cek max ID dari D1 untuk bulk insert:", e);
       }
@@ -1854,7 +1982,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
         );
 
         addToast(`Berhasil mengimpor ${newTxs.length} data Backcharge secara massal ke database!`, 'success');
-        fetchData(true);
+        fetchData(false);
       } catch (err: any) {
         console.error("Bulk D1 insert failed:", err);
         addToast(`Gagal mengimpor massal ke database: ${err.message}`, 'error');
@@ -1868,7 +1996,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
       if (onProgress) onProgress(totalCount, totalCount);
 
       addToast(`Berhasil mengimpor ${newTxs.length} data Backcharge secara offline!`, 'success');
-      fetchData(true);
+      fetchData(false);
     }
   };
 
@@ -2724,6 +2852,50 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
         {/* 5. JENDELA AREA TAB KONTEN */}
         <main className="p-3 sm:p-4 md:p-6 flex-grow space-y-6 pb-28 md:pb-6 max-w-full">
+          {/* D1 Quota Resilience & Offline Outbox Banner */}
+          {(isQuotaLimited || pendingSyncCount > 0) && (
+            <div className="bg-amber-500/10 border-2 border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-amber-950 shadow-sm animate-in fade-in duration-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-700 flex items-center justify-center flex-shrink-0 font-bold text-lg">
+                  ⚡
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-xs tracking-tight text-amber-950">
+                      {isQuotaLimited ? 'Mode Penyimpanan Lokal Aktif (Batas Kuota D1 Harian)' : 'Antrean Sinkronisasi Lokal'}
+                    </span>
+                    <span className="px-2 py-0.5 bg-amber-200 text-amber-900 text-[10px] font-extrabold rounded-full">
+                      {pendingSyncCount} data tersimpan lokal
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                    {isQuotaLimited
+                      ? 'Kuota pembacaan baris D1 mencapai batas harian. Anda tetap dapat menggunakan web secara normal untuk input, edit, dan approval. Seluruh data tersimpan aman di perangkat ini dan akan diunggah otomatis ke database saat kuota kembali normal.'
+                      : 'Terdapat perubahan yang tersimpan di perangkat lokal Anda dan siap disinkronkan ke database Cloudflare D1.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => triggerQueueSync(true)}
+                disabled={isSyncingQueue}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 flex-shrink-0 disabled:opacity-50 shadow-sm"
+              >
+                {isSyncingQueue ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menyinkronkan...</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Sinkronkan Sekarang</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
           {loading && (
             <div className="p-4 bg-blue-50 border border-blue-100 text-blue-700 text-xs rounded-xl flex items-center space-x-2 animate-pulse justify-center">
               <RefreshCw className="w-4 h-4 animate-spin" />

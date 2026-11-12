@@ -39,7 +39,7 @@ export default function IdleTimeoutModal({
         <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4 mb-5 text-xs text-amber-950 space-y-2">
           <div className="flex items-center gap-1.5 font-bold text-amber-900">
             <ShieldAlert className="w-4 h-4 text-amber-600 flex-shrink-0" />
-            <span>Tidak Ada Aktivitas Selama 58 Menit</span>
+            <span>Tidak Ada Aktivitas Selama 2 Jam 55 Menit</span>
           </div>
           <p className="text-slate-600 leading-relaxed text-[11px]">
             Demi melindungi data dan mencegah akses tanpa izin, sesi Anda akan otomatis diakhiri dalam:
@@ -80,7 +80,7 @@ export default function IdleTimeoutModal({
         </div>
 
         <p className="text-[10px] text-center text-slate-400 mt-4">
-          Menggerakkan kursor mouse atau mengetik akan otomatis memperpanjang sesi Anda selama 1 jam ke depan.
+          Menggerakkan kursor mouse atau mengetik akan otomatis memperpanjang sesi Anda selama 3 jam ke depan.
         </p>
       </div>
     </div>
