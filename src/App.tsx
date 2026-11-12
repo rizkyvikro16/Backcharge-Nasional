@@ -1194,11 +1194,13 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             let finalTxs: Backcharge[] = cachedTxs;
             let performedFullSync = false;
 
-            // Check if logged in as Admin/Nasional but cached dataset has fewer than 500 rows (from a branch account)
-            const isCacheIncompleteForAdmin = isNationalOrAll && cachedTxs.length < 500;
+            // Check if logged in as Admin/Nasional or if user switched account but cached dataset has fewer rows
+            const cachedUserEmail = localStorage.getItem("backcharge_cache_user_email") || "";
+            const isUserChanged = Boolean(cachedUserEmail && activeUser && cachedUserEmail !== activeUser.email);
+            const isCacheIncompleteForAdmin = (isNationalOrAll && cachedTxs.length < 500) || isUserChanged;
 
             // STRATEGY A: Fast 20ms Delta Sync whenever cached rows exist (> 0) and max updated timestamp exists
-            if (cachedTxs.length > 0 && cachedMaxUpdated && cachedMaxUpdated.trim() !== "" && !forceFull) {
+            if (cachedTxs.length > 0 && cachedMaxUpdated && cachedMaxUpdated.trim() !== "" && !forceFull && !isCacheIncompleteForAdmin) {
               try {
                 const deltaRows = await executeD1Query(
                   "get_backcharges_since",
@@ -1339,6 +1341,9 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                   localStorage.setItem("backcharge_cache_max_updated", maxUp || maxCr);
                   localStorage.setItem("backcharge_cache_max_created", maxCr);
                   localStorage.setItem("backcharge_cache_count", String(finalTxs.length));
+                  if (activeUser?.email) {
+                    localStorage.setItem("backcharge_cache_user_email", activeUser.email);
+                  }
                 } catch {}
               }
             }
