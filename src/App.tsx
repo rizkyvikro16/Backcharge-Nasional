@@ -662,7 +662,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     };
 
     // Configurable dynamic polling interval (60–120 seconds, default 60s = 60,000ms)
-    const POLL_INTERVAL_MS = 60000;
+    const POLL_INTERVAL_MS = 300000;
 
     const stopPolling = () => {
       if (pollTimerRef.current) {
@@ -1197,7 +1197,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             // Check if logged in as Admin/Nasional or if user switched account but cached dataset has fewer rows
             const cachedUserEmail = localStorage.getItem("backcharge_cache_user_email") || "";
             const isUserChanged = Boolean(cachedUserEmail && activeUser && cachedUserEmail !== activeUser.email);
-            const isCacheIncompleteForAdmin = (isNationalOrAll && cachedTxs.length < 2000) || isUserChanged;
+            const isCacheIncompleteForAdmin = (isNationalOrAll && cachedTxs.length < 7000) || isUserChanged;
 
             // STRATEGY A: Fast 20ms Delta Sync whenever cached rows exist (> 0) and max updated timestamp exists
             if (cachedTxs.length > 0 && cachedMaxUpdated && cachedMaxUpdated.trim() !== "" && !forceFull && !isCacheIncompleteForAdmin) {
