@@ -102,6 +102,8 @@ async function ensureD1SchemaWorker(db) {
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_bkc_created_branch_val ON backcharges (created_at DESC, branch, value);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_bkc_status_branch_val ON backcharges (status_payment, status_sap, branch, value);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_bkc_cat_branch_created ON backcharges (category, branch, created_at DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_bkc_created_id ON backcharges (created_at DESC, id DESC);`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_bkc_branch_created_id ON backcharges (branch, created_at DESC, id DESC);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_id ON activity_logs (id DESC);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_timestamp ON activity_logs (timestamp DESC);`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_logs_tx ON activity_logs (transaction_id, id DESC);`),
@@ -146,10 +148,10 @@ async function ensureD1SchemaWorker(db) {
     }
   } catch (e) {}
 
-  // Seed default profiles if empty
+  // Seed default profiles if empty (O(1) LIMIT 1 check)
   try {
-    const countRes = await db.prepare("SELECT COUNT(*) as count FROM profiles").first();
-    if (!countRes || countRes.count === 0) {
+    const hasProfile = await db.prepare("SELECT 1 as ok FROM profiles LIMIT 1").first();
+    if (!hasProfile) {
       await db.batch([
         db.prepare(`
           INSERT INTO profiles (id, email, full_name, role, branch, created_at, password) VALUES 
@@ -173,16 +175,31 @@ async function ensureD1SchemaWorker(db) {
     }
   } catch (e) {}
 
-  // Seed default backcharges only if completely empty (count === 0)
+  // Seed default backcharges only if completely empty (O(1) LIMIT 1 check)
   try {
-    const countBcs = await db.prepare("SELECT COUNT(*) as count FROM backcharges").first();
-    if (!countBcs || countBcs.count === 0) {
+    const hasBackcharges = await db.prepare("SELECT 1 as ok FROM backcharges LIMIT 1").first();
+    if (!hasBackcharges) {
       const batch = FULL_SEED_STATEMENTS.slice(0, 30);
       try {
         await db.batch(batch.map(sql => db.prepare(sql.trim().replace(/;\s*$/, ''))));
       } catch {}
     }
   } catch (e) {}
+}
+
+let hasEnsuredKeysetIndexes = false;
+async function ensureKeysetIndexesOnce(db) {
+  if (hasEnsuredKeysetIndexes || !db) return;
+  hasEnsuredKeysetIndexes = true;
+  try {
+    await db.batch([
+      db.prepare(`CREATE INDEX IF NOT EXISTS idx_bkc_created_id ON backcharges (created_at DESC, id DESC);`),
+      db.prepare(`CREATE INDEX IF NOT EXISTS idx_bkc_branch_created_id ON backcharges (branch, created_at DESC, id DESC);`)
+    ]);
+  } catch (e) {
+    // Allow retry on transient error
+    hasEnsuredKeysetIndexes = false;
+  }
 }
 
 // Worker Isolate Edge Memory Cache for Ultra-Low D1 Rows Read Consumption
@@ -902,7 +919,7 @@ export default {
 
           case "get_profiles": {
             const cacheKey = "profiles:all";
-            const cached = getEdgeCache(cacheKey, 120000);
+            const cached = getEdgeCache(cacheKey, 300000);
             if (cached) {
               return new Response(JSON.stringify({ success: true, results: cached }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
             }
@@ -975,30 +992,52 @@ export default {
           }
 
           case "get_all_backcharges": {
+            await ensureKeysetIndexesOnce(env.DB);
             const branches = body.branches || (Array.isArray(params) && params.length > 0 ? params : null);
             const limit = body.limit ? parseInt(body.limit, 10) : (body.pageSize ? parseInt(body.pageSize, 10) : 0);
             const offset = body.offset ? parseInt(body.offset, 10) : 0;
-            const cacheKey = `bcs:${JSON.stringify(branches || [])}:${limit}:${offset}`;
+            const cursorCreatedAt = body.cursorCreatedAt ? String(body.cursorCreatedAt) : "";
+            const cursorId = body.cursorId ? String(body.cursorId) : "";
+            const cacheKey = `bcs:${JSON.stringify(branches || [])}:${limit}:${offset}:${cursorCreatedAt}:${cursorId}`;
 
             const cached = getEdgeCache(cacheKey, 300000);
             if (cached) {
               return new Response(JSON.stringify({ success: true, results: cached }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
             }
 
-            let sql = "SELECT * FROM backcharges";
-            let qParams = [];
+            const safeLimit = (limit > 0 && limit <= 1000) ? limit : 500;
+            const hasCursor = Boolean(cursorCreatedAt && cursorId);
+            const hasBranches = Array.isArray(branches) && branches.length > 0;
+            const whereParts = [];
+            const qParams = [];
 
-            if (Array.isArray(branches) && branches.length > 0) {
-              const placeholders = branches.map(() => '?').join(', ');
-              sql += ` WHERE branch IN (${placeholders})`;
-              qParams.push(...branches);
+            if (hasBranches) {
+              if (branches.length === 1) {
+                whereParts.push("branch = ?");
+                qParams.push(branches[0]);
+              } else {
+                const placeholders = branches.map(() => '?').join(', ');
+                whereParts.push(`branch IN (${placeholders})`);
+                qParams.push(...branches);
+              }
             }
 
-            sql += " ORDER BY created_at DESC";
+            if (hasCursor) {
+              whereParts.push("(created_at, id) < (?, ?)");
+              qParams.push(cursorCreatedAt, cursorId);
+            }
 
-            const safeLimit = (limit > 0 && limit <= 500) ? limit : 500;
-            sql += " LIMIT ? OFFSET ?";
-            qParams.push(safeLimit, offset);
+            let sql = "SELECT * FROM backcharges";
+            if (whereParts.length > 0) {
+              sql += " WHERE " + whereParts.join(" AND ");
+            }
+            sql += " ORDER BY created_at DESC, id DESC LIMIT ?";
+            qParams.push(safeLimit);
+
+            if (!hasCursor && offset > 0) {
+              sql += " OFFSET ?";
+              qParams.push(offset);
+            }
 
             const results = await executeD1(sql, qParams);
             setEdgeCache(cacheKey, results);
@@ -1027,18 +1066,34 @@ export default {
           }
 
           case "get_top_backcharge_id_by_prefix": {
-            const prefix = (params && params[0]) || body.prefix || '';
+            const rawPrefix = String((params && params[0]) || body.prefix || '').replace(/%+$/, '');
+            if (!rawPrefix) {
+              return new Response(JSON.stringify({ success: true, results: [] }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
+            // Fast O(1) Primary Key B-Tree range seek instead of full table scan
+            const upperBound = rawPrefix + "\uffff";
+            const fiveDigitProbe = await executeD1(
+              "SELECT id FROM backcharges WHERE id = ? LIMIT 1",
+              [rawPrefix + "10000"]
+            );
+            if (fiveDigitProbe && fiveDigitProbe.length > 0) {
+              // If 5+ digit IDs exist for this prefix, scan only the prefix range
+              const results = await executeD1(
+                "SELECT id FROM backcharges WHERE id >= ? AND id < ? ORDER BY LENGTH(id) DESC, id DESC LIMIT 1",
+                [rawPrefix, upperBound]
+              );
+              return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
             const results = await executeD1(
-              "SELECT id FROM backcharges WHERE id LIKE ? ORDER BY CAST(substr(id, 9) AS INTEGER) DESC LIMIT 1",
-              [prefix]
+              "SELECT id FROM backcharges WHERE id >= ? AND id < ? ORDER BY id DESC LIMIT 1",
+              [rawPrefix, upperBound]
             );
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
           case "sync_full_database": {
-            const countBcs = await env.DB.prepare("SELECT COUNT(*) as count FROM backcharges").first();
-            const currentCount = (countBcs && countBcs.count) || 0;
-            if (currentCount === 0) {
+            const hasBcs = await env.DB.prepare("SELECT 1 as ok FROM backcharges LIMIT 1").first();
+            if (!hasBcs) {
               const BATCH_SIZE = 25;
               for (let i = 0; i < FULL_SEED_STATEMENTS.length; i += BATCH_SIZE) {
                 const batch = FULL_SEED_STATEMENTS.slice(i, i + BATCH_SIZE);
@@ -1047,11 +1102,12 @@ export default {
                 } catch {}
               }
             }
-            const results = await executeD1("SELECT * FROM backcharges ORDER BY created_at DESC");
+            const results = await executeD1("SELECT * FROM backcharges ORDER BY created_at DESC, id DESC");
             return new Response(JSON.stringify({ success: true, results, count: results.length }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
           case "get_backcharges_since": {
+            await ensureKeysetIndexesOnce(env.DB);
             const since = (params && params[0]) || body.since || "";
             const branches = body.branches || (Array.isArray(params) && params.length > 1 ? params.slice(1) : null);
             const limit = Number(body.limit) || 0;
@@ -1071,7 +1127,7 @@ export default {
                 sql += ` WHERE branch IN (${placeholders})`;
                 qParams.push(...branches);
               }
-              sql += " ORDER BY created_at DESC";
+              sql += " ORDER BY created_at DESC, id DESC";
               if (limit > 0) {
                 sql += " LIMIT ? OFFSET ?";
                 qParams.push(limit, offset);
@@ -1081,20 +1137,31 @@ export default {
               return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
             }
             
-            // Ultra-fast index seek on updated_at using idx_backcharges_updated_at (reads 0 to N modified rows instead of scanning full table)
+            // Ultra-fast index seek on updated_at / (branch, updated_at) without Temp B-Tree on multi-branch
             let sql = "SELECT * FROM backcharges WHERE updated_at > ?";
             let queryParams = [since];
+            const isMultiBranch = Array.isArray(branches) && branches.length > 1;
 
-            if (Array.isArray(branches) && branches.length > 0) {
+            if (Array.isArray(branches) && branches.length === 1) {
+              sql = "SELECT * FROM backcharges WHERE branch = ? AND updated_at > ?";
+              queryParams = [branches[0], since];
+            } else if (isMultiBranch) {
               const placeholders = branches.map(() => '?').join(', ');
               sql += ` AND branch IN (${placeholders})`;
               queryParams.push(...branches);
             }
             
-            sql += " ORDER BY updated_at DESC";
+            // Avoid USE TEMP B-TREE FOR ORDER BY when branch IN (...) has multiple branches (client sorts anyway)
+            if (!isMultiBranch) {
+              sql += " ORDER BY updated_at DESC";
+            }
             if (limit > 0) {
-              sql += " LIMIT ? OFFSET ?";
-              queryParams.push(limit, offset);
+              sql += offset > 0 ? " LIMIT ? OFFSET ?" : " LIMIT ?";
+              if (offset > 0) {
+                queryParams.push(limit, offset);
+              } else {
+                queryParams.push(limit);
+              }
             }
 
             const results = await executeD1(sql, queryParams);
@@ -1259,7 +1326,7 @@ export default {
 
           case "get_activity_logs": {
             const cacheKey = `logs:${JSON.stringify(body)}`;
-            const cached = getEdgeCache(cacheKey, 30000);
+            const cached = getEdgeCache(cacheKey, 60000);
             if (cached) {
               return new Response(JSON.stringify({ success: true, results: cached }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
             }
@@ -1307,7 +1374,7 @@ export default {
 
           case "get_max_activity_log_id": {
             const cacheKey = "logs:max_id";
-            const cached = getEdgeCache(cacheKey, 15000);
+            const cached = getEdgeCache(cacheKey, 30000);
             if (cached) {
               return new Response(JSON.stringify({ success: true, results: cached }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
             }
@@ -1319,7 +1386,7 @@ export default {
           case "get_recent_activity_logs_since": {
             const sinceId = Number((params && params[0]) || body.sinceId || 0);
             const cacheKey = `logs:since:${sinceId}`;
-            const cached = getEdgeCache(cacheKey, 20000);
+            const cached = getEdgeCache(cacheKey, 30000);
             if (cached) {
               return new Response(JSON.stringify({ success: true, results: cached }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
             }
@@ -1344,11 +1411,18 @@ export default {
           }
 
           case "get_contact_inquiries": {
+            const cacheKey = "inquiries:all";
+            const cached = getEdgeCache(cacheKey, 120000);
+            if (cached) {
+              return new Response(JSON.stringify({ success: true, results: cached }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+            }
             const results = await executeD1("SELECT * FROM contact_inquiries ORDER BY created_at DESC LIMIT 30");
+            setEdgeCache(cacheKey, results);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
           }
 
           case "insert_contact_inquiry": {
+            clearEdgeCache("inquiries:");
             let p = params || [];
             if (p.length === 0 && body.data) {
               const d = body.data;
@@ -1362,6 +1436,7 @@ export default {
           }
 
           case "update_contact_inquiry": {
+            clearEdgeCache("inquiries:");
             const { status, feedback, feedback_by, feedback_at, id } = body;
             const p = (params && params.length >= 5) ? params : [status, feedback, feedback_by, feedback_at, id];
             const results = await executeD1(
@@ -1372,6 +1447,7 @@ export default {
           }
 
           case "delete_contact_inquiry": {
+            clearEdgeCache("inquiries:");
             const targetId = (params && params[0]) || body.id;
             const results = await executeD1("DELETE FROM contact_inquiries WHERE id = ?", [targetId]);
             return new Response(JSON.stringify({ success: true, results }), { headers: { "Content-Type": "application/json", ...corsHeaders } });

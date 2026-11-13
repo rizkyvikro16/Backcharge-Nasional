@@ -1163,7 +1163,7 @@ async function startServer() {
   // 1b. Trigger manual migration / full dataset migration
   app.post("/api/d1/migrate", requireAuth, requireAdmin, async (req: any, res: any) => {
     try {
-      await ensureD1TablesExist();
+      await ensureD1TablesExist(true);
       res.json({ success: true, message: "Migrasi skema tabel Cloudflare D1 selesai dijalankan." });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message || String(err) });
@@ -1695,23 +1695,42 @@ async function startServer() {
         // --- BACKCHARGES ---
         case "get_all_backcharges": {
           const branches = req.body.branches || (Array.isArray(params) && params.length > 0 ? params : null);
-          const limit = (req.body.limit && Number(req.body.limit) > 0) ? Number(req.body.limit) : null;
+          const rawLimit = req.body.limit ? Number(req.body.limit) : (req.body.pageSize ? Number(req.body.pageSize) : 0);
+          const limit = (rawLimit > 0 && rawLimit <= 1000) ? rawLimit : 500;
           const offset = req.body.offset ? Math.max(0, Number(req.body.offset)) : 0;
+          const cursorCreatedAt = req.body.cursorCreatedAt ? String(req.body.cursorCreatedAt) : "";
+          const cursorId = req.body.cursorId ? String(req.body.cursorId) : "";
+          const hasCursor = Boolean(cursorCreatedAt && cursorId);
 
-          let sql = "SELECT * FROM backcharges";
-          let queryParams: any[] = [];
+          const whereParts: string[] = [];
+          const queryParams: any[] = [];
 
           if (Array.isArray(branches) && branches.length > 0) {
-            const placeholders = branches.map(() => '?').join(', ');
-            sql += ` WHERE branch IN (${placeholders})`;
-            queryParams.push(...branches);
+            if (branches.length === 1) {
+              whereParts.push("branch = ?");
+              queryParams.push(branches[0]);
+            } else {
+              const placeholders = branches.map(() => '?').join(', ');
+              whereParts.push(`branch IN (${placeholders})`);
+              queryParams.push(...branches);
+            }
           }
 
-          sql += " ORDER BY created_at DESC";
+          if (hasCursor) {
+            whereParts.push("(created_at, id) < (?, ?)");
+            queryParams.push(cursorCreatedAt, cursorId);
+          }
 
-          if (limit) {
-            sql += " LIMIT ? OFFSET ?";
-            queryParams.push(limit, offset);
+          let sql = "SELECT * FROM backcharges";
+          if (whereParts.length > 0) {
+            sql += " WHERE " + whereParts.join(" AND ");
+          }
+          sql += " ORDER BY created_at DESC, id DESC LIMIT ?";
+          queryParams.push(limit);
+
+          if (!hasCursor && offset > 0) {
+            sql += " OFFSET ?";
+            queryParams.push(offset);
           }
 
           const results = await queryD1(sql, queryParams);
@@ -1732,7 +1751,7 @@ async function startServer() {
               sql += ` WHERE branch IN (${placeholders})`;
               queryParams.push(...branches);
             }
-            sql += " ORDER BY created_at DESC";
+            sql += " ORDER BY created_at DESC, id DESC";
             if (limit > 0) {
               sql += " LIMIT ? OFFSET ?";
               queryParams.push(limit, offset);
@@ -1743,17 +1762,27 @@ async function startServer() {
           
           let sql = "SELECT * FROM backcharges WHERE updated_at > ?";
           let queryParams: any[] = [since];
+          const isMultiBranch = Array.isArray(branches) && branches.length > 1;
 
-          if (Array.isArray(branches) && branches.length > 0) {
+          if (Array.isArray(branches) && branches.length === 1) {
+            sql = "SELECT * FROM backcharges WHERE branch = ? AND updated_at > ?";
+            queryParams = [branches[0], since];
+          } else if (isMultiBranch) {
             const placeholders = branches.map(() => '?').join(', ');
             sql += ` AND branch IN (${placeholders})`;
             queryParams.push(...branches);
           }
           
-          sql += " ORDER BY updated_at DESC";
+          if (!isMultiBranch) {
+            sql += " ORDER BY updated_at DESC";
+          }
           if (limit > 0) {
-            sql += " LIMIT ? OFFSET ?";
-            queryParams.push(limit, offset);
+            sql += offset > 0 ? " LIMIT ? OFFSET ?" : " LIMIT ?";
+            if (offset > 0) {
+              queryParams.push(limit, offset);
+            } else {
+              queryParams.push(limit);
+            }
           }
 
           const results = await queryD1(sql, queryParams);
@@ -1762,10 +1791,8 @@ async function startServer() {
 
 
         case "sync_full_database": {
-          const countRes = await queryD1("SELECT COUNT(*) as count FROM backcharges");
-          const currentCount = Number(countRes?.[0]?.count) || 0;
-
-          if (currentCount === 0) {
+          const existsRes = await queryD1("SELECT 1 as ok FROM backcharges LIMIT 1");
+          if (!existsRes || existsRes.length === 0) {
             console.log(`[SYNC FULL] Auto-seeding initial database into D1 (${FULL_SEED_STATEMENTS.length} rows)...`);
             const BATCH_SIZE = 30;
             for (let i = 0; i < FULL_SEED_STATEMENTS.length; i += BATCH_SIZE) {
@@ -1777,7 +1804,7 @@ async function startServer() {
             }
           }
 
-          const finalResults = await queryD1("SELECT * FROM backcharges ORDER BY created_at DESC");
+          const finalResults = await queryD1("SELECT * FROM backcharges ORDER BY created_at DESC, id DESC");
           return res.json({ success: true, results: finalResults || [], count: finalResults.length });
         }
 
@@ -1808,10 +1835,25 @@ async function startServer() {
         }
 
         case "get_top_backcharge_id_by_prefix": {
-          const prefix = (params && params[0]) || req.body.prefix || '';
+          const rawPrefix = String((params && params[0]) || req.body.prefix || '').replace(/%+$/, '');
+          if (!rawPrefix) {
+            return res.json({ success: true, results: [] });
+          }
+          const upperBound = rawPrefix + "\uffff";
+          const fiveDigitProbe = await queryD1(
+            "SELECT id FROM backcharges WHERE id = ? LIMIT 1",
+            [rawPrefix + "10000"]
+          );
+          if (fiveDigitProbe && fiveDigitProbe.length > 0) {
+            const results = await queryD1(
+              "SELECT id FROM backcharges WHERE id >= ? AND id < ? ORDER BY LENGTH(id) DESC, id DESC LIMIT 1",
+              [rawPrefix, upperBound]
+            );
+            return res.json({ success: true, results: results || [] });
+          }
           const results = await queryD1(
-            "SELECT id FROM backcharges WHERE id LIKE ? ORDER BY CAST(substr(id, 9) AS INTEGER) DESC LIMIT 1",
-            [prefix]
+            "SELECT id FROM backcharges WHERE id >= ? AND id < ? ORDER BY id DESC LIMIT 1",
+            [rawPrefix, upperBound]
           );
           return res.json({ success: true, results: results || [] });
         }

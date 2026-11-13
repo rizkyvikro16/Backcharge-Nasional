@@ -126,6 +126,7 @@ export async function saveAppCache(payload: {
       if (typeof window !== "undefined") {
         // Keep localStorage lean (max 30 items for emergency fallback) to never hit 5MB quota
         localStorage.setItem(CACHE_KEYS.TXS, JSON.stringify(payload.txs.slice(0, 30)));
+        localStorage.setItem('backcharge_cache_count', String(payload.txs.length));
       }
     } catch {}
   }
@@ -144,6 +145,7 @@ export async function saveAppCache(payload: {
     try {
       if (typeof window !== "undefined") {
         localStorage.setItem(CACHE_KEYS.PROFS, JSON.stringify(payload.profiles));
+        localStorage.setItem('backcharge_cache_profiles_ts', String(Date.now()));
       }
     } catch {}
   }
@@ -153,6 +155,7 @@ export async function saveAppCache(payload: {
     try {
       if (typeof window !== "undefined") {
         localStorage.setItem(CACHE_KEYS.INQUIRIES, JSON.stringify(payload.inquiries));
+        localStorage.setItem('backcharge_cache_inquiries_ts', String(Date.now()));
       }
     } catch {}
   }

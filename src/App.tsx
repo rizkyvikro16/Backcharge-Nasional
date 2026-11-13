@@ -284,11 +284,11 @@ export default function App() {
     try {
       const session = localStorage.getItem('backcharge_session_profile');
       const lastActivity = Number(localStorage.getItem('backcharge_last_activity') || '0');
-      // Jika ada sesi tersimpan tetapi sudah tidak aktif >= 1 jam
-      if (session && lastActivity > 0 && (Date.now() - lastActivity >= 60 * 60 * 1000)) {
+      // Jika ada sesi tersimpan tetapi sudah tidak aktif >= 3 jam
+      if (session && lastActivity > 0 && (Date.now() - lastActivity >= 3 * 60 * 60 * 1000)) {
         clearAuthToken();
         localStorage.removeItem('backcharge_last_activity');
-        return 'Sesi Anda telah berakhir otomatis karena tidak ada aktivitas selama 1 jam. Silakan masuk kembali.';
+        return 'Sesi Anda telah berakhir otomatis karena tidak ada aktivitas selama 3 jam. Silakan masuk kembali.';
       }
     } catch {}
     return null;
@@ -298,7 +298,7 @@ export default function App() {
     try {
       const session = localStorage.getItem('backcharge_session_profile');
       const lastActivity = Number(localStorage.getItem('backcharge_last_activity') || '0');
-      if (session && lastActivity > 0 && (Date.now() - lastActivity >= 60 * 60 * 1000)) {
+      if (session && lastActivity > 0 && (Date.now() - lastActivity >= 3 * 60 * 60 * 1000)) {
         clearAuthToken();
         localStorage.removeItem('backcharge_last_activity');
         return null;
@@ -309,7 +309,7 @@ export default function App() {
     }
   });
 
-  // Handler auto-logout jika 1 jam tidak digunakan (Dataset cache tetap dipertahankan agar re-login instan tanpa 0)
+  // Handler auto-logout jika 3 jam tidak digunakan (Dataset cache tetap dipertahankan agar re-login instan tanpa 0)
   const handleAutoLogout = useCallback((reason: string) => {
     try {
       localStorage.removeItem('backcharge_last_activity');
@@ -320,7 +320,7 @@ export default function App() {
     addToast(reason, "info");
   }, []);
 
-  // Hook pendeteksi inaktivitas 1 jam dengan dialog peringatan di menit ke-58
+  // Hook pendeteksi inaktivitas 3 jam dengan dialog peringatan 5 menit sebelum logout
   const { 
     showWarning: showIdleWarning, 
     secondsRemaining: idleSecondsRemaining, 
@@ -450,7 +450,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Direct single-row Primary Key fetcher for opening records from any page across millions of records
+  // Direct single-row Primary Key fetcher when user opens a detail modal (never re-runs on background state updates)
   useEffect(() => {
     if (!selectedTransactionId) {
       setActiveDetailRecord(null);
@@ -458,10 +458,11 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     }
 
     const localFound = transactions.find(t => t.id === selectedTransactionId);
-    console.log('Detail fetch effect:', {selectedTransactionId, localFound});
     if (localFound) {
       setActiveDetailRecord(localFound);
     }
+
+    if (!currentUser || !isD1Active) return;
 
     let isMounted = true;
     executeD1Query("get_backcharge_detail", [selectedTransactionId])
@@ -477,7 +478,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     return () => {
       isMounted = false;
     };
-  }, [selectedTransactionId, transactions]);
+  }, [selectedTransactionId]);
 
   // Safety timeout guard: Prevent loading overlay from sticking for more than 8 seconds
   useEffect(() => {
@@ -573,6 +574,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
   // Real-time Background Sync & Push Notification Engine (Optimized Delta Polling)
   const lastSeenLogIdRef = useRef<number>(0);
   const pollTimerRef = useRef<any>(null);
+  const lastPollAttemptRef = useRef<number>(0);
 
   useEffect(() => {
     if (logs.length > 0 && lastSeenLogIdRef.current === 0) {
@@ -584,11 +586,18 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
   useEffect(() => {
     if (!currentUser || !isD1Active) return;
 
-    const pollRealtimeUpdates = async () => {
+    const pollRealtimeUpdates = async (fromFocusEvent = false) => {
       // 0 rows read if page is in background (hidden)
       if (typeof document !== 'undefined' && document.hidden) {
         return;
       }
+
+      // Cooldown 60 detik untuk event focus/visibilitychange agar pindah-pindah tab tidak spam query D1
+      const now = Date.now();
+      if (fromFocusEvent && now - lastPollAttemptRef.current < 60000) {
+        return;
+      }
+      lastPollAttemptRef.current = now;
 
       try {
         // Ultra-low row read probe: reads ONLY 1 row via index
@@ -675,7 +684,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
       }
     };
 
-    // Configurable dynamic polling interval (60–120 seconds, default 60s = 60,000ms)
+    // Polling interval: 5 menit (300,000 ms) saat tab aktif
     const POLL_INTERVAL_MS = 300000;
 
     const stopPolling = () => {
@@ -688,17 +697,17 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     const startPolling = () => {
       stopPolling();
       if (typeof document !== 'undefined' && !document.hidden && document.visibilityState !== 'hidden') {
-        pollTimerRef.current = setInterval(pollRealtimeUpdates, POLL_INTERVAL_MS);
+        pollTimerRef.current = setInterval(() => pollRealtimeUpdates(false), POLL_INTERVAL_MS);
       }
     };
 
-    // Visibility API listener: Stop interval when tab is hidden, resume interval & poll immediately when visible
+    // Visibility API listener: Stop interval when tab is hidden, resume interval & cooldown-checked poll when visible
     const handleVisibilityOrFocus = () => {
       if (typeof document !== 'undefined') {
         if (document.hidden || document.visibilityState === 'hidden') {
           stopPolling();
         } else {
-          pollRealtimeUpdates();
+          pollRealtimeUpdates(true);
           startPolling();
         }
       }
@@ -799,7 +808,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     }
   };
 
-  // Query D1 Configuration Status from our secure Express backend on mount
+  // Query D1 Configuration Status from backend on mount (tanpa memanggil fetchData sebelum login)
   useEffect(() => {
     try {
       localStorage.setItem('DATABASE_SECRET_KEY', 'b9fee9224e290f7c8989888ea76e67ca7015134aeeb20e2a8337e3f31bb900fc');
@@ -815,7 +824,6 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
           setIsD1Active(true);
           setD1Error(null);
           try { localStorage.setItem('backcharge_use_d1', 'true'); } catch {}
-          fetchData();
         } else {
           if (!isWorkerHost) {
             setIsD1Active(false);
@@ -830,7 +838,6 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
       } catch (err: any) {
         if (!isWorkerHost) setIsD1Active(false);
         console.warn("Notice checking D1 status:", err?.message || err);
-        fetchData();
       }
     };
     checkD1Status();
@@ -1185,10 +1192,9 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     });
   }, []);
 
-  // Fetch app data
+  // Fetch app data (ONLY runs when authenticated user session exists)
   const fetchData = async (forceFull = false, userOverride?: Profile) => {
     if (isFetchingRef.current) return;
-    isFetchingRef.current = true;
     const activeUser = userOverride || currentUser || (() => {
       try {
         const s = localStorage.getItem('backcharge_session_profile');
@@ -1198,52 +1204,74 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
       }
     })();
 
-    // 1. INSTANT LOCAL CACHE HYDRATION (0ms Load Experience)
+    // Jangan pernah menarik ribuan data dari D1 sebelum user benar-benar login
+    if (!activeUser) {
+      return;
+    }
+
+    isFetchingRef.current = true;
+
+    const userScope = `${activeUser.email}|${activeUser.role}|${activeUser.branch}`;
+    const cachedScope = (() => {
+      try {
+        return localStorage.getItem('backcharge_cache_user_scope') || localStorage.getItem('backcharge_cache_user_email') || '';
+      } catch {
+        return '';
+      }
+    })();
+    const isUserChanged = Boolean(!cachedScope || (cachedScope !== userScope && cachedScope !== activeUser.email));
+
+    // 1. INSTANT LOCAL CACHE HYDRATION FROM FULL INDEXEDDB STORE (avoids 30-item localStorage truncation race!)
     let loadedFromCache = false;
     let initialCachedTxs: Backcharge[] = [];
-    if (transactions.length > 0) {
-      loadedFromCache = true;
-      initialCachedTxs = transactions;
-    } else {
-      try {
-        // Prioritize IndexedDB complete store first
-        const idbCache = await loadAppCache();
-        if (idbCache.txs && Array.isArray(idbCache.txs) && idbCache.txs.length > 0) {
-          initialCachedTxs = idbCache.txs;
-          setTransactions(normalizeTransactions(idbCache.txs));
-          if (idbCache.logs) setLogs(idbCache.logs);
-          if (idbCache.profiles) setProfiles(idbCache.profiles);
-          if (idbCache.inquiries) setInquiries(idbCache.inquiries);
-          loadedFromCache = true;
-        } else {
-          // Fallback to localStorage if IndexedDB is empty
-          const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
-          if (cachedTxsStr) {
-            const parsedTxs = JSON.parse(cachedTxsStr);
-            if (Array.isArray(parsedTxs) && parsedTxs.length > 0) {
-              initialCachedTxs = parsedTxs;
-              setTransactions(normalizeTransactions(parsedTxs));
-              loadedFromCache = true;
-            }
-          }
-        }
-        const cachedLogsStr = localStorage.getItem('backcharge_cache_logs');
-        const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
-        if (cachedLogsStr && logs.length === 0) setLogs(JSON.parse(cachedLogsStr));
-      } catch (e) {
-        console.warn("Failed to read initial local cache:", e);
+    let cachedLogs: ActivityLog[] = logs;
+    let cachedProfiles: Profile[] = profiles;
+    let cachedInquiries: ContactInquiry[] = inquiries;
+
+    const storedCacheCount = (() => {
+      try { return Number(localStorage.getItem('backcharge_cache_count') || '0'); } catch { return 0; }
+    })();
+
+    if (!isUserChanged && !forceFull) {
+      // Only reuse in-memory `transactions` directly if IndexedDB hydration has already completed
+      // (i.e. transactions is not just the 30-item localStorage startup preview when IndexedDB has more)
+      const isTruncatedStartupPreview = transactions.length <= 35 && storedCacheCount > transactions.length;
+      if (transactions.length > 0 && !isTruncatedStartupPreview) {
+        loadedFromCache = true;
+        initialCachedTxs = transactions;
       }
 
-      // Automatic guarantee: If cached records are incomplete (< 100),
-      // hydrate immediately from embedded FULL_BACKCHARGES_DATA (1,000 records, 0 rows read!)
-      if (!loadedFromCache || initialCachedTxs.length < 100) {
-        if (FULL_BACKCHARGES_DATA && FULL_BACKCHARGES_DATA.length > 0) {
-          initialCachedTxs = FULL_BACKCHARGES_DATA;
-          setTransactions(normalizeTransactions(FULL_BACKCHARGES_DATA));
-          saveAppCache({ txs: FULL_BACKCHARGES_DATA });
-          loadedFromCache = true;
+      if (!loadedFromCache || cachedLogs.length === 0 || cachedProfiles.length === 0 || (activeUser.role === 'Administrator' && cachedInquiries.length === 0)) {
+        try {
+          const idbCache = await loadAppCache();
+          if (!loadedFromCache && idbCache.txs && Array.isArray(idbCache.txs) && idbCache.txs.length > 0) {
+            initialCachedTxs = idbCache.txs;
+            setTransactions(normalizeTransactions(idbCache.txs));
+            loadedFromCache = true;
+          }
+          if (idbCache.logs && Array.isArray(idbCache.logs) && idbCache.logs.length > 0) {
+            cachedLogs = idbCache.logs;
+            if (logs.length < idbCache.logs.length) setLogs(idbCache.logs);
+          }
+          if (idbCache.profiles && Array.isArray(idbCache.profiles) && idbCache.profiles.length > 0) {
+            cachedProfiles = idbCache.profiles;
+            if (profiles.length < idbCache.profiles.length) setProfiles(idbCache.profiles);
+          }
+          if (idbCache.inquiries && Array.isArray(idbCache.inquiries) && idbCache.inquiries.length > 0) {
+            cachedInquiries = idbCache.inquiries;
+            if (inquiries.length < idbCache.inquiries.length) setInquiries(idbCache.inquiries);
+          }
+        } catch (e) {
+          console.warn("Failed to read IndexedDB local cache:", e);
         }
       }
+    } else if (isUserChanged) {
+      // User / Role / Cabang berganti: bersihkan state & watermark sinkronisasi lama agar RBAC cabang 100% akurat
+      setTransactions([]);
+      try {
+        localStorage.removeItem('backcharge_cache_max_updated');
+        localStorage.removeItem('backcharge_cache_count');
+      } catch {}
     }
 
     // Only set full-page blocking loading if we do NOT have any local data cached
@@ -1251,95 +1279,130 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
       setLoading(true);
     }
 
-    // Instant cache hydration is already applied above.
-    // We proceed to query Cloudflare D1 so that data on screen is ALWAYS 100% synchronized with the D1 database.
     if (isD1Active) {
       try {
-        // Concurrent fetching for all tables in background
         const fetchD1Promise = (async () => {
           let allowedBranchesParam: string[] | undefined = undefined;
 
           // Role & Branch authorization filter:
           // Jika cabang Nasional, Semua Cabang, atau role Administrator / Division Head:
           // JANGAN membatasi kueri dengan filter cabang apa pun, sehingga 100% data D1 termuat persis berapapun jumlah barisnya.
-          const isNationalOrAll = !activeUser || isNationalOrAllBranches(activeUser.branch, activeUser.role);
-          if (!isNationalOrAll && activeUser) {
+          const isNationalOrAll = isNationalOrAllBranches(activeUser.branch, activeUser.role);
+          if (!isNationalOrAll) {
             const allowedBranches = getRoleAllowedBranches(activeUser.role, activeUser.branch);
             if (allowedBranches.length > 0 && allowedBranches.length < ALL_SYSTEM_BRANCHES.length) {
               allowedBranchesParam = allowedBranches;
             }
           }
 
-          // Fetch all backcharges dynamically with ultra-fast single pass query (falls back to chunking if needed)
-          const fetchAllBackchargesFromD1 = async (): Promise<any[]> => {
-            try {
-              const singlePass = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, { branches: allowedBranchesParam });
-              if (Array.isArray(singlePass) && singlePass.length > 0) {
-                return singlePass;
-              }
-            } catch (spErr) {
-              console.warn("Notice: Single pass fetch fallback to chunking:", spErr);
-            }
-
+          // O(N) Keyset / Cursor Pagination helper (0 OFFSET quadratic scan & 0 TEMP B-TREE!)
+          const fetchBranchWithKeyset = async (
+            branchFilter?: string[],
+            onFirstChunk?: (rows: Backcharge[]) => void
+          ): Promise<Backcharge[]> => {
             const CHUNK_SIZE = 500;
-            let allRows: any[] = [];
-            let offset = 0;
+            const seenIds = new Set<string>();
+            const collected: Backcharge[] = [];
+            let cursorCreatedAt = "";
+            let cursorId = "";
             let hasMore = true;
-            let loopCount = 0;
+            let iter = 0;
 
-            while (hasMore && loopCount < 100) {
-              loopCount++;
-              const chunk = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, {
-                branches: allowedBranchesParam,
-                limit: CHUNK_SIZE,
-                offset
-              });
+            while (hasMore && iter < 150) {
+              iter++;
+              if (iter > 1) {
+                await new Promise(r => setTimeout(r, 35));
+              }
 
-              if (Array.isArray(chunk) && chunk.length > 0) {
-                allRows.push(...chunk);
-                if (chunk.length < CHUNK_SIZE) {
-                  hasMore = false;
-                } else {
-                  offset += CHUNK_SIZE;
-                }
-              } else {
+              const payload: any = {
+                branches: branchFilter,
+                limit: CHUNK_SIZE
+              };
+              if (cursorCreatedAt && cursorId) {
+                payload.cursorCreatedAt = cursorCreatedAt;
+                payload.cursorId = cursorId;
+              }
+
+              const chunk = await executeD1Query("get_all_backcharges", branchFilter || [], 1, payload);
+
+              if (!Array.isArray(chunk) || chunk.length === 0) {
                 hasMore = false;
+                break;
+              }
+
+              const unpackedChunk = chunk.map(unpackExtraFields);
+              for (const item of unpackedChunk) {
+                if (item && item.id && !seenIds.has(item.id)) {
+                  seenIds.add(item.id);
+                  collected.push(item);
+                }
+              }
+
+              if (iter === 1 && onFirstChunk) {
+                onFirstChunk(collected);
+              }
+
+              const lastRow = chunk[chunk.length - 1];
+              const nextCreatedAt = lastRow?.created_at ? String(lastRow.created_at) : "";
+              const nextId = lastRow?.id ? String(lastRow.id) : "";
+
+              if (chunk.length < CHUNK_SIZE || !nextCreatedAt || !nextId || (nextCreatedAt === cursorCreatedAt && nextId === cursorId)) {
+                hasMore = false;
+              } else {
+                cursorCreatedAt = nextCreatedAt;
+                cursorId = nextId;
               }
             }
 
-            return allRows;
+            return collected;
+          };
+
+          const fetchAllBackchargesFromD1 = async (onFirstChunk?: (rows: Backcharge[]) => void): Promise<Backcharge[]> => {
+            // Untuk akun multi-cabang (mis. ASO Megabranch / Regional Head), tarik per-cabang memakai index (branch, created_at, id)
+            // agar SQLite TIDAK membuat TEMP B-TREE dan TIDAK membaca ulang ribuan baris di setiap chunk!
+            if (allowedBranchesParam && allowedBranchesParam.length > 1) {
+              const seenIds = new Set<string>();
+              const combined: Backcharge[] = [];
+              let notifiedFirst = false;
+
+              for (const singleBranch of allowedBranchesParam) {
+                const branchRows = await fetchBranchWithKeyset([singleBranch], (firstRows) => {
+                  if (!notifiedFirst && onFirstChunk && firstRows.length > 0) {
+                    notifiedFirst = true;
+                    onFirstChunk(firstRows);
+                  }
+                });
+                for (const r of branchRows) {
+                  if (r && r.id && !seenIds.has(r.id)) {
+                    seenIds.add(r.id);
+                    combined.push(r);
+                  }
+                }
+              }
+              combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+              return combined;
+            }
+
+            return await fetchBranchWithKeyset(allowedBranchesParam, onFirstChunk);
           };
 
           try {
             // =========================================================================
             // ULTRA-FAST 0ms INSTANT SYNC ENGINE & INDEXED DELTA REVALIDATION
             // =========================================================================
-            let cachedTxs: Backcharge[] = initialCachedTxs.length > 0 ? initialCachedTxs : transactions;
-            if (cachedTxs.length === 0) {
-              try {
-                const idbCache = await loadAppCache();
-                if (idbCache.txs && Array.isArray(idbCache.txs) && idbCache.txs.length > 0) {
-                  cachedTxs = idbCache.txs;
-                }
-              } catch {}
-            }
-
+            let cachedTxs: Backcharge[] = initialCachedTxs;
             const cachedMaxUpdated = localStorage.getItem("backcharge_cache_max_updated") || "";
             let finalTxs: Backcharge[] = cachedTxs;
             let performedFullSync = false;
 
-            // Check if logged in user changed (different role/branches)
-            const cachedUserEmail = localStorage.getItem("backcharge_cache_user_email") || "";
-            const isUserChanged = Boolean(cachedUserEmail && activeUser && cachedUserEmail !== activeUser.email);
-
-            // STRATEGY A: Fast 20ms Delta Sync whenever cached rows exist (> 0) and max updated timestamp exists
+            // STRATEGY A: Fast Delta Sync whenever full cache exists in IndexedDB and watermark exists
             if (cachedTxs.length > 0 && cachedMaxUpdated && cachedMaxUpdated.trim() !== "" && !forceFull && !isUserChanged) {
               try {
                 const deltaRows = await executeD1Query(
                   "get_backcharges_since",
                   [cachedMaxUpdated],
                   1,
-                  { since: cachedMaxUpdated, branches: allowedBranchesParam, limit: 500 }
+                  { since: cachedMaxUpdated, branches: allowedBranchesParam, limit: 1000 }
                 );
 
                 if (Array.isArray(deltaRows)) {
@@ -1350,149 +1413,109 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
                     unpackedDeltas.forEach(ut => txMap.set(ut.id, ut));
                     finalTxs = Array.from(txMap.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
                     setTransactions(normalizeTransactions(finalTxs));
-                    saveAppCache({ txs: finalTxs, maxUpdated: finalTxs.reduce((m, t) => (t.updated_at && t.updated_at > m ? t.updated_at : m), "") });
                   } else {
                     finalTxs = cachedTxs;
                   }
                   setLoading(false);
                 }
               } catch (deltaErr) {
-                console.warn("Notice: Delta sync fallback to parallel full sync:", deltaErr);
+                console.warn("Notice: Delta sync fallback to keyset full sync:", deltaErr);
               }
             }
 
-            // STRATEGY B: Instant Streaming Multi-Chunk Fetch (For cold start or force refresh)
-            // Supports ANY dataset size (7,000+, 10,000+, 50,000+ records) without artificial limits
+            // STRATEGY B: Keyset Cursor Multi-Chunk Fetch (O(N) rows read, zero OFFSET scan!)
             if (!performedFullSync || finalTxs.length === 0 || forceFull) {
-              const CHUNK_SIZE = 500;
-              // Step 1: Fetch Chunk 1 (Instant ~50ms First Screen)
-              const chunk1 = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, {
-                branches: allowedBranchesParam,
-                limit: CHUNK_SIZE,
-                offset: 0
+              const allFetched = await fetchAllBackchargesFromD1((firstRows) => {
+                if (firstRows.length > 0) {
+                  setTransactions(normalizeTransactions([...firstRows]));
+                  setLoading(false);
+                }
               });
 
-              if (Array.isArray(chunk1) && chunk1.length > 0) {
-                const unpackedChunk1 = chunk1.map(unpackExtraFields);
-                const seenIds = new Set<string>();
-                const combined: Backcharge[] = [];
-                for (const item of unpackedChunk1) {
-                  if (item && item.id && !seenIds.has(item.id)) {
-                    seenIds.add(item.id);
-                    combined.push(item);
+              if (Array.isArray(allFetched) && allFetched.length > 0) {
+                finalTxs = allFetched;
+                setTransactions(normalizeTransactions(finalTxs));
+              } else if (cachedTxs.length > 0 && !isUserChanged) {
+                finalTxs = cachedTxs;
+                setTransactions(normalizeTransactions(finalTxs));
+              }
+              setLoading(false);
+            }
+
+            // =========================================================================
+            // SMART AUXILIARY TABLE SYNC (Hemat Rows Read: Probe 1 row untuk log, TTL untuk profiles/inquiries)
+            // =========================================================================
+            let finalLogs: ActivityLog[] = cachedLogs;
+            if (!forceFull && !isUserChanged && cachedLogs.length > 0) {
+              try {
+                const probeRes = await executeD1Query("get_max_activity_log_id");
+                const remoteMaxId = Number(probeRes?.[0]?.max_id) || 0;
+                const localMaxId = Math.max(...cachedLogs.map(l => Number(l.id) || 0), 0);
+                if (remoteMaxId > localMaxId) {
+                  const newLogs = await executeD1Query("get_recent_activity_logs_since", [localMaxId]);
+                  if (Array.isArray(newLogs) && newLogs.length > 0) {
+                    const existingIds = new Set(cachedLogs.map(l => String(l.id)));
+                    const fresh = newLogs.filter(l => !existingIds.has(String(l.id)));
+                    finalLogs = [...fresh.reverse(), ...cachedLogs].slice(0, 200);
                   }
                 }
-                
-                // Immediately display Chunk 1 and release full UI loading blocker
-                setTransactions(normalizeTransactions([...combined]));
-                setLoading(false);
-
-                // If Chunk 1 returned less than CHUNK_SIZE, we have all records!
-                if (chunk1.length < CHUNK_SIZE) {
-                  finalTxs = combined;
-                } else {
-                  // Step 2: Stream remaining chunks progressively to render all 7,000+ records seamlessly
-                  let offset = CHUNK_SIZE;
-                  let hasMore = true;
-                  let streamCount = 0;
-
-                  while (hasMore && streamCount < 150) { // Safety ceiling: 75,000 records
-                    streamCount++;
-                    // Polite 50ms pause to guarantee zero Cloudflare D1 429 rate limit errors
-                    await new Promise(r => setTimeout(r, 50));
-
-                    const nextChunk = await executeD1Query("get_all_backcharges", allowedBranchesParam || [], 1, {
-                      branches: allowedBranchesParam,
-                      limit: CHUNK_SIZE,
-                      offset
-                    });
-
-                    if (Array.isArray(nextChunk) && nextChunk.length > 0) {
-                      const unpackedNext = nextChunk.map(unpackExtraFields);
-                      let addedAny = false;
-                      for (const item of unpackedNext) {
-                        if (item && item.id && !seenIds.has(item.id)) {
-                          seenIds.add(item.id);
-                          combined.push(item);
-                          addedAny = true;
-                        }
-                      }
-                      if (addedAny) {
-                        setTransactions(normalizeTransactions([...combined]));
-                      }
-                      if (nextChunk.length < CHUNK_SIZE) {
-                        hasMore = false;
-                      } else {
-                        offset += CHUNK_SIZE;
-                      }
-                    } else {
-                      hasMore = false;
-                    }
-                  }
-                  finalTxs = combined;
-                }
-              } else {
-                // Fallback if chunked query returned empty array
-                const fullFallback = await fetchAllBackchargesFromD1();
-                if (Array.isArray(fullFallback) && fullFallback.length > 0) {
-                  finalTxs = fullFallback.map(unpackExtraFields);
-                  setTransactions(normalizeTransactions(finalTxs));
-                } else if (cachedTxs.length > 0) {
-                  finalTxs = cachedTxs;
-                  setTransactions(normalizeTransactions(finalTxs));
-                } else if (FULL_BACKCHARGES_DATA && FULL_BACKCHARGES_DATA.length > 0) {
-                  finalTxs = FULL_BACKCHARGES_DATA;
-                  setTransactions(normalizeTransactions(finalTxs));
-                }
-                setLoading(false);
+              } catch {
+                // Keep cachedLogs on transient failure
+              }
+            } else {
+              const logsData = await executeD1Query("get_activity_logs");
+              if (Array.isArray(logsData) && logsData.length > 0) {
+                finalLogs = logsData as ActivityLog[];
               }
             }
 
-            // Execute initial auxiliary table sync sequentially to prevent Cloudflare D1 429 rate limit collisions
-            const logsData = await executeD1Query("get_activity_logs");
-            await new Promise(r => setTimeout(r, 60));
-            const profilesData = await executeD1Query("get_profiles");
-            await new Promise(r => setTimeout(r, 60));
-            // Only Administrator may query contact inquiries
-            const inquiriesData = activeUser?.role === 'Administrator'
-              ? await executeD1Query("get_contact_inquiries")
-              : [];
+            let finalProfiles: Profile[] = cachedProfiles;
+            const profilesTs = Number(localStorage.getItem('backcharge_cache_profiles_ts') || '0');
+            const profilesFresh = !forceFull && !isUserChanged && cachedProfiles.length > 0 && (Date.now() - profilesTs < 30 * 60 * 1000);
+            if (!profilesFresh) {
+              await new Promise(r => setTimeout(r, 40));
+              const profilesData = await executeD1Query("get_profiles");
+              if (Array.isArray(profilesData) && profilesData.length > 0) {
+                finalProfiles = profilesData as Profile[];
+              }
+            }
+
+            let finalInquiries: ContactInquiry[] = cachedInquiries;
+            if (activeUser.role === 'Administrator') {
+              const inquiriesTs = Number(localStorage.getItem('backcharge_cache_inquiries_ts') || '0');
+              const inquiriesFresh = !forceFull && !isUserChanged && cachedInquiries.length > 0 && (Date.now() - inquiriesTs < 15 * 60 * 1000);
+              if (!inquiriesFresh) {
+                await new Promise(r => setTimeout(r, 40));
+                const inquiriesData = await executeD1Query("get_contact_inquiries");
+                if (Array.isArray(inquiriesData) && inquiriesData.length > 0) {
+                  finalInquiries = inquiriesData as ContactInquiry[];
+                }
+              }
+            } else {
+              finalInquiries = [];
+            }
 
             isInitialLoadRef.current = false;
-            if (finalTxs && Array.isArray(finalTxs)) {
-              if (finalTxs.length === 0) {
-                const localFallback = mockDb.getBackcharges();
-                if (localFallback && localFallback.length > 0) {
-                  finalTxs = localFallback;
-                }
-              }
-              if (finalTxs.length > 0) {
-                const maxUp = finalTxs.reduce((max, t) => (t.updated_at && t.updated_at > max) ? t.updated_at : max, "");
-                const maxCr = finalTxs.reduce((max, t) => (t.created_at && t.created_at > max) ? t.created_at : max, "");
-                saveAppCache({ txs: finalTxs, maxUpdated: maxUp || maxCr });
-                try {
-                  localStorage.setItem("backcharge_cache_max_updated", maxUp || maxCr);
-                  localStorage.setItem("backcharge_cache_max_created", maxCr);
-                  localStorage.setItem("backcharge_cache_count", String(finalTxs.length));
-                  if (activeUser?.email) {
-                    localStorage.setItem("backcharge_cache_user_email", activeUser.email);
-                  }
-                } catch {}
-              }
+
+            if (finalTxs && Array.isArray(finalTxs) && finalTxs.length > 0) {
+              const maxUp = finalTxs.reduce((max, t) => (t.updated_at && t.updated_at > max) ? t.updated_at : max, "");
+              const maxCr = finalTxs.reduce((max, t) => (t.created_at && t.created_at > max) ? t.created_at : max, "");
+              try {
+                localStorage.setItem("backcharge_cache_max_updated", maxUp || maxCr);
+                localStorage.setItem("backcharge_cache_max_created", maxCr);
+                localStorage.setItem("backcharge_cache_count", String(finalTxs.length));
+                localStorage.setItem("backcharge_cache_user_email", activeUser.email);
+                localStorage.setItem("backcharge_cache_user_scope", userScope);
+              } catch {}
             }
 
-            let finalProfiles = (profilesData as Profile[]) || [];
             if (!finalProfiles || finalProfiles.length === 0) {
               finalProfiles = mockDb.getProfiles();
             }
-
-            let finalLogs = (logsData as ActivityLog[]) || [];
             if (!finalLogs || finalLogs.length === 0) {
               finalLogs = mockDb.getLogs();
             }
-
-            let finalInquiries = (inquiriesData as ContactInquiry[]) || [];
-            if (!finalInquiries || finalInquiries.length === 0) {
+            if (activeUser.role === 'Administrator' && (!finalInquiries || finalInquiries.length === 0)) {
               finalInquiries = mockDb.getContactInquiries();
             }
 
@@ -1501,12 +1524,16 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             setProfiles(finalProfiles);
             setInquiries(finalInquiries);
 
-            saveAppCache({
-              txs: finalTxs,
+            // Hanya timpa cache IndexedDB jika data benar-benar tersedia, agar tidak menimpa dataset penuh dengan array kosong
+            const cachePayload: any = {
               logs: finalLogs,
               profiles: finalProfiles,
               inquiries: finalInquiries
-            });
+            };
+            if (finalTxs.length > 0) {
+              cachePayload.txs = finalTxs;
+            }
+            saveAppCache(cachePayload);
           } catch (e: any) {
             const errStr = String(e?.message || e || "").toLowerCase();
             const isSchemaError = errStr.includes("no such table") || 
@@ -1517,31 +1544,28 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
             if (isSchemaError) {
               console.warn("Gagal kueri D1 karena skema belum lengkap, mencoba migrasi skema otomatis...", e);
               try {
-                await fetch(getApiUrl("/api/d1/migrate"), { method: "POST" });
+                await fetch(getApiUrl("/api/d1/migrate"), { method: "POST", headers: getAuthHeaders() });
                 const [bcs, logsData, profilesData, inquiriesData] = await Promise.all([
                   fetchAllBackchargesFromD1(),
                   executeD1Query("get_activity_logs"),
                   executeD1Query("get_profiles"),
-                  activeUser?.role === 'Administrator' ? executeD1Query("get_contact_inquiries") : Promise.resolve([])
+                  activeUser.role === 'Administrator' ? executeD1Query("get_contact_inquiries") : Promise.resolve([])
                 ]);
 
-                const unpackedTxs = (bcs || []).map(unpackExtraFields);
-                setTransactions(normalizeTransactions(unpackedTxs as Backcharge[]));
+                setTransactions(normalizeTransactions(bcs as Backcharge[]));
                 setLogs((logsData as ActivityLog[]) || []);
                 setProfiles((profilesData as Profile[]) || []);
                 setInquiries((inquiriesData as ContactInquiry[]) || []);
-                try {
-                  localStorage.setItem('backcharge_cache_txs', JSON.stringify(unpackedTxs));
-                  localStorage.setItem('backcharge_cache_time_v2', String(Date.now()));
-                  localStorage.setItem('backcharge_cache_user', activeUser?.email || '');
-                } catch {}
+                if (bcs.length > 0) {
+                  const maxUp = bcs.reduce((max, t) => (t.updated_at && t.updated_at > max) ? t.updated_at : max, "");
+                  saveAppCache({ txs: bcs, logs: logsData, profiles: profilesData, inquiries: inquiriesData, maxUpdated: maxUp });
+                }
                 return;
               } catch (retryErr: any) {
                 console.warn("Gagal kueri D1 setelah migrasi:", retryErr.message || retryErr);
                 throw retryErr;
               }
             } else {
-              // Network error or fetch issue: rethrow directly to outer catch without running /api/d1/migrate!
               throw e;
             }
           }
@@ -1552,26 +1576,35 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
       } catch (err: any) {
         console.warn("Cloudflare D1 offline/unreachable, mengaktifkan cadangan data lokal:", err.message);
         
-        // 1. First attempt to hydrate from localStorage cache if available
+        // 1. First attempt to hydrate from IndexedDB / localStorage cache if available
         let restoredFromCache = false;
         try {
-          const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
-          if (cachedTxsStr) {
-            const cachedTxs = JSON.parse(cachedTxsStr);
-            if (Array.isArray(cachedTxs) && cachedTxs.length > 0) {
-              setTransactions(normalizeTransactions(cachedTxs));
-              restoredFromCache = true;
+          const idbFallback = await loadAppCache();
+          if (idbFallback.txs && Array.isArray(idbFallback.txs) && idbFallback.txs.length > 0) {
+            setTransactions(normalizeTransactions(idbFallback.txs));
+            if (idbFallback.logs) setLogs(idbFallback.logs);
+            if (idbFallback.profiles) setProfiles(idbFallback.profiles);
+            if (idbFallback.inquiries) setInquiries(idbFallback.inquiries);
+            restoredFromCache = true;
+          } else {
+            const cachedTxsStr = localStorage.getItem('backcharge_cache_txs');
+            if (cachedTxsStr) {
+              const cachedTxs = JSON.parse(cachedTxsStr);
+              if (Array.isArray(cachedTxs) && cachedTxs.length > 0) {
+                setTransactions(normalizeTransactions(cachedTxs));
+                restoredFromCache = true;
+              }
             }
+            const cachedLogsStr = localStorage.getItem('backcharge_cache_logs');
+            if (cachedLogsStr) setLogs(JSON.parse(cachedLogsStr));
+            const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
+            if (cachedProfsStr) setProfiles(JSON.parse(cachedProfsStr));
           }
-          const cachedLogsStr = localStorage.getItem('backcharge_cache_logs');
-          if (cachedLogsStr) setLogs(JSON.parse(cachedLogsStr));
-          const cachedProfsStr = localStorage.getItem('backcharge_cache_profs');
-          if (cachedProfsStr) setProfiles(JSON.parse(cachedProfsStr));
         } catch (cacheErr) {}
 
-        // 2. If no local cache exists, safely fallback to mockDb data
+        // 2. If no local cache exists, safely fallback to mockDb / seed data
         if (!restoredFromCache) {
-          const bcs = mockDb.getBackcharges();
+          const bcs = FULL_BACKCHARGES_DATA.length > 0 ? FULL_BACKCHARGES_DATA : mockDb.getBackcharges();
           const unpackedData = bcs.map(unpackExtraFields);
           setTransactions(normalizeTransactions(unpackedData as Backcharge[]));
           setLogs(mockDb.getLogs());
@@ -1605,7 +1638,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
 
   // Fetch data on login or session restore or D1 status change
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && isD1Active) {
       fetchData(false, currentUser);
     }
   }, [currentUser, isD1Active]);
@@ -1641,9 +1674,7 @@ const [transactions, setTransactions] = useState<Backcharge[]>(() => {
     if (transactions.length > 0) {
       setLoading(false);
     }
-
-    // Synchronize data with Cloudflare D1 (uses Delta Sync if cache exists for 0-rows-read speed)
-    fetchData(false, profile);
+    // Sinkronisasi otomatis dijalankan oleh useEffect([currentUser, isD1Active])
   };
 
   // Logout handler

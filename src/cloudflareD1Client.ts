@@ -35,8 +35,8 @@ let hasInitializedD1Tables = false;
  * Ensures all required D1 tables are created and seeded if missing.
  * Thread-safe for concurrent database requests using a single batched D1 execution.
  */
-export async function ensureD1TablesExist(): Promise<void> {
-  if (hasInitializedD1Tables) {
+export async function ensureD1TablesExist(runMaintenance = false): Promise<void> {
+  if (hasInitializedD1Tables && !runMaintenance) {
     return;
   }
   if (activeMigrationPromise) {
@@ -139,6 +139,8 @@ export async function ensureD1TablesExist(): Promise<void> {
         CREATE INDEX IF NOT EXISTS idx_bkc_created_branch_val ON backcharges(created_at DESC, branch, value);
         CREATE INDEX IF NOT EXISTS idx_bkc_status_branch_val ON backcharges(status_payment, status_sap, branch, value);
         CREATE INDEX IF NOT EXISTS idx_bkc_cat_branch_created ON backcharges(category, branch, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_bkc_created_id ON backcharges(created_at DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_bkc_branch_created_id ON backcharges(branch, created_at DESC, id DESC);
         CREATE INDEX IF NOT EXISTS idx_logs_tx_id ON activity_logs(transaction_id, id DESC);
         CREATE INDEX IF NOT EXISTS idx_logs_id ON activity_logs(id DESC);
         CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON activity_logs(timestamp DESC);
@@ -154,23 +156,26 @@ export async function ensureD1TablesExist(): Promise<void> {
       hasInitializedD1Tables = true;
       console.log("✅ Cloudflare D1 tables initialized via single batch execution.");
 
-      // Otomatis ubah status_sap dari N/A ke Bill jika transaksi sudah masuk tahap invoice, pembayaran, atau approval
-      try {
-        await queryD1(`
-          UPDATE backcharges 
-          SET status_sap = 'Bill' 
-          WHERE (status_sap IS NULL OR status_sap = 'N/A' OR status_sap = '') 
-            AND status_sap != 'Not Bill'
-            AND (
-              (no_invoice IS NOT NULL AND no_invoice != '-' AND TRIM(no_invoice) != '') 
-              OR status_payment = 'Lunas'
-              OR status_approval = 'Disetujui'
-            );
-        `);
-      } catch (err: any) {
-        const msg = String(err?.message || err || "");
-        if (!msg.includes("7500") && !msg.includes("free tier") && !msg.includes("row read limit")) {
-          console.warn("Notice updating status_sap N/A to Bill:", err?.message);
+      // Hanya jalankan pembaruan massal saat dipicu secara manual oleh Administrator (/api/d1/migrate),
+      // JANGAN dijalankan otomatis setiap server restart agar tidak memboroskan kuota Rows Read / Rows Written D1.
+      if (runMaintenance) {
+        try {
+          await queryD1(`
+            UPDATE backcharges 
+            SET status_sap = 'Bill' 
+            WHERE (status_sap IS NULL OR status_sap = 'N/A' OR status_sap = '') 
+              AND status_sap != 'Not Bill'
+              AND (
+                (no_invoice IS NOT NULL AND no_invoice != '-' AND TRIM(no_invoice) != '') 
+                OR status_payment = 'Lunas'
+                OR status_approval = 'Disetujui'
+              );
+          `);
+        } catch (err: any) {
+          const msg = String(err?.message || err || "");
+          if (!msg.includes("7500") && !msg.includes("free tier") && !msg.includes("row read limit")) {
+            console.warn("Notice updating status_sap N/A to Bill:", err?.message);
+          }
         }
       }
 
@@ -213,12 +218,11 @@ export async function ensureD1TablesExist(): Promise<void> {
         // Abaikan jika sudah ada
       }
 
-      // Run seeding in background asynchronously so server starts instantly!
+      // Run seeding check with O(1) LIMIT 1 instead of full-table COUNT(*)
       (async () => {
         try {
-          const countRes = await queryD1Direct("SELECT COUNT(*) as count FROM backcharges");
-          const count = Number(countRes?.[0]?.count) || 0;
-          if (count === 0) {
+          const existsRes = await queryD1Direct("SELECT 1 as ok FROM backcharges LIMIT 1");
+          if (!existsRes || existsRes.length === 0) {
             console.log(`ℹ️ Cloudflare D1 database is empty. Auto-seeding initial migration dataset (${FULL_SEED_STATEMENTS.length} items)...`);
             const BATCH_SIZE = 30;
             for (let i = 0; i < FULL_SEED_STATEMENTS.length; i += BATCH_SIZE) {
@@ -235,13 +239,14 @@ export async function ensureD1TablesExist(): Promise<void> {
         } catch (checkErr: any) {
           const msg = String(checkErr?.message || checkErr || "");
           if (!msg.includes("7500") && !msg.includes("free tier") && !msg.includes("row read limit")) {
-            console.warn("Notice checking D1 row count:", checkErr.message);
+            console.warn("Notice checking D1 row existence:", checkErr.message);
           }
         }
       })().catch(() => {});
 
-      // Background cleanup: migrate any existing base64 entries in D1 to short disk URLs
-      cleanExistingD1Base64().catch(() => {});
+      if (runMaintenance) {
+        cleanExistingD1Base64().catch(() => {});
+      }
     } catch (err: any) {
       console.error("❌ Failed to auto-migrate Cloudflare D1 tables:", err.message, err.stack);
     } finally {
